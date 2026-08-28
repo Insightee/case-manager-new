@@ -1,22 +1,28 @@
 ## [Unreleased]
 
 ### Added
-<<<<<<< HEAD
 - Admin Service profiles: soft-delete therapist listings (`DELETED` + restore), **Needs listing** / **Deleted** / **No logs 15d** filters and KPIs, audit backfill for historically hard-deleted profiles. Alembic `a8b9c0d1e2f3` → `j0merge2therapist`.
-=======
 - Cloud Agent dev environment config (`.cursor/environment.json` + `scripts/cloud-agent-install.sh`): reproducible SQLite-based local stack (no Docker/Postgres/Redis needed) that installs backend + frontend deps, seeds the demo database on first run, and starts the FastAPI API (`:8000`) and Vite dev server (`:5173`).
->>>>>>> origin/main
+- Shadow cases default to school venue (`SessionMode.SCHOOL`); existing shadow sessions with `HOME` are backfilled. Alembic `k1shadow2lumpsum3`.
+- Parent Name column on remaining operational downloads (session logs XLSX/PDF, case session-log export, session-log PDF, monthly/observation PDF meta, payout preview, case records CSV, therapist invoice CSV).
 - HR report exports include **Child Name**, **Parent Name**, **Therapist Name**, and **Therapist ID** (with Case ID) on all case-linked reports so rows are readable without looking up IDs alone. Downloads are date-stamped (`report-key-YYYY-MM-DD`) and XLSX/PDF titles include the generation date.
 - Bulk attendance and monthly session summary split mid-month therapist replacements into separate case×assignment rows with **Assignment Start** / **Assignment End** (session metrics scoped to each window).
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Therapist compensation is lumpsum-only (`FIXED_LUMP`): UI and writers no longer offer percentage; `resolve_therapist_pay` reads `therapist_fixed_pay_inr` with fallback to legacy `pay_share_amount_inr`. Existing PERCENTAGE rows are copy-migrated (amounts already INR — not re-multiplied).
+- Finance **Margin by case** report includes `marginPct` and flags rows where Insighte margin is under 30% (`LOW_MARGIN_BELOW_30`); UI highlights those rows.
+- Payout preview / HR billing snapshot columns use lumpsum labels (`Therapist Pay (INR)`, `Per Session Pay (INR)`) instead of legacy “share” / PERCENTAGE wording; closed-month snapshots remap old headers on read.
+- Admin Session Logs Sessions tab is card-first on ≤1024px with duration, venue, both status pills, and thumb-zone View/Flag actions.
+- Superadmin home billing widget links to **Therapist payouts** (`/admin/therapist-payouts?sub=queue`) — the count is `invoices` in `IN_REVIEW`, not client invoices.
 - HR report column label **Client Name** renamed to **Child Name** on case-linked operational and legacy exports for clearer identification (CSV/JSON column order also places Child/Parent/Therapist identity columns together near Case ID).
 - Therapist invoices and client period charges use the payout-report cycle engine (gross, no TDS). Homecare bills approved sessions at allotment rates; shadow/B2B bills the same calendar days as therapist pay. Transition pay is therapist-only. Build from ledger posts those period charges when the ledger is empty; finance composer payout matches the therapist invoice.
 - Finance workspace: **Client invoices** and **Therapist payouts** are parallel money-in / money-out screens for every admin with billing access (no separate Finance home). Client invoices bill system gross; optional TDS is recorded when the payer withholds it. Therapist payouts show gross → TDS → net, raise-on-behalf, notes, and month records. Finance reports stay in the sidebar.
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Case billing forms always show client amount (including monthly); monthly client draft invoices no longer fall back to ₹0.01 MANUAL_FEE when only `client_monthly_rate_inr` is set.
+- Therapist pay cannot exceed client billing amount; homecare share under 20% of client amount routes to the low-margin approval queue.
 - Alembic dual head after finance TDS + case Zoho ID merge: empty merge revision `b95440cc4d91` joins `fn9tds0cl1nt` and `z1o2h3o4i5d6`; registered in Postgres migration proof; single-head test expects the merge tip.
 - Step 5 billing eligibility tests force a homecare per-session case so shadow/B2B calendar-day blocking does not skip SESSION ledger holds.
 - Therapist payout queue no longer auto-applies 10% TDS or treats pending approval as blocked. Finance enters TDS (0 if none), then approves and marks paid from the same workbench.

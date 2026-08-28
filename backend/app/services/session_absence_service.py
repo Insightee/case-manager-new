@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.permissions import case_scope_check, is_finance_desk_user, user_has_permission
 from app.models.case import BillingType, Case
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
+from app.core.session_defaults import default_session_mode_for_case
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
@@ -345,6 +346,7 @@ def _ensure_session_for_child_absence(
         scheduled_date=scheduled_date,
         start_time=start_time or time(9, 0),
         end_time=end_time or time(10, 0),
+        mode=default_session_mode_for_case(case),
         status=SessionStatus.SCHEDULED,
     )
     db.add(session)

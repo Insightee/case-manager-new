@@ -24,9 +24,9 @@ export function formatStatus(status) {
 
 export function statusTone(status) {
   const key = String(status || '').toUpperCase()
-  if (['ACTIVE', 'APPROVED', 'PAID', 'RESOLVED', 'CLOSED'].includes(key)) return 'success'
-  if (['PENDING_ALLOTMENT', 'UNDER_REVIEW', 'IN_REVIEW', 'OPEN', 'IN_PROGRESS', 'DRAFT'].includes(key)) return 'warning'
-  if (['SUSPENDED', 'REJECTED', 'QUERIED', 'DELETED'].includes(key)) return 'danger'
+  if (['ACTIVE', 'APPROVED', 'PAID', 'RESOLVED', 'CLOSED', 'COMPLETED'].includes(key)) return 'success'
+  if (['PENDING_ALLOTMENT', 'UNDER_REVIEW', 'IN_REVIEW', 'OPEN', 'IN_PROGRESS', 'DRAFT', 'NO_SHOW', 'CLIENT_ABSENT'].includes(key)) return 'warning'
+  if (['SUSPENDED', 'REJECTED', 'QUERIED', 'DELETED', 'CANCELLED'].includes(key)) return 'danger'
   return 'neutral'
 }
 

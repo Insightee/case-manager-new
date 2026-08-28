@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.billing_validation import resolve_therapist_pay
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CaseStatus, CompensationMode
 from app.models.case_therapist_transition import CaseTherapistTransitionDay
@@ -20,11 +21,13 @@ from app.models.user import User
 from app.services import case_service, leave_policy_service
 from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
+    case_people_export_fields,
     is_homecare_case,
     is_shadow_case,
     leave_days_in_month_for_case,
     month_bounds,
     month_long_label,
+    parent_by_child,
     scoped_cases,
     user_display_name,
 )
@@ -43,10 +46,8 @@ def uses_calendar_day_pay(case: Case) -> bool:
 
 
 def therapist_share_inr(case: Case) -> float:
-    """Monthly or per-session therapist share configured on the case."""
-    if case.compensation_mode == CompensationMode.FIXED_LUMP:
-        return float(case.therapist_fixed_pay_inr or 0)
-    return float(case.pay_share_amount_inr or 0)
+    """Monthly or per-session therapist share configured on the case (INR lumpsum)."""
+    return resolve_therapist_pay(case)
 
 
 def client_lumpsum_inr(case: Case) -> float | None:
@@ -881,6 +882,7 @@ def payout_preview_row(
     pending_sessions: int = 0,
     pending_absence: int = 0,
     leave_taken: int | None = None,
+    parent_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     share = therapist_share_inr(case)
     lumpsum = client_lumpsum_inr(case)
@@ -907,6 +909,9 @@ def payout_preview_row(
         "Month": month_long_label(ym),
         "Case ID": export_case_id(case),
         "Client Name": case_service.case_child_display_name(case) or "",
+        "Parent Name": case_people_export_fields(
+            case, parent_info=parent_info, include_therapist=False
+        )["Parent Name"],
         "Therapist Name": user_display_name(therapist),
         "Therapist ID": export_therapist_id(therapist),
         "Service Type": case.service_type or case.product_module or "",
@@ -927,8 +932,8 @@ def payout_preview_row(
         "Total Hours": round(hours, 2),
         "Billable Sessions": billable_sessions,
         "Lumpsum Amount": lumpsum if lumpsum is not None else "",
-        "Therapist Share": round(share, 2) if share else "",
-        "Per Session Share": per_sess if per_sess else "",
+        "Therapist Pay (INR)": round(share, 2) if share else "",
+        "Per Session Pay (INR)": per_sess if per_sess else "",
         "Predicted Subtotal": subtotal if subtotal else "",
         "Transition Days": transition_days,
         "Transition Day Type": transition_day_type,
@@ -949,6 +954,7 @@ def payout_preview_rows(
     if not cases:
         return []
 
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     rows: list[dict[str, Any]] = []
     start, end = month_bounds(ym)
     for case in cases[:MAX_EXPORT_ROWS]:
@@ -1013,6 +1019,7 @@ def payout_preview_rows(
                     pending_sessions=pending_sessions,
                     pending_absence=pending_absence,
                     leave_taken=leave_taken,
+                    parent_info=parents.get(case.child_id) if case.child_id else None,
                 )
             )
 
@@ -1039,19 +1046,40 @@ def _therapist_group_key(row: dict[str, Any]) -> str:
     return (row.get("Therapist Name") or "").lower()
 
 
+# Closed-month snapshots may still store pre-lumpsum column titles — remap on read.
+_LEGACY_PAYOUT_PREVIEW_COLUMNS = {
+    "Therapist Share": "Therapist Pay (INR)",
+    "Per Session Share": "Per Session Pay (INR)",
+}
+
+
+def normalize_payout_preview_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Rename legacy percentage-era headers; drop duplicate legacy keys."""
+    out: dict[str, Any] = {}
+    for key, value in row.items():
+        canon = _LEGACY_PAYOUT_PREVIEW_COLUMNS.get(key, key)
+        if canon in out and key in _LEGACY_PAYOUT_PREVIEW_COLUMNS:
+            # Prefer an already-canonical value over the legacy alias.
+            continue
+        out[canon] = value
+    return out
+
+
 def apply_therapist_total_column(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Sum Predicted Total per therapist; show the total on the first row only."""
     if not rows:
         return rows
 
+    normalized = [normalize_payout_preview_row(r) for r in rows]
+
     totals: dict[str, float] = {}
-    for row in rows:
+    for row in normalized:
         key = _therapist_group_key(row)
         totals[key] = round(totals.get(key, 0.0) + _predicted_total_inr(row), 2)
 
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
-    for row in rows:
+    for row in normalized:
         new_row = {k: v for k, v in row.items() if k != "Therapist Total"}
         key = _therapist_group_key(row)
         if key not in seen:

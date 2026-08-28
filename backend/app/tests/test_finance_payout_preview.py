@@ -334,6 +334,23 @@ def test_apply_therapist_total_column_first_row_only():
     assert list(result[0].keys())[-1] == "Therapist Total"
 
 
+def test_normalize_legacy_share_column_headers():
+    from app.services.finance_payout_preview_service import normalize_payout_preview_row
+
+    row = normalize_payout_preview_row(
+        {
+            "Therapist Share": 4500,
+            "Per Session Share": 150,
+            "Predicted Total": 4500,
+            "Therapist ID": "T9",
+        }
+    )
+    assert row["Therapist Pay (INR)"] == 4500
+    assert row["Per Session Pay (INR)"] == 150
+    assert "Therapist Share" not in row
+    assert "Per Session Share" not in row
+
+
 def test_finance_payout_preview_report_json():
     headers = _headers("finance@demo.com")
     r = client.get(
@@ -350,6 +367,10 @@ def test_finance_payout_preview_report_json():
     if body["rows"]:
         row = body["rows"][0]
         assert "Case ID" in row
+        assert "Client Name" in row
+        assert "Parent Name" in row
+        keys = list(row.keys())
+        assert keys.index("Parent Name") == keys.index("Client Name") + 1
         assert "Therapist Start Date" in row
         assert "Case Start Date" in row
         assert "Case End Date" in row
@@ -359,7 +380,10 @@ def test_finance_payout_preview_report_json():
         assert "Transition Day Type" in row
         assert "Transition Days Total Amount" in row
         assert "Predicted Total" in row
-        assert "Per Session Share" in row
+        assert "Per Session Pay (INR)" in row
+        assert "Therapist Pay (INR)" in row
+        assert "Therapist Share" not in row
+        assert "Per Session Share" not in row
         assert "Therapist Total" in row
 
 

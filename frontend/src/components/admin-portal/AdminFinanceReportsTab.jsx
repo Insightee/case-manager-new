@@ -151,17 +151,33 @@ export function AdminFinanceReportsTab({ defaultReportKey = 'monthly-billing' })
               </tr>
             </thead>
             <tbody>
-              {preview.rows.slice(0, 50).map((row, i) => (
-                <tr key={i}>
-                  {Object.values(row).map((v, j) => (
-                    <td key={j}>{String(v ?? '')}</td>
-                  ))}
-                </tr>
-              ))}
+              {preview.rows.slice(0, 50).map((row, i) => {
+                const lowMargin =
+                  reportKey === 'margin-by-case' &&
+                  (row.lowMargin === true || row.marginFlag === 'LOW_MARGIN_BELOW_30')
+                return (
+                  <tr
+                    key={i}
+                    style={lowMargin ? { background: '#fef3c7' } : undefined}
+                    title={lowMargin ? 'Insighte margin under 30%' : undefined}
+                  >
+                    {Object.values(row).map((v, j) => (
+                      <td key={j}>
+                        {typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v ?? '')}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           {preview.rows.length > 50 ? (
             <p style={{ fontSize: '0.8rem', color: '#64748b' }}>Showing first 50 of {preview.count} rows.</p>
+          ) : null}
+          {reportKey === 'margin-by-case' ? (
+            <p style={{ fontSize: '0.8rem', color: '#92400e', marginTop: 8 }}>
+              Highlighted rows: Insighte margin (client − therapist) under 30% of client total.
+            </p>
           ) : null}
         </div>
       ) : preview ? (

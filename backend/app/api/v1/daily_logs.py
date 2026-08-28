@@ -314,6 +314,7 @@ def download_daily_log_pdf(
         audience="staff",
         generated_by=meta["generated_by"],
         generated_at=meta["generated_at"],
+        db=db,
     )
     filename = session_log_pdf_service.session_log_pdf_filename(
         case_code=case.case_code if case else None,

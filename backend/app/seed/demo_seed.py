@@ -372,7 +372,8 @@ def run():
             db.add(case1)
         case1.billing_type = BillingType.PER_SESSION
         case1.client_rate_per_session_inr = 1000
-        case1.compensation_mode = CompensationMode.PERCENTAGE
+        case1.compensation_mode = CompensationMode.FIXED_LUMP
+        case1.therapist_fixed_pay_inr = 600
         case1.pay_share_amount_inr = 600
         case1.case_manager_user_id = shadow_cm.id
 
@@ -391,7 +392,8 @@ def run():
         case2.billing_type = BillingType.PACKAGE
         case2.package_session_count = 20
         case2.package_amount_inr = 25000
-        case2.compensation_mode = CompensationMode.PERCENTAGE
+        case2.compensation_mode = CompensationMode.FIXED_LUMP
+        case2.therapist_fixed_pay_inr = 15000
         case2.pay_share_amount_inr = 15000
         therapist.home_address_line1 = "42 Therapist Colony, 5th Block"
         therapist.home_city = "Bangalore"

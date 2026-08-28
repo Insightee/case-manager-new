@@ -866,6 +866,19 @@ register_head(
 )
 
 
+def _seed_k1shadow2lumpsum3(db: Session) -> dict[str, Any]:
+    """Data-only head — shadow school backfill + PERCENTAGE→FIXED_LUMP copy (no schema)."""
+    return {"data_only": True}
+
+
+register_head(
+    "k1shadow2lumpsum3",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_k1shadow2lumpsum3,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

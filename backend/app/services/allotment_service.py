@@ -325,6 +325,10 @@ def build_allotment_preview(db: Session, case_id: int, *, session_limit: int = 1
             "client_monthly_rate_inr": case_read.get("client_monthly_rate_inr"),
             "package_session_count": case_read.get("package_session_count"),
             "package_amount_inr": case_read.get("package_amount_inr"),
-            "pay_share_pct": case_read.get("pay_share_pct"),
+            "compensation_mode": case_read.get("compensation_mode"),
+            "pay_share_amount_inr": case_read.get("pay_share_amount_inr"),
+            "therapist_fixed_pay_inr": case_read.get("therapist_fixed_pay_inr"),
+            "therapist_pay_inr": case_read.get("therapist_fixed_pay_inr")
+            or case_read.get("pay_share_amount_inr"),
         },
     }

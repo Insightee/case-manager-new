@@ -70,7 +70,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
 
   const widgetFooter = (w) => {
     const map = {
-      billing: '/admin/invoices',
+      billing: '/admin/therapist-payouts?sub=queue',
       reschedules: '/admin/workbench?section=reschedules',
       reports: '/admin/reports?tab=queue',
       logs: '/admin/workbench?section=logs',

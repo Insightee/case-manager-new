@@ -7,12 +7,15 @@ import re
 from datetime import date, datetime
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
 from app.core.session_times import effective_session_datetimes
 from app.core.timezone import IST, ensure_utc_aware
 from app.models.case import Case
 from app.models.daily_log import DailyLog
 from app.models.session import Session as TherapySession
 from app.services.parent_home_service import _attendance_label
+from app.services.reports_export_helpers import parent_by_child, case_people_export_fields
 
 NOT_APPROVED_DOWNLOAD_MESSAGE = (
     "This log is still under review. Download is available after it's approved."
@@ -106,6 +109,15 @@ def _paragraphs_from_text(text: str) -> list[str]:
     return [chunk for chunk in chunks if chunk] or [text.strip()]
 
 
+def _parent_name(db: Session | None, case: Case | None, parent_name: Optional[str] = None) -> str:
+    if parent_name:
+        return parent_name.strip()
+    if not db or not case or not case.child_id:
+        return ""
+    info = parent_by_child(db, {case.child_id}).get(case.child_id)
+    return case_people_export_fields(case, parent_info=info, include_therapist=False)["Parent Name"]
+
+
 def build_session_log_pdf(
     *,
     log: DailyLog,
@@ -115,6 +127,8 @@ def build_session_log_pdf(
     audience: str,
     generated_by: Optional[str] = None,
     generated_at: Optional[str] = None,
+    db: Session | None = None,
+    parent_name: Optional[str] = None,
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -124,6 +138,7 @@ def build_session_log_pdf(
     parent_facing = audience == "parent"
     title = "Session note" if parent_facing else "Session log"
     child = _child_name(case)
+    parent = _parent_name(db, case, parent_name)
     case_code = case.case_code if case else "—"
     when = _session_when(session, log)
     attendance = _attendance_label(log.attendance_status) if parent_facing else (log.attendance_status or "—")
@@ -171,9 +186,12 @@ def build_session_log_pdf(
         spaceBefore=16,
     )
 
+    identity = f"{child} · {case_code}"
+    if parent:
+        identity = f"{child} · {parent} · {case_code}"
     story = [
         Paragraph(_escape(title), title_style),
-        Paragraph(_escape(f"{child} · {case_code}"), meta_style),
+        Paragraph(_escape(identity), meta_style),
         Paragraph(_escape(when), meta_style),
     ]
     if therapist_name:

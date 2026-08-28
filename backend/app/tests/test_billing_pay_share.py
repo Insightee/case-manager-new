@@ -1,4 +1,4 @@
-"""Therapist pay share validation — flat pay share amount in INR."""
+"""Therapist pay share validation — flat lumpsum INR only."""
 from __future__ import annotations
 
 import pytest
@@ -37,12 +37,19 @@ def _package_case(pay_share_amount_inr: float) -> Case:
 def test_case_update_schema_accepts_flat_share():
     CaseUpdate(pay_share_amount_inr=25000.0)
     CaseUpdate(pay_share_amount_inr=25050.5)
+    CaseUpdate(therapist_fixed_pay_inr=25000.0)
 
 
-def test_validate_case_billing_accepts_any_positive_share():
+def test_validate_case_billing_accepts_positive_share_within_client():
     validate_case_billing(_package_case(25000.0))
     validate_case_billing(_package_case(10000.0))
-    validate_case_billing(_package_case(30001.0))
+    # Share above client package amount is rejected.
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as excinfo:
+        validate_case_billing(_package_case(30001.0))
+    assert excinfo.value.status_code == 400
+    assert "cannot be more" in excinfo.value.detail.lower()
 
 
 def test_validate_case_billing_rejects_missing_share():
@@ -51,8 +58,7 @@ def test_validate_case_billing_rejects_missing_share():
     with pytest.raises(HTTPException) as excinfo:
         validate_case_billing(_package_case(0.0))
     assert excinfo.value.status_code == 400
-    # Plain-language guard (connection-before-correction); still blocks missing share.
-    assert "pay share" in excinfo.value.detail.lower()
+    assert "therapist pay" in excinfo.value.detail.lower()
 
 
 def _headers(email: str) -> dict:
@@ -61,7 +67,7 @@ def _headers(email: str) -> dict:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def test_patch_case_billing_accepts_flat_share():
+def test_patch_case_billing_coerces_to_fixed_lump():
     headers = _headers("superadmin@demo.com")
     cases = client.get("/api/v1/cases", headers=headers)
     assert cases.status_code == 200
@@ -80,4 +86,7 @@ def test_patch_case_billing_accepts_flat_share():
         },
     )
     assert patch.status_code == 200, patch.text
-    assert patch.json()["pay_share_amount_inr"] == 25000.0
+    body = patch.json()
+    assert body["compensation_mode"] == "FIXED_LUMP"
+    assert body["therapist_fixed_pay_inr"] == 25000.0
+    assert body["pay_share_amount_inr"] == 25000.0

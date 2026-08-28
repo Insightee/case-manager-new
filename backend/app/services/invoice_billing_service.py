@@ -7,8 +7,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.billing_validation import case_billing_dict
+from app.core.billing_validation import case_billing_dict, resolve_therapist_pay
 from app.core.permissions import get_active_assignment
+from app.core.session_defaults import default_session_mode_for_case
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CompensationMode
 from app.models.daily_log import DailyLog, LogApprovalStatus
@@ -17,11 +18,12 @@ from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, Session
 from app.models.invoice_manual_line import InvoiceManualLine, ManualLineStatus
 from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.session import Session as TherapySession
-from app.models.session import SessionMode, SessionStatus
+from app.models.session import SessionStatus
 from app.models.user import User
 from app.core.session_times import effective_session_datetimes
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_attendance_service as attendance
+from app.services.reports_export_helpers import cases_by_ids, parent_by_child, case_people_export_fields
 
 
 def parse_month(month: str) -> tuple[int, int, str]:
@@ -62,27 +64,21 @@ def session_duration_minutes(session: TherapySession, log: DailyLog | None = Non
 
 
 def _per_session_amount(case: Case) -> float:
-    if case.compensation_mode == CompensationMode.FIXED_LUMP:
-        return float(case.therapist_fixed_pay_inr or 0)
-    return float(case.pay_share_amount_inr or 0)
+    return resolve_therapist_pay(case)
 
 
-def _package_per_session_rate(case: Case, use_therapist_fixed: bool) -> float:
+def _package_per_session_rate(case: Case, use_therapist_fixed: bool = True) -> float:
     pkg_count = int(case.package_session_count) if case.package_session_count else 0
     if pkg_count <= 0:
         raise ValueError("MISSING_PACKAGE_COUNT")
-    if use_therapist_fixed:
-        base = float(case.therapist_fixed_pay_inr or 0)
-    else:
-        base = float(case.pay_share_amount_inr or 0)
+    base = resolve_therapist_pay(case)
     return base / pkg_count
 
 
 def compute_session_line_amount(case: Case, line_type: SessionLineType) -> float:
     if case.billing_type == BillingType.PER_SESSION:
         return round(_per_session_amount(case), 2)
-    use_fixed = case.compensation_mode == CompensationMode.FIXED_LUMP
-    return round(_package_per_session_rate(case, use_fixed), 2)
+    return round(_package_per_session_rate(case), 2)
 
 
 def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int, float]:
@@ -422,7 +418,7 @@ def create_late_session(
         scheduled_date=session_date,
         start_time=start_time,
         end_time=end_time,
-        mode=SessionMode.HOME,
+        mode=default_session_mode_for_case(case),
         status=SessionStatus.COMPLETED,
     )
     db.add(session)
@@ -1096,6 +1092,7 @@ def export_invoice_csv(db: Session, invoice_id: int) -> str:
             "date",
             "case_code",
             "child_name",
+            "parent_name",
             "duration_minutes",
             "line_type",
             "amount_inr",
@@ -1106,9 +1103,25 @@ def export_invoice_csv(db: Session, invoice_id: int) -> str:
             "source",
         ]
     )
+    case_ids = {
+        int(case_group["case_id"])
+        for case_group in data.get("cases", [])
+        if case_group.get("case_id")
+    }
+    cases_map = cases_by_ids(db, case_ids)
+    parents = parent_by_child(
+        db, {c.child_id for c in cases_map.values() if c.child_id}
+    )
     for case_group in data.get("cases", []):
         child = case_group.get("child_name") or ""
         code = case_group.get("case_code") or ""
+        case_row = cases_map.get(int(case_group["case_id"])) if case_group.get("case_id") else None
+        parent_info = None
+        if case_row and case_row.child_id:
+            parent_info = parents.get(case_row.child_id)
+        parent_name = case_people_export_fields(
+            case_row, parent_info=parent_info, include_therapist=False
+        )["Parent Name"]
         for sl in case_group.get("session_lines", []):
             flags = sl.get("flags") or {}
             writer.writerow(
@@ -1116,6 +1129,7 @@ def export_invoice_csv(db: Session, invoice_id: int) -> str:
                     sl.get("session_date", ""),
                     code,
                     child,
+                    parent_name,
                     sl.get("duration_minutes", ""),
                     sl.get("line_type", ""),
                     sl.get("amount_inr", ""),
@@ -1133,6 +1147,7 @@ def export_invoice_csv(db: Session, invoice_id: int) -> str:
                     sl.get("session_date", ""),
                     code,
                     child,
+                    parent_name,
                     sl.get("duration_minutes", ""),
                     sl.get("line_type", ""),
                     sl.get("amount_inr", ""),
@@ -1148,6 +1163,7 @@ def export_invoice_csv(db: Session, invoice_id: int) -> str:
             continue
         writer.writerow(
             [
+                "",
                 "",
                 "",
                 "",

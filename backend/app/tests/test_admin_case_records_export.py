@@ -44,6 +44,8 @@ def test_build_case_records_rows_includes_required_fields(client: TestClient):
         row = match[0]
         assert "external_client_id" in row
         assert "zoho_id" in row
+        assert "client_name" in row
+        assert "parent_name" in row
         assert "therapist_external_id" in row
         assert "case_create_date" in row
         assert "session_log_count" in row
@@ -67,6 +69,9 @@ def test_cases_records_export_csv_endpoint(client: TestClient):
     assert "Case Id" in headers
     assert "Zoho id" in headers
     assert "Client id" in headers
+    assert "Client name" in headers
+    assert "Parent name" in headers
+    assert headers.index("Parent name") == headers.index("Client name") + 1
     assert "Approval pending" in headers
     assert "Approved child absence" in headers
     rows = list(reader)

@@ -20,6 +20,7 @@ from app.models.user import User
 from app.services.admin_scope_service import apply_case_scope
 from app.services.leave_policy_service import _leave_case_ids
 from app.services.leave_service import leave_day_count
+from app.services.reports_export_helpers import case_people_export_fields, parent_by_child
 
 MAX_EXPORT_ROWS = 5000
 
@@ -28,6 +29,7 @@ CASE_RECORDS_HEADERS: list[tuple[str, str]] = [
     ("Zoho id", "zoho_id"),
     ("Client id", "external_client_id"),
     ("Client name", "client_name"),
+    ("Parent name", "parent_name"),
     ("Therapist id", "therapist_external_id"),
     ("Therapist", "therapist_name"),
     ("Case manager", "case_manager_name"),
@@ -164,6 +166,7 @@ def build_case_records_rows(
     pending_approval = _pending_approval_by_case(db, case_ids)
     child_absence = _approved_child_absence_by_case(db, case_ids)
     leave_days = _leave_days_by_case(db, case_id_set)
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
 
     rows: list[dict[str, Any]] = []
     for case in cases:
@@ -171,6 +174,10 @@ def build_case_records_rows(
         assign = assign_by_case.get(case.id)
         cm_id = case.case_manager_user_id
         created = case.created_at.date().isoformat() if case.created_at else ""
+        parent_info = parents.get(case.child_id) if case.child_id else None
+        people = case_people_export_fields(
+            case, parent_info=parent_info, include_therapist=False
+        )
 
         rows.append(
             {
@@ -178,6 +185,7 @@ def build_case_records_rows(
                 "zoho_id": case.zoho_id or "",
                 "external_client_id": (child.external_client_id if child else "") or "",
                 "client_name": child.full_name if child else "",
+                "parent_name": people["Parent Name"],
                 "therapist_external_id": (assign.external_employee_id if assign else "") or "",
                 "therapist_name": assign.full_name if assign else "",
                 "case_manager_name": cm_names.get(cm_id, "") if cm_id else "",

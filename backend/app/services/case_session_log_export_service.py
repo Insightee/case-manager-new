@@ -19,6 +19,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.user import User
 from app.services.export_document_service import export_meta, xlsx_footer_rows, xlsx_preamble_rows
+from app.services.reports_export_helpers import parent_by_child, case_people_export_fields
 
 Audience = Literal["staff", "parent"]
 
@@ -437,6 +438,7 @@ def collect_parent_export_rows(
 
 def build_case_session_logs_xlsx(
     *,
+    db: Session,
     case: Case,
     rows: list[ExportRow],
     user: User,
@@ -448,6 +450,10 @@ def build_case_session_logs_xlsx(
 
     meta = export_meta(user)
     child_name = case.child.full_name if getattr(case, "child", None) else ""
+    parent_info = parent_by_child(db, {case.child_id}).get(case.child_id) if case.child_id else None
+    parent_name = case_people_export_fields(
+        case, parent_info=parent_info, include_therapist=False
+    )["Parent Name"]
     case_code = case.case_code or f"case_{case.id}"
 
     wb = openpyxl.Workbook()
@@ -460,6 +466,7 @@ def build_case_session_logs_xlsx(
         "case_id": str(case.id),
         "case_code": case_code,
         "child_name": child_name or "—",
+        "parent_name": parent_name or "—",
         "filters": filter_summary,
         "include_content": "Yes" if include_content else "No",
     }
@@ -468,6 +475,7 @@ def build_case_session_logs_xlsx(
     ws.append([f"Case ID: {case.id}"])
     ws.append([f"Case code: {case_code}"])
     ws.append([f"Child: {child_name or '—'}"])
+    ws.append([f"Parent: {parent_name or '—'}"])
     ws.append([f"Filters: {filter_summary}"])
     ws.append([f"Include log content: {'Yes' if include_content else 'No'}"])
     ws.append([])
@@ -531,6 +539,7 @@ def export_staff_case_session_logs_xlsx(
         attendance_filter=None,
     )
     content = build_case_session_logs_xlsx(
+        db=db,
         case=case,
         rows=rows,
         user=user,
@@ -571,6 +580,7 @@ def export_parent_case_session_logs_xlsx(
         attendance_filter=attendance_filter,
     )
     content = build_case_session_logs_xlsx(
+        db=db,
         case=case,
         rows=rows,
         user=user,

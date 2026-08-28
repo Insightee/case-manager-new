@@ -28,6 +28,7 @@ from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
+from app.core.billing_validation import resolve_therapist_pay
 from app.services.admin_iep_service import _derive_iep_status
 from app.services.admin_scope_service import apply_case_scope, user_sees_global_cases
 from app.services.billing_composer_service import normalize_billing_month
@@ -463,11 +464,8 @@ def build_case_rows(
             case.status == CaseStatus.ACTIVE and case.id not in submitted_monthly_case_ids
         )
         inv = invoices_by_case.get(case.id)
-        pay_inr = ""
-        if case.compensation_mode and case.compensation_mode.value == "FIXED_LUMP":
-            pay_inr = case.therapist_fixed_pay_inr
-        elif case.pay_share_amount_inr is not None:
-            pay_inr = case.pay_share_amount_inr
+        pay = resolve_therapist_pay(case)
+        pay_inr = pay if pay else ""
 
         last_meeting = last_meeting_by_case.get(case.id)
         rows.append(

@@ -288,7 +288,10 @@ def assignment_segments_for_month(
 
 
 def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
-    """Flatten locked assignment billing snapshot for HR export rows."""
+    """Flatten locked assignment billing snapshot for HR export rows.
+
+    Always presents lumpsum INR pay — never legacy PERCENTAGE / \"share\" wording.
+    """
     if not snapshot:
         return {
             "Previous Billing Type": "",
@@ -310,13 +313,17 @@ def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
         amount = snapshot.get("package_amount_inr")
         client_rate = f"₹{amount} / {count} sessions" if amount is not None and count else ""
 
-    comp_mode = snapshot.get("compensation_mode") or ""
-    if comp_mode == "FIXED_LUMP":
-        pay = snapshot.get("therapist_fixed_pay_inr")
-        therapist_pay = f"₹{pay} fixed" if pay is not None else ""
-    else:
+    # Prefer fixed lump; fall back to legacy share column (already INR). Never label as %.
+    pay = snapshot.get("therapist_fixed_pay_inr")
+    if pay is None or float(pay or 0) <= 0:
         pay = snapshot.get("pay_share_amount_inr")
-        therapist_pay = f"₹{pay} share" if pay is not None else ""
+    therapist_pay = f"₹{pay} lumpsum" if pay is not None and float(pay or 0) > 0 else ""
+
+    raw_mode = (snapshot.get("compensation_mode") or "").strip()
+    if raw_mode in ("", "PERCENTAGE"):
+        comp_mode_label = "FIXED LUMP" if therapist_pay else ""
+    else:
+        comp_mode_label = raw_mode.replace("_", " ")
 
     package_amount = ""
     if billing_type == "PACKAGE" and snapshot.get("package_amount_inr") is not None:
@@ -326,7 +333,7 @@ def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
         "Previous Billing Type": billing_type.replace("_", " "),
         "Previous Client Rate": client_rate,
         "Previous Package Amount": package_amount,
-        "Previous Compensation Mode": comp_mode.replace("_", " "),
+        "Previous Compensation Mode": comp_mode_label,
         "Previous Therapist Pay": therapist_pay,
     }
 

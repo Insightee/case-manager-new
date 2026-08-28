@@ -27,6 +27,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceType
 from app.models.user import User
+from app.core.billing_validation import resolve_therapist_pay
 from app.services.billing_ledger_service import (
     EffectiveRatePeriod,
     _MONTHLY_PRORATION_DAYS,
@@ -538,10 +539,7 @@ def therapist_package_payout_amount(
     if not case.package_session_count or int(case.package_session_count) <= 0:
         raise ValueError(BillingCalcExceptionCode.MISSING_PACKAGE_COUNT.value)
     pkg_count = int(case.package_session_count)
-    if case.compensation_mode == CompensationMode.FIXED_LUMP:
-        base = float(case.therapist_fixed_pay_inr or 0)
-    else:
-        base = float(case.pay_share_amount_inr or 0)
+    base = resolve_therapist_pay(case)
     return round((base / pkg_count) * payable_units, 2)
 
 

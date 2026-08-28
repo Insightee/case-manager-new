@@ -5,7 +5,10 @@ import re
 from html.parser import HTMLParser
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
 from app.models.report import MonthlyReport, ObservationReport
+from app.services.reports_export_helpers import parent_by_child, case_people_export_fields
 
 
 class _HtmlTextExtractor(HTMLParser):
@@ -55,6 +58,20 @@ def _html_to_blocks(html: Optional[str]) -> list[tuple[str, str]]:
     return parser.blocks or []
 
 
+def _parent_display_name(
+    db: Session | None = None,
+    *,
+    child_id: int | None = None,
+    parent_name: Optional[str] = None,
+) -> str:
+    if parent_name:
+        return parent_name.strip()
+    if not db or not child_id:
+        return ""
+    info = parent_by_child(db, {child_id}).get(child_id)
+    return case_people_export_fields(None, parent_info=info, include_therapist=False)["Parent Name"]
+
+
 def build_report_pdf_bytes(
     *,
     title: str,
@@ -66,6 +83,7 @@ def build_report_pdf_bytes(
     plan_next_month: Optional[str],
     generated_by: Optional[str] = None,
     generated_at: Optional[str] = None,
+    parent_name: Optional[str] = None,
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -107,11 +125,15 @@ def build_report_pdf_bytes(
         spaceAfter=8,
     )
 
+    meta_parts = [child_name, case_code, month_label]
+    if parent_name:
+        meta_parts = [child_name, parent_name, case_code, month_label]
+    if category:
+        meta_parts.append(category.replace("_", " ").title())
     story = [
         Paragraph(title, title_style),
         Paragraph(
-            f"{child_name} · {case_code} · {month_label}"
-            + (f" · {category.replace('_', ' ').title()}" if category else ""),
+            " · ".join(part for part in meta_parts if part),
             meta_style,
         ),
     ]
@@ -159,7 +181,11 @@ def monthly_report_pdf(
     *,
     generated_by: Optional[str] = None,
     generated_at: Optional[str] = None,
+    parent_name: Optional[str] = None,
+    db: Session | None = None,
+    child_id: int | None = None,
 ) -> bytes:
+    resolved_parent = _parent_display_name(db, child_id=child_id, parent_name=parent_name)
     return build_report_pdf_bytes(
         title=f"Monthly report — {report.month}",
         child_name=child_name,
@@ -170,6 +196,7 @@ def monthly_report_pdf(
         plan_next_month=report.plan_next_month,
         generated_by=generated_by,
         generated_at=generated_at,
+        parent_name=resolved_parent or None,
     )
 
 
@@ -180,7 +207,11 @@ def observation_report_pdf(
     *,
     generated_by: Optional[str] = None,
     generated_at: Optional[str] = None,
+    parent_name: Optional[str] = None,
+    db: Session | None = None,
+    child_id: int | None = None,
 ) -> bytes:
+    resolved_parent = _parent_display_name(db, child_id=child_id, parent_name=parent_name)
     return build_report_pdf_bytes(
         title=report.title,
         child_name=child_name,
@@ -191,4 +222,5 @@ def observation_report_pdf(
         plan_next_month=report.plan_next_month,
         generated_by=generated_by,
         generated_at=generated_at,
+        parent_name=resolved_parent or None,
     )

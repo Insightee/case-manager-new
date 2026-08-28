@@ -115,6 +115,7 @@ from app.services import auth_service, case_service, log_service, therapist_prof
 from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
 from app.services import therapist_profile_export_service as therapist_profile_export_svc
 from app.services.admin_scope_service import apply_case_scope, case_row_scope_clause
+from app.services.reports_export_helpers import parent_by_child, case_people_export_fields
 from app.services import therapist_review_service as review_svc
 from app.core.permissions import RoleName
 
@@ -1238,12 +1239,20 @@ def export_sessions_xlsx(
     ):
         ws.append(row)
     headers = ["Session ID", "Date", "Start", "End", "Actual Start", "Actual End", "Duration (min)",
-               "Case Code", "Child", "Therapist ID", "Product Module", "Mode", "Status"]
+               "Case Code", "Child", "Parent", "Therapist ID", "Product Module", "Mode", "Status"]
     ws.append(headers)
+
+    child_ids = {s.case.child_id for s in sessions_rows if s.case and s.case.child_id}
+    parents = parent_by_child(db, child_ids)
 
     for s in sessions_rows:
         case_obj = s.case
         child_name = (case_obj.child.full_name if case_obj and case_obj.child else "")
+        parent_name = case_people_export_fields(
+            case_obj,
+            parent_info=parents.get(case_obj.child_id) if case_obj and case_obj.child_id else None,
+            include_therapist=False,
+        )["Parent Name"]
         duration_mins = ""
         if s.actual_start_at and s.actual_end_at:
             duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
@@ -1262,6 +1271,7 @@ def export_sessions_xlsx(
             duration_mins,
             case_obj.case_code if case_obj else "",
             child_name,
+            parent_name,
             s.therapist_user_id,
             case_obj.product_module if case_obj else "",
             s.mode.value if hasattr(s.mode, "value") else str(s.mode),
@@ -1338,10 +1348,18 @@ def export_sessions_pdf(
     )
     elements.append(Spacer(1, 12))
 
-    table_data = [["Date", "Case", "Child", "Therapist", "Module", "Mode", "Status", "Duration"]]
+    child_ids = {s.case.child_id for s in sessions_rows if s.case and s.case.child_id}
+    parents = parent_by_child(db, child_ids)
+
+    table_data = [["Date", "Case", "Child", "Parent", "Therapist", "Module", "Mode", "Status", "Duration"]]
     for s in sessions_rows:
         c = s.case
         child_name = (c.child.full_name if c and c.child else "")
+        parent_name = case_people_export_fields(
+            c,
+            parent_info=parents.get(c.child_id) if c and c.child_id else None,
+            include_therapist=False,
+        )["Parent Name"]
         duration = ""
         if s.actual_start_at and s.actual_end_at:
             duration = f"{int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)} min"
@@ -1352,6 +1370,7 @@ def export_sessions_pdf(
             s.scheduled_date.isoformat(),
             c.case_code if c else "",
             child_name,
+            parent_name,
             str(s.therapist_user_id),
             c.product_module if c else "",
             s.mode.value if hasattr(s.mode, "value") else str(s.mode),

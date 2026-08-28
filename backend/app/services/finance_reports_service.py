@@ -225,13 +225,15 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         for cid in case_ids:
             rec = billing_ledger_service.reconcile_month(db, case_id=cid, billing_month=ym)
             out.append(
-                {
-                    "caseId": rec["caseId"],
-                    "clientTotalInr": rec["ledgerBillableTotalInr"],
-                    "therapistTotalInr": rec["therapistPayoutTotalInr"],
-                    "marginInr": rec["marginInr"],
-                    "sessionCount": rec["sessionCount"],
-                }
+                billing_period_snapshot_service.enrich_margin_row(
+                    {
+                        "caseId": rec["caseId"],
+                        "clientTotalInr": rec["ledgerBillableTotalInr"],
+                        "therapistTotalInr": rec["therapistPayoutTotalInr"],
+                        "marginInr": rec["marginInr"],
+                        "sessionCount": rec["sessionCount"],
+                    }
+                )
             )
         return out
 

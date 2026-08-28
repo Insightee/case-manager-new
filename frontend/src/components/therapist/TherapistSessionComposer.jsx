@@ -124,6 +124,17 @@ export function TherapistSessionComposer({
   const selectedCaseId = caseId ? Number(caseId) : null
 
   useEffect(() => {
+    if (!selectedCaseId) return
+    const selected = caseOptions.find((c) => c.case_id === selectedCaseId)
+    const mod = (selected?.product_module || '').toLowerCase()
+    if (mod.includes('shadow') || mod === 'b2b' || mod.includes('b2b')) {
+      setWalkInMode('SCHOOL')
+    } else if (mod) {
+      setWalkInMode('HOME')
+    }
+  }, [selectedCaseId, caseOptions])
+
+  useEffect(() => {
     if (selectedCaseIdProp !== undefined || lockCaseId) return
     onSelectedCaseChange?.(selectedCaseId)
   }, [selectedCaseId, selectedCaseIdProp, lockCaseId, onSelectedCaseChange])
