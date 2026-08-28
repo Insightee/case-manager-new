@@ -879,6 +879,19 @@ register_head(
 )
 
 
+def _seed_k2pct2lumpfix(db: Session) -> dict[str, Any]:
+    """Data-only head — force leftover PERCENTAGE → FIXED_LUMP (no schema)."""
+    return {"data_only": True}
+
+
+register_head(
+    "k2pct2lumpfix",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_k2pct2lumpfix,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

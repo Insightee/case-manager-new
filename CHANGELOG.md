@@ -3,7 +3,7 @@
 ### Added
 - Admin Service profiles: soft-delete therapist listings (`DELETED` + restore), **Needs listing** / **Deleted** / **No logs 15d** filters and KPIs, audit backfill for historically hard-deleted profiles. Alembic `a8b9c0d1e2f3` → `j0merge2therapist`.
 - Cloud Agent dev environment config (`.cursor/environment.json` + `scripts/cloud-agent-install.sh`): reproducible SQLite-based local stack (no Docker/Postgres/Redis needed) that installs backend + frontend deps, seeds the demo database on first run, and starts the FastAPI API (`:8000`) and Vite dev server (`:5173`).
-- Shadow cases default to school venue (`SessionMode.SCHOOL`); existing shadow sessions with `HOME` are backfilled. Alembic `k1shadow2lumpsum3`.
+- Shadow cases default to school venue (`SessionMode.SCHOOL`); existing shadow sessions with `HOME` are backfilled. Alembic `k1shadow2lumpsum3` → `k2pct2lumpfix` (leftover `PERCENTAGE` mode cleanup when fixed pay already set).
 - Parent Name column on remaining operational downloads (session logs XLSX/PDF, case session-log export, session-log PDF, monthly/observation PDF meta, payout preview, case records CSV, therapist invoice CSV).
 - HR report exports include **Child Name**, **Parent Name**, **Therapist Name**, and **Therapist ID** (with Case ID) on all case-linked reports so rows are readable without looking up IDs alone. Downloads are date-stamped (`report-key-YYYY-MM-DD`) and XLSX/PDF titles include the generation date.
 - Bulk attendance and monthly session summary split mid-month therapist replacements into separate case×assignment rows with **Assignment Start** / **Assignment End** (session metrics scoped to each window).
