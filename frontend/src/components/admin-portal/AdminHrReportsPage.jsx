@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { AdminPageHeader, AdminPanel, ServiceFilterSelect } from './ui/index.js'
+import { ExpandableTextCell } from './ui/ExpandableTextCell.jsx'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
+import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
 import './admin-hr-reports.css'
 
 function currentMonth() {
@@ -33,6 +35,15 @@ function downloadDateStamp() {
   } catch {
     return todayIso()
   }
+}
+
+function formatPreviewCell(column, value) {
+  if (value == null || value === '') return ''
+  const str = String(value)
+  if (/date|raised|resolution|created|reported|incident date|last /i.test(column)) {
+    return formatTimestampDateIN(str) || formatApiDateIN(str) || str
+  }
+  return str
 }
 
 function buildQuery(params) {
@@ -293,8 +304,8 @@ export function AdminHrReportsPage() {
         </div>
 
         {previewRows.length ? (
-          <div className="admin-table-wrap" style={{ marginTop: 16 }}>
-            <table className="admin-table">
+          <div className="admin-table-wrap admin-hr-reports__preview-wrap" style={{ marginTop: 16 }}>
+            <table className="admin-table admin-hr-reports__preview-table">
               <thead>
                 <tr>
                   {previewColumns.map((k) => (
@@ -306,7 +317,9 @@ export function AdminHrReportsPage() {
                 {previewRows.slice(0, 50).map((row, idx) => (
                   <tr key={idx}>
                     {previewColumns.map((k) => (
-                      <td key={k}>{String(row[k] ?? '')}</td>
+                      <td key={k} className={k === 'Description' ? 'admin-hr-reports__td-desc' : undefined}>
+                        <ExpandableTextCell column={k} value={formatPreviewCell(k, row[k])} />
+                      </td>
                     ))}
                   </tr>
                 ))}

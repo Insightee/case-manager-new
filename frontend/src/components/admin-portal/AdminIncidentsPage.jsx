@@ -5,6 +5,13 @@ import { unwrapList } from '../../lib/listApi.js'
 import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import {
+  CANONICAL_CLOSED,
+  CANONICAL_ESCALATED,
+  CANONICAL_OPEN,
+  canonicalIncidentStatus,
+  canonicalLabel,
+} from '../../lib/supportStatus.js'
+import {
   AdminCollapsibleFilters,
   AdminPageHeader,
   AdminPanel,
@@ -16,7 +23,12 @@ import {
 } from './ui/index.js'
 import '../support/support-tickets.css'
 
-const STATUS_FILTERS = ['ALL', 'REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
+const STATUS_FILTERS = [
+  { value: 'ALL', label: 'All statuses' },
+  { value: CANONICAL_OPEN, label: 'Open' },
+  { value: CANONICAL_ESCALATED, label: 'Escalated' },
+  { value: CANONICAL_CLOSED, label: 'Closed' },
+]
 
 export function AdminIncidentsPage({ embedded = false, canManageIncidents = true }) {
   const [searchParams] = useSearchParams()
@@ -62,7 +74,7 @@ export function AdminIncidentsPage({ embedded = false, canManageIncidents = true
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return incidents.filter((i) => {
-      if (statusFilter !== 'ALL' && i.status !== statusFilter) return false
+      if (statusFilter !== 'ALL' && canonicalIncidentStatus(i.status) !== statusFilter) return false
       if (!q) return true
       return i.title?.toLowerCase().includes(q) || String(i.id).includes(q) || i.reporter_name?.toLowerCase().includes(q)
     })
@@ -141,8 +153,8 @@ export function AdminIncidentsPage({ embedded = false, canManageIncidents = true
         aria-label="Incident status"
       >
         {STATUS_FILTERS.map((s) => (
-          <option key={s} value={s}>
-            {s === 'ALL' ? 'All statuses' : s}
+          <option key={s.value} value={s.value}>
+            {s.label}
           </option>
         ))}
       </select>
@@ -208,7 +220,10 @@ export function AdminIncidentsPage({ embedded = false, canManageIncidents = true
             quickSearch={
               <AdminSearchInput value={search} onChange={setSearch} placeholder="Search title, reporter…" />
             }
-            activeChips={[statusFilter !== 'ALL' ? statusFilter : null, moduleFilter || null].filter(Boolean)}
+            activeChips={[
+              statusFilter !== 'ALL' ? canonicalLabel(statusFilter) : null,
+              moduleFilter || null,
+            ].filter(Boolean)}
             activeCount={[statusFilter !== 'ALL', moduleFilter].filter(Boolean).length}
           >
             <AdminToolbar className="admin-toolbar--mobile-compact admin-collapsible-filters__grid">

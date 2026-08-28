@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.incident_catalog import category_label, subcategory_label
 from app.core.permissions import RoleName, case_scope_check, user_has_permission
+from app.core.support_status import canonical_incident_status, canonical_label, canonical_ticket_status
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
@@ -739,7 +740,12 @@ def support_tickets_parent_rows(
                 "Assigned To": user_display_name(assignee),
                 "Resolution Date": ticket.resolved_at.date().isoformat() if ticket.resolved_at else "",
                 "Resolution Time": _resolution_time_label(ticket.created_at, ticket.resolved_at),
-                "Status": enum_value(ticket.status),
+                "Status": canonical_label(
+                    canonical_ticket_status(
+                        ticket.status,
+                        escalated_to_department=ticket.escalated_to_department,
+                    )
+                ),
             }
         )
         if len(rows) >= MAX_EXPORT_ROWS:
@@ -812,7 +818,7 @@ def incident_reports_rows(
                 if primary_category and subcategory
                 else subcategory,
                 "Priority": enum_value(incident.priority),
-                "Status": status,
+                "Status": canonical_label(canonical_incident_status(status)),
                 "Reported By": user_display_name(reporter),
                 "Reporter Role": _reporter_role_label(reporter),
                 "Assigned To": user_display_name(assignee),
