@@ -7,11 +7,16 @@ from sqlalchemy import select
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
+from app.core.audit import log_audit
 from app.core.permissions import RoleName, user_has_permission
+from app.models.audit_event import AuditEvent
 from app.models.case import Case, CaseStatus
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.user import User
-
+from app.services.parent_service import (
+    child_ids_for_parent,
+    primary_parent_user_id_for_child,
+)
 # Closed end-state uses CLOSED (same side effects as legacy DEACTIVATED).
 ADMIN_ALLOWED_TRANSITIONS: dict[str, list[str]] = {
     CaseStatus.PENDING_ALLOTMENT.value: [CaseStatus.ACTIVE.value],
@@ -36,6 +41,12 @@ ADMIN_ALLOWED_TRANSITIONS: dict[str, list[str]] = {
 _TERMINAL_CLOSE_STATUSES = frozenset(
     {CaseStatus.CLOSED.value, CaseStatus.DEACTIVATED.value}
 )
+_REOPEN_TARGET_STATUSES = frozenset(
+    {CaseStatus.PENDING_ALLOTMENT.value, CaseStatus.ACTIVE.value}
+)
+_PARENT_PORTAL_AUTO_SUSPEND = "parent_portal_auto_suspend"
+_PARENT_PORTAL_AUTO_REACTIVATE = "parent_portal_auto_reactivate"
+_MANUAL_USER_DEACTIVATE = "deactivate"
 _REOPEN_ROLES = frozenset(
     {
         RoleName.SUPER_ADMIN.value,
@@ -76,6 +87,97 @@ def _is_reopen_transition(current_status: str, new_status: str) -> bool:
 
 def _is_close_transition(new_status: str) -> bool:
     return new_status == CaseStatus.CLOSED.value
+
+
+def _parent_user_for_case(db: Session, case: Case) -> User | None:
+    parent_user_id = primary_parent_user_id_for_child(db, case.child_id)
+    if not parent_user_id:
+        return None
+    return db.get(User, parent_user_id)
+
+
+def _parent_has_other_non_terminal_cases(
+    db: Session, parent_user_id: int, *, exclude_case_id: int
+) -> bool:
+    child_ids = child_ids_for_parent(db, parent_user_id)
+    if not child_ids:
+        return False
+    other = db.scalars(
+        select(Case.id)
+        .where(
+            Case.child_id.in_(child_ids),
+            Case.id != exclude_case_id,
+            Case.status.notin_(
+                [CaseStatus.CLOSED, CaseStatus.DEACTIVATED],
+            ),
+        )
+        .limit(1)
+    ).first()
+    return other is not None
+
+
+def _latest_parent_suspend_audit_action(db: Session, parent_user_id: int) -> str | None:
+    """Most recent auto-suspend or manual deactivate audit for this parent user."""
+    event = db.scalars(
+        select(AuditEvent)
+        .where(
+            AuditEvent.entity_type == "user",
+            AuditEvent.entity_id == str(parent_user_id),
+            AuditEvent.action.in_(
+                (_PARENT_PORTAL_AUTO_SUSPEND, _MANUAL_USER_DEACTIVATE),
+            ),
+        )
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+    ).first()
+    return event.action if event else None
+
+
+def _maybe_auto_suspend_parent_portal(db: Session, case: Case, actor: User) -> None:
+    """Silent: disable parent login when all their cases are CLOSED/DEACTIVATED."""
+    parent = _parent_user_for_case(db, case)
+    if not parent or not parent.is_active:
+        return
+    if _parent_has_other_non_terminal_cases(db, parent.id, exclude_case_id=case.id):
+        return
+    parent.is_active = False
+    log_audit(
+        db,
+        actor_user_id=actor.id,
+        action=_PARENT_PORTAL_AUTO_SUSPEND,
+        entity_type="user",
+        entity_id=parent.id,
+        case_id=case.id,
+        new_value={
+            "is_active": False,
+            "cause": "all_cases_closed_or_deactivated",
+            "case_id": case.id,
+        },
+    )
+
+
+def _maybe_auto_reactivate_parent_portal(db: Session, case: Case, actor: User) -> None:
+    """Silent: restore parent login only if last suspend was auto (not manual)."""
+    parent = _parent_user_for_case(db, case)
+    if not parent or parent.is_active:
+        return
+    last_suspend = _latest_parent_suspend_audit_action(db, parent.id)
+    if last_suspend != _PARENT_PORTAL_AUTO_SUSPEND:
+        return
+    parent.is_active = True
+    log_audit(
+        db,
+        actor_user_id=actor.id,
+        action=_PARENT_PORTAL_AUTO_REACTIVATE,
+        entity_type="user",
+        entity_id=parent.id,
+        case_id=case.id,
+        new_value={
+            "is_active": True,
+            "cause": "case_reopened_or_activated",
+            "case_id": case.id,
+        },
+    )
 
 
 def change_client_status(
@@ -149,6 +251,14 @@ def change_client_status(
     case.status_effective_date = effective_date
     case.status_reason = reason.strip()
     case.status_changed_by_user_id = user.id
+
+    db.flush()
+
+    # Parent portal login: silent auto-suspend / auto-reactivate (audit only, no email).
+    if new_status_upper in _TERMINAL_CLOSE_STATUSES:
+        _maybe_auto_suspend_parent_portal(db, case, user)
+    elif new_status_upper in _REOPEN_TARGET_STATUSES:
+        _maybe_auto_reactivate_parent_portal(db, case, user)
 
     db.flush()
     return audit

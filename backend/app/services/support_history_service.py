@@ -9,9 +9,14 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.support_status import (
+    canonical_incident_status,
+    canonical_ticket_status,
+    incident_status_predicate,
+    ticket_status_predicate,
+)
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
-from app.models.child import Child
 from app.models.incident import Incident, IncidentStatus, normalize_incident_status
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.user import User
@@ -92,10 +97,15 @@ def _ticket_rows(
     elif scope == "admin_desk":
         stmt = stmt.where(ticket_esc.admin_desk_ticket_clause(user.id))
     if status:
-        try:
-            stmt = stmt.where(SupportTicket.status == TicketStatus(status))
-        except ValueError:
-            pass
+        pred = ticket_status_predicate(status)
+        if pred is not None:
+            stmt = stmt.where(pred)
+        else:
+            # Legacy exact enum (e.g. OPEN) when not a canonical key
+            try:
+                stmt = stmt.where(SupportTicket.status == TicketStatus(status.upper()))
+            except ValueError:
+                pass
     if product_module:
         stmt = stmt.where(SupportTicket.product_module == product_module)
     if date_from:
@@ -126,6 +136,9 @@ def _ticket_rows(
         closed_at = t.resolved_at.isoformat() if t.resolved_at else None
         if t.status in (TicketStatus.CLOSED, TicketStatus.RESOLVED) and not closed_at:
             closed_at = t.updated_at.isoformat() if t.updated_at else None
+        canon = canonical_ticket_status(
+            t.status, escalated_to_department=t.escalated_to_department
+        )
         rows.append(
             {
                 "record_type": "ticket",
@@ -133,7 +146,10 @@ def _ticket_rows(
                 "case_id": t.case_id,
                 "code": f"TCK-{t.id}",
                 "subject": t.subject,
-                "status": t.status.value,
+                "status": canon,
+                "raw_status": t.status.value,
+                "canonical_status": canon,
+                "escalated_to_department": t.escalated_to_department,
                 "priority": None,
                 "client_name": case_service.case_child_display_name(case) if case else None,
                 "therapist_name": t_name,
@@ -165,10 +181,14 @@ def _incident_rows(
     if is_team_scoped_support_user(user):
         stmt = stmt.where(team_support_incident_clause(user))
     if status:
-        try:
-            stmt = stmt.where(Incident.status == normalize_incident_status(status))
-        except ValueError:
-            pass
+        pred = incident_status_predicate(status)
+        if pred is not None:
+            stmt = stmt.where(pred)
+        else:
+            try:
+                stmt = stmt.where(Incident.status == normalize_incident_status(status))
+            except ValueError:
+                pass
     if date_from:
         stmt = stmt.where(Incident.created_at >= date_from)
     if date_to:
@@ -196,6 +216,7 @@ def _incident_rows(
         if therapist_user_id and t_uid != therapist_user_id:
             continue
         st = normalize_incident_status(inc.status).value
+        canon = canonical_incident_status(st)
         closed_at = None
         if st == IncidentStatus.CLOSED.value:
             closed_at = inc.escalated_at.isoformat() if inc.escalated_at else None
@@ -208,7 +229,9 @@ def _incident_rows(
                 "case_id": inc.case_id,
                 "code": inc.ticket_code or f"INC-{inc.id}",
                 "subject": inc.title,
-                "status": st,
+                "status": canon,
+                "raw_status": st,
+                "canonical_status": canon,
                 "priority": inc.priority,
                 "client_name": case_service.case_child_display_name(case) if case else None,
                 "therapist_name": t_name,

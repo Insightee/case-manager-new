@@ -71,6 +71,20 @@ def hr_ops_snapshot(
     return build_hr_ops_snapshot(db, user)
 
 
+@router.get("/caseload")
+def hr_caseload(
+    user: User = Depends(require_permission("case.read.all")),
+    db: Session = Depends(get_db),
+):
+    """Therapist caseload lens for HR: cases, pay (if permitted), slot fill, reassignment flags."""
+    from app.services.hr_caseload_service import build_hr_caseload
+
+    include_pay = user_has_permission(user, "case.billing.update") or user_has_permission(
+        user, "admin.override"
+    )
+    return build_hr_caseload(db, include_pay=include_pay)
+
+
 @router.get("/recipients")
 def list_memo_recipients(
     search: Optional[str] = None,

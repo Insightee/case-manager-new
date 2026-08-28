@@ -11,7 +11,12 @@ from app.core.permissions import require_any_permission
 from app.core.reports_catalog import REPORT_KEYS, catalog_payload, report_definition
 from app.models.user import User
 from app.services import hr_reports_service, reports_export_service
-from app.services.reports_export_helpers import default_export_month, month_long_label, normalize_month
+from app.services.reports_export_helpers import (
+    default_export_month,
+    month_long_label,
+    normalize_month,
+    parse_int_list,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin-hr"])
 
@@ -44,7 +49,10 @@ def hr_report(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     product_module: Optional[str] = None,
-    case_manager_user_id: Optional[int] = None,
+    case_manager_user_id: Optional[str] = Query(
+        None,
+        description="Case manager user id(s). Single id or comma-separated list, e.g. 1,2,3.",
+    ),
     therapist_user_id: Optional[int] = None,
     case_id: Optional[int] = None,
     format: str = Query("json", pattern="^(json|csv|xlsx|pdf)$"),
@@ -60,6 +68,14 @@ def hr_report(
         raise HTTPException(status_code=400, detail=f"Format '{format}' is not supported for this report")
 
     try:
+        cm_ids = parse_int_list(case_manager_user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Looks like we still need a valid case_manager_user_id (integer or comma-separated ids).",
+        ) from exc
+
+    try:
         payload = hr_reports_service.run_hr_report(
             db,
             report_key,
@@ -68,7 +84,7 @@ def hr_report(
             date_from=date_from,
             date_to=date_to,
             product_module=product_module,
-            case_manager_user_id=case_manager_user_id,
+            case_manager_user_id=cm_ids,
             therapist_user_id=therapist_user_id,
             case_id=case_id,
             user=user,

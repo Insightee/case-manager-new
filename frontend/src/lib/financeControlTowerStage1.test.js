@@ -85,13 +85,16 @@ describe('Finance Control Tower Stage 1 static contracts', () => {
     assert.match(overviewSrc, /Unassigned/)
   })
 
-  it('feature flag VITE_ENABLE_FINANCE_DASHBOARD_V1 defaults via readClientModuleFlag', () => {
+  it('feature flag VITE_ENABLE_FINANCE_DASHBOARD_V1 defaults on in non-prod with prod opt-in', () => {
     assert.match(flagsSrc, /VITE_ENABLE_FINANCE_DASHBOARD_V1/)
+    assert.match(flagsSrc, /VITE_FINANCE_DASHBOARD_ALLOW_PROD/)
     assert.match(flagsSrc, /isFinanceDashboardV1Enabled/)
-    assert.match(flagsSrc, /readClientModuleFlag\('VITE_ENABLE_FINANCE_DASHBOARD_V1'\)/)
+    assert.match(flagsSrc, /readFinanceDashboardV1Flag/)
+    assert.match(flagsSrc, /rolloutDefault:\s*true/)
     assert.match(overviewSrc, /isFinanceDashboardV1Enabled/)
     assert.match(snapshotSrc, /isFinanceDashboardV1Enabled/)
-    assert.match(overviewSrc, /Finance Control Tower is not enabled/)
+    assert.match(overviewSrc, /Finance Control Tower opens when this environment is ready/)
+    assert.match(snapshotSrc, /Finance snapshot is available in staging and preview/)
   })
 
   it('Forest Light scoped styles exist for control tower', () => {

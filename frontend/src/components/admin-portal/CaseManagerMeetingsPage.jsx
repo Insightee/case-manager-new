@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
@@ -19,7 +19,14 @@ import {
 import { formatAttendeeList, meetingDisplayTitle, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
-import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminPageHeader,
+  AdminSearchInput,
+  FilterSelect,
+  StaffCategoryPeopleFilter,
+  STAFF_CATEGORY_TO_PARTICIPANT_ROLE,
+} from './ui/index.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import './admin-reports.css'
 import './admin-scheduling-hub.css'
@@ -279,8 +286,8 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [pageView, setPageView] = useState(isParentPortal ? 'list' : 'calendar')
   const [meetings, setMeetings] = useState([])
   const [cases, setCases] = useState([])
-  const [cmUsers, setCmUsers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [showBook, setShowBook] = useState(false)
   const [bookPrefill, setBookPrefill] = useState({ date: null, time: null })
   const [notesTarget, setNotesTarget] = useState(null)
@@ -291,7 +298,8 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [typeFilter, setTypeFilter] = useState(searchParams.get('meeting_type') || '')
   const [caseFilter, setCaseFilter] = useState(searchParams.get('case_id') || '')
-  const [cmFilter, setCmFilter] = useState(searchParams.get('cm_id') || '')
+  const [staffCategory, setStaffCategory] = useState('')
+  const [peopleIds, setPeopleIds] = useState([])
   const [monthFilter, setMonthFilter] = useState(searchParams.get('month') || '')
   const [yearFilter, setYearFilter] = useState(searchParams.get('year') || String(new Date().getFullYear()))
   const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '')
@@ -300,32 +308,44 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
   const yearFilterOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
-    return Array.from({ length: 5 }, (_, idx) => {
-      const year = String(currentYear - 2 + idx)
-      return { value: year, label: year }
-    })
+    return [
+      { value: '', label: 'All years' },
+      ...Array.from({ length: 5 }, (_, idx) => {
+        const year = String(currentYear - 2 + idx)
+        return { value: year, label: year }
+      }),
+    ]
   }, [])
 
   const queueTab = searchParams.get('queue') === 'admin'
+  const listCountLabel = yearFilter ? `In current list (${yearFilter})` : 'In current list'
 
   useEffect(() => {
     const id = window.setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
   }, [searchInput])
 
-  const buildQuery = useCallback(() => {
+  const buildFilterParams = useCallback(() => {
     const p = new URLSearchParams()
     if (statusFilter) p.set('status', statusFilter)
     if (typeFilter && !queueTab) p.set('meeting_type', typeFilter)
     if (caseFilter) p.set('case_id', caseFilter)
-    if (cmFilter && isAdmin) p.set('case_manager_user_id', cmFilter)
+    if (isAdmin && peopleIds.length > 0) {
+      const participantRole = STAFF_CATEGORY_TO_PARTICIPANT_ROLE[staffCategory]
+      if (participantRole) p.set('participant_role', participantRole)
+      p.set('participant_user_ids', peopleIds.map(String).join(','))
+    }
     if (monthFilter) p.set('month', monthFilter)
     if (yearFilter) p.set('year', yearFilter)
     const term = String(search ?? '').trim()
     if (term) p.set('search', term)
-    const qs = p.toString()
+    return p
+  }, [statusFilter, typeFilter, caseFilter, staffCategory, peopleIds, monthFilter, yearFilter, search, queueTab, isAdmin])
+
+  const buildQuery = useCallback(() => {
+    const qs = buildFilterParams().toString()
     return qs ? `?${qs}` : ''
-  }, [statusFilter, typeFilter, caseFilter, cmFilter, monthFilter, yearFilter, search, queueTab, isAdmin])
+  }, [buildFilterParams])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -352,7 +372,13 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
   const loadBookableCases = useCallback(() => {
     const params = new URLSearchParams()
-    if (isAdmin && cmFilter) params.set('case_manager_user_id', cmFilter)
+    if (
+      isAdmin
+      && staffCategory === 'CASE_MANAGER'
+      && peopleIds.length === 1
+    ) {
+      params.set('case_manager_user_id', peopleIds[0])
+    }
     const qs = params.toString() ? `?${params}` : ''
     return apiFetch(`/api/v1/meetings/bookable-cases${qs}`)
       .then((data) => {
@@ -367,25 +393,31 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         )
       })
       .catch(() => setCases([]))
-  }, [isAdmin, cmFilter])
+  }, [isAdmin, staffCategory, peopleIds])
 
   useEffect(() => {
     loadBookableCases()
   }, [loadBookableCases])
 
   useEffect(() => {
-    if (!isAdmin) return
-    apiFetch('/api/v1/admin/users')
-      .then((rows) => {
-        const list = Array.isArray(rows) ? rows : rows?.items || []
-        setCmUsers(list.filter((u) => u.roles?.includes('CASE_MANAGER')))
-      })
-      .catch(() => setCmUsers([]))
-  }, [isAdmin])
-
-  useEffect(() => {
     load()
   }, [load])
+
+  async function handleExport(format) {
+    const params = buildFilterParams()
+    params.set('format', format)
+    const ext = format === 'excel' ? 'xlsx' : 'csv'
+    const stamp = yearFilter || 'all'
+    setExporting(true)
+    setError('')
+    try {
+      await apiDownload(`/api/v1/meetings/export?${params.toString()}`, `meetings_export_${stamp}.${ext}`)
+    } catch (err) {
+      setError(err.message || 'Could not export meetings')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const displayedMeetings = useMemo(() => {
     const active = meetings.filter((m) => m.status !== 'RESCHEDULED')
@@ -558,9 +590,30 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             ) : null}
             <div className="admin-reports__kpi">
               <div className="admin-reports__kpi-value">{kpis.total}</div>
-              <div className="admin-reports__kpi-label">In current list</div>
+              <div className="admin-reports__kpi-label">{listCountLabel}</div>
             </div>
           </div>
+
+          {!isParentPortal ? (
+            <div className="admin-reports__toolbar" style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                disabled={exporting}
+                onClick={() => handleExport('csv')}
+              >
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                disabled={exporting}
+                onClick={() => handleExport('excel')}
+              >
+                {exporting ? 'Exporting…' : 'Export Excel'}
+              </button>
+            </div>
+          ) : null}
 
           {queueTab ? (
             <p className="admin-alert" style={{ marginBottom: 12 }}>
@@ -579,8 +632,19 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
               statusFilter && statusFilter !== 'ALL' ? statusFilter : null,
               typeFilter && typeFilter !== 'ALL' ? typeFilter : null,
               caseFilter ? `Case ${caseFilter}` : null,
+              staffCategory || null,
+              peopleIds.length ? `${peopleIds.length} people` : null,
+              yearFilter || null,
             ].filter(Boolean)}
-            activeCount={[statusFilter, typeFilter, caseFilter, cmFilter, monthFilter].filter((v) => v && v !== 'ALL' && v !== '').length}
+            activeCount={[
+              statusFilter,
+              typeFilter,
+              caseFilter,
+              staffCategory,
+              peopleIds.length ? 'people' : '',
+              monthFilter,
+              yearFilter,
+            ].filter((v) => v && v !== 'ALL' && v !== '').length}
           >
             <div className="admin-meetings-filters">
               <AdminSearchInput value={searchInput} onChange={setSearchInput} placeholder="Child, case code, or meeting title…" className="admin-meetings-filters__search" />
@@ -598,18 +662,16 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
                 />
               ) : null}
               {isAdmin ? (
-                <FilterSelect
-                  label="Case manager"
-                  value={cmFilter}
-                  onChange={(e) => setCmFilter(e.target.value)}
-                  options={[
-                    { value: '', label: 'All case managers' },
-                    ...cmUsers.map((u) => ({ value: String(u.id), label: u.full_name })),
-                  ]}
+                <StaffCategoryPeopleFilter
+                  category={staffCategory}
+                  onCategoryChange={setStaffCategory}
+                  peopleIds={peopleIds}
+                  onPeopleChange={setPeopleIds}
+                  className="admin-meetings-filters__staff"
                 />
               ) : null}
               <FilterSelect label="Month" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} options={MONTH_FILTER_OPTIONS} />
-              <FilterSelect label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={yearFilterOptions} disabled={!monthFilter} />
+              <FilterSelect label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={yearFilterOptions} />
             </div>
           </AdminCollapsibleFilters>
 

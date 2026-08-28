@@ -95,8 +95,12 @@ export function FinanceMondayBrief() {
   if (!flagOn) {
     return (
       <AdminEmptyState
-        title="Finance snapshot is not enabled"
-        description="Set VITE_ENABLE_FINANCE_DASHBOARD_V1=true to load monthly finance summary here. Client invoices and payments tabs stay available."
+        title="Finance snapshot is available in staging and preview"
+        description="This monthly summary opens once the finance dashboard gate is on for this environment. Client invoices, payments, and receivables stay available while that gate is set."
+        hints={[
+          'Non-production: VITE_ENABLE_FINANCE_DASHBOARD_V1 defaults on (or set true).',
+          'Canonical production needs VITE_ENABLE_FINANCE_DASHBOARD_V1=true and VITE_FINANCE_DASHBOARD_ALLOW_PROD=true.',
+        ]}
       />
     )
   }
