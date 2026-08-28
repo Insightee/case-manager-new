@@ -264,7 +264,7 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `FINANCE_DEFAULT_TDS_RATE_PERCENT` | `10` | Default TDS rate when therapist profile has no override. |
 | `BILLING_DISPUTE_LEGACY_ADJUSTMENT` | `false` | When false, admin dispute resolve rejects free-field `adjustment_inr` — use finance correction instead. |
 
-Cutover sequence: see [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md).
+Cutover sequence: see [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md). **Stage 1 snapshot on insighte.org:** see [FINANCE_SNAPSHOT_PROD_CUTOVER.md](./FINANCE_SNAPSHOT_PROD_CUTOVER.md) (`ENABLE_BILLING=true` + both Vite prod opt-in flags; ledger writes stay off).
 
 Staging may set `ENABLE_BILLING=true` (required for Control Tower routers to mount) with `BILLING_LEDGER_WRITES=false` for read-only verification. Non-production frontends enable `VITE_ENABLE_FINANCE_DASHBOARD_V1` by default when unset. Canonical production stays gated unless `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true` is set with `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` as a deliberate cutover event after `monthly_case_review` classification.
 
