@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
-import { AdminPageHeader, AdminPanel, ServiceFilterSelect } from './ui/index.js'
+import { AdminPageHeader, AdminPanel, MultiSelect, ServiceFilterSelect } from './ui/index.js'
 import { ExpandableTextCell } from './ui/ExpandableTextCell.jsx'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
@@ -70,7 +70,7 @@ export function AdminHrReportsPage() {
   const [dateFrom, setDateFrom] = useState(monthStartIso)
   const [dateTo, setDateTo] = useState(todayIso)
   const [productModule, setProductModule] = useState('')
-  const [caseManagerUserId, setCaseManagerUserId] = useState('')
+  const [caseManagerUserIds, setCaseManagerUserIds] = useState([])
   const [preview, setPreview] = useState(null)
   const [cms, setCms] = useState([])
   const { loading, error, successMessage, run, clearMessages } = useBillingAction()
@@ -118,11 +118,16 @@ export function AdminHrReportsPage() {
     if (selectedReport?.filters?.includes('product_module') && productModule) {
       params.product_module = productModule
     }
-    if (selectedReport?.filters?.includes('case_manager_user_id') && caseManagerUserId) {
-      params.case_manager_user_id = caseManagerUserId
+    if (selectedReport?.filters?.includes('case_manager_user_id') && caseManagerUserIds.length) {
+      params.case_manager_user_id = caseManagerUserIds.join(',')
     }
     return params
-  }, [selectedReport, month, dateFrom, dateTo, productModule, caseManagerUserId])
+  }, [selectedReport, month, dateFrom, dateTo, productModule, caseManagerUserIds])
+
+  const cmOptions = useMemo(
+    () => cms.map((cm) => ({ value: String(cm.id), label: cm.full_name || cm.email || `CM #${cm.id}` })),
+    [cms],
+  )
 
   const loadPreview = useCallback(async () => {
     const qs = buildQuery(filterParams)
@@ -244,21 +249,14 @@ export function AdminHrReportsPage() {
             </label>
           ) : null}
           {selectedReport?.filters?.includes('case_manager_user_id') ? (
-            <label className="client-inv__filter-field">
-              <span className="client-inv__filter-label">Case manager</span>
-              <select
-                className="client-inv__filter-input"
-                value={caseManagerUserId}
-                onChange={(e) => setCaseManagerUserId(e.target.value)}
-              >
-                <option value="">All case managers</option>
-                {cms.map((cm) => (
-                  <option key={cm.id} value={cm.id}>
-                    {cm.full_name || cm.email}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <MultiSelect
+              label="Case manager"
+              values={caseManagerUserIds}
+              onChange={setCaseManagerUserIds}
+              options={cmOptions}
+              placeholder="All case managers"
+              id="hr-report-case-managers"
+            />
           ) : null}
         </div>
 

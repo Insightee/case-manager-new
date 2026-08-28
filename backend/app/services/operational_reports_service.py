@@ -32,6 +32,7 @@ from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
     active_assignment,
     active_therapists_by_case,
+    apply_case_manager_filter,
     assignment_segments_for_month,
     assignment_therapist,
     billing_snapshot_report_columns,
@@ -57,6 +58,20 @@ from app.services.reports_export_helpers import (
     THERAPIST_LOG_COMPLIANCE_MIN_AGE_DAYS,
     user_display_name,
 )
+
+_TERMINAL_CASE_STATUSES = frozenset(
+    {CaseStatus.CLOSED.value, CaseStatus.DEACTIVATED.value}
+)
+
+
+def _therapist_status_label(therapist: User | None) -> str:
+    """Prefer employment_status when present; else User.is_active → Active/Inactive."""
+    if not therapist:
+        return ""
+    emp = getattr(therapist, "employment_status", None)
+    if emp is not None:
+        return enum_value(emp) or ("Active" if therapist.is_active else "Inactive")
+    return "Active" if therapist.is_active else "Inactive"
 
 
 def _case_allowed(db: Session, user: User | None, case: Case | None) -> bool:
@@ -111,7 +126,7 @@ def run_report(
     date_from: str | None = None,
     date_to: str | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
     therapist_user_id: int | None = None,
     case_id: int | None = None,
 ) -> dict[str, Any]:
@@ -218,7 +233,7 @@ def bulk_attendance_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
     start, end = month_bounds(ym)
     year = int(ym.split("-")[0])
@@ -344,7 +359,7 @@ def session_log_detail_rows(
     date_to: str | None = None,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
     therapist_user_id: int | None = None,
     case_id: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -364,8 +379,7 @@ def session_log_detail_rows(
     )
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
-    if case_manager_user_id:
-        stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
+    stmt = apply_case_manager_filter(stmt, Case.case_manager_user_id, case_manager_user_id)
     if therapist_user_id:
         stmt = stmt.where(TherapySession.therapist_user_id == therapist_user_id)
     if case_id:
@@ -439,7 +453,7 @@ def session_monthly_summary_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     cases = scoped_cases(
         db,
@@ -759,7 +773,7 @@ def incident_reports_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
     start, end = month_bounds(ym)
     month_label = month_long_label(ym)
@@ -777,8 +791,7 @@ def incident_reports_rows(
     )
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
-    if case_manager_user_id:
-        stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
+    stmt = apply_case_manager_filter(stmt, Case.case_manager_user_id, case_manager_user_id)
 
     incidents = db.scalars(stmt.limit(MAX_EXPORT_ROWS * 2)).all()
     case_ids = {i.case_id for i in incidents if i.case_id}
@@ -845,7 +858,7 @@ def cm_meetings_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     start, end = month_bounds(ym)
     month_label = month_long_label(ym)
@@ -868,8 +881,9 @@ def cm_meetings_rows(
     )
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
-    if case_manager_user_id:
-        stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == case_manager_user_id)
+    stmt = apply_case_manager_filter(
+        stmt, CaseManagerMeeting.case_manager_user_id, case_manager_user_id
+    )
 
     meetings = db.scalars(stmt.limit(MAX_EXPORT_ROWS)).all()
     meeting_cases = cases_by_ids(db, {m.case_id for m in meetings if m.case_id})
@@ -952,7 +966,7 @@ def inactive_clients_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
     today = date.today()
     cases = scoped_cases(
@@ -986,6 +1000,8 @@ def inactive_clients_rows(
                 "Service Type": case.service_type or case.product_module or "",
                 "Last Completed Session": last_session.isoformat() if last_session else "",
                 "Days Inactive": inactive_days if inactive_days is not None else "",
+                "Case Status": enum_value(case.status),
+                "Therapist Status": _therapist_status_label(therapist),
                 "Case Manager": user_display_name(cm),
             }
         )
@@ -1030,7 +1046,7 @@ def parent_portal_usage_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
     today = date.today()
     cases = scoped_cases(
@@ -1038,9 +1054,14 @@ def parent_portal_usage_rows(
         user,
         product_module=product_module,
         case_manager_user_id=case_manager_user_id,
-        active_only=True,
+        active_only=False,
     )
-    allowed_cases = [case for case in cases[:MAX_EXPORT_ROWS] if _case_allowed(db, user, case)]
+    allowed_cases = [
+        case
+        for case in cases[:MAX_EXPORT_ROWS]
+        if _case_allowed(db, user, case)
+        and enum_value(case.status) not in _TERMINAL_CASE_STATUSES
+    ]
     child_ids = {case.child_id for case in allowed_cases if case.child_id}
     parents = parent_by_child(db, child_ids)
     therapists = active_therapists_by_case(db, {case.id for case in allowed_cases})
@@ -1070,6 +1091,7 @@ def parent_portal_usage_rows(
                 "Days Since Last Activity": days_since_activity
                 if days_since_activity is not None
                 else "",
+                "Case Status": enum_value(case.status),
                 "Case Manager": user_display_name(cm),
             }
         )
@@ -1089,7 +1111,7 @@ def therapist_log_compliance_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
     """One row per therapist–case pair with completed sessions missing logs (2+ days old)."""
     today = today_ist()
