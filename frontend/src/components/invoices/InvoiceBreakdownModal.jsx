@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
-import { applyLocalExcludes, formatInr, isInvoiceAmendable } from './invoiceUtils.js'
+import { applyLocalExcludes, formatInr, formatModalHeaderSummary, isInvoiceAmendable } from './invoiceUtils.js'
 
 export function InvoiceBreakdownModal({
   invoiceId,
@@ -99,8 +99,13 @@ export function InvoiceBreakdownModal({
   if (!open) return null
 
   const sessionCount = displayData?.sessions_count ?? displayData?.total_sessions ?? 0
+  const attendanceGist = formatModalHeaderSummary(displayData?.attendance_summary)
   const hasCases = (displayData?.cases || []).some(
-    (c) => (c.session_lines?.length || 0) + (c.pending_late_lines?.length || 0) > 0,
+    (c) =>
+      (c.session_lines?.length || 0) +
+        (c.pending_approval_lines?.length || c.pending_late_lines?.length || 0) +
+        (c.child_absence_lines?.length || 0) >
+      0,
   )
 
   return (
@@ -119,8 +124,8 @@ export function InvoiceBreakdownModal({
             <h2 className="text-lg font-semibold text-slate-900">{title || 'Invoice breakdown'}</h2>
             {displayData ? (
               <p className="text-sm text-slate-500">
-                {displayData.month} · {formatInr(displayData.net_amount_inr ?? displayData.amount_inr)} ·{' '}
-                {sessionCount} session{sessionCount === 1 ? '' : 's'}
+                {displayData.month} · {formatInr(displayData.net_amount_inr ?? displayData.amount_inr)}
+                {attendanceGist ? ` · ${attendanceGist}` : ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'}`}
                 {refreshing ? ' · Updating…' : null}
               </p>
             ) : null}
