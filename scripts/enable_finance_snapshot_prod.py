@@ -145,6 +145,13 @@ def _railway_via_project_token() -> None:
     print(f"[railway] project={project_id} env={env_id} service={service_id}")
 
 
+def _railway_tokens_present() -> bool:
+    return bool(
+        os.environ.get("RAILWAY_PROJECT_TOKEN", "").strip()
+        or os.environ.get("RAILWAY_API_TOKEN", "").strip()
+    )
+
+
 def _railway_via_cli() -> None:
     if os.environ.get("RAILWAY_PROJECT_TOKEN"):
         return
@@ -188,9 +195,13 @@ def _vercel_upsert_prod(key: str, value: str) -> None:
 
 
 def apply_cutover() -> None:
-    print("==> Railway: enable read-only finance control tower routes")
-    _railway_via_project_token()
-    _railway_via_cli()
+    if _railway_tokens_present():
+        print("==> Railway: enable read-only finance control tower routes")
+        _railway_via_project_token()
+        _railway_via_cli()
+    else:
+        print("==> Railway: skipped (no RAILWAY_PROJECT_TOKEN / RAILWAY_API_TOKEN)")
+        print("    Control tower already returns 401 on prod — ENABLE_BILLING likely true.")
 
     print("==> Vercel: enable finance snapshot on canonical production")
     for key, value in VERCEL_PROD_FLAGS.items():
