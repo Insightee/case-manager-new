@@ -400,9 +400,11 @@ export function LoginPage({ portalType }) {
             )}
 
             <form onSubmit={handleSubmit} className="login-form">
-              <label>
+              <label htmlFor="login-email">
                 Email
                 <input
+                  id="login-email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -411,10 +413,12 @@ export function LoginPage({ portalType }) {
                   required
                 />
               </label>
-              <label>
+              <label htmlFor="login-password">
                 Password
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <input
+                    id="login-password"
+                    name="password"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -426,6 +430,7 @@ export function LoginPage({ portalType }) {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                     style={{
                       position: 'absolute',
                       right: '10px',
@@ -444,10 +449,13 @@ export function LoginPage({ portalType }) {
               </label>
               {portalType && portalType !== 'dev' ? (
                 <label
+                  htmlFor="login-remember"
                   className="login-remember"
                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}
                 >
                   <input
+                    id="login-remember"
+                    name="remember"
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => {

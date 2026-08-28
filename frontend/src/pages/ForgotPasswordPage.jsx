@@ -88,9 +88,11 @@ export function ForgotPasswordPage() {
 
           {!sent || !resendBlocked ? (
             <form onSubmit={handleSubmit} className="login-form">
-              <label>
+              <label htmlFor="forgot-email">
                 Email
                 <input
+                  id="forgot-email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

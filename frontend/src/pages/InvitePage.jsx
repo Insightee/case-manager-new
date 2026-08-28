@@ -113,9 +113,11 @@ export function InvitePage() {
           ) : null}
 
           <form onSubmit={handleSubmit} className="login-form">
-            <label>
+            <label htmlFor="invite-full-name">
               Your full name
               <input
+                id="invite-full-name"
+                name="full_name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. Priya Sharma"
@@ -123,9 +125,11 @@ export function InvitePage() {
                 autoComplete="name"
               />
             </label>
-            <label>
+            <label htmlFor="invite-password">
               Password
               <input
+                id="invite-password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -135,9 +139,11 @@ export function InvitePage() {
                 placeholder="At least 6 characters"
               />
             </label>
-            <label>
+            <label htmlFor="invite-password-confirm">
               Confirm password
               <input
+                id="invite-password-confirm"
+                name="password_confirm"
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

@@ -75,9 +75,11 @@ export function ResetPasswordPage() {
             </>
           ) : (
             <form onSubmit={handleSubmit} className="login-form">
-              <label>
+              <label htmlFor="reset-password">
                 New password
                 <input
+                  id="reset-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -87,9 +89,11 @@ export function ResetPasswordPage() {
                   disabled={!!previewError}
                 />
               </label>
-              <label>
+              <label htmlFor="reset-password-confirm">
                 Confirm password
                 <input
+                  id="reset-password-confirm"
+                  name="password_confirm"
                   type="password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
