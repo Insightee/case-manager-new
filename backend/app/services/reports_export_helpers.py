@@ -137,12 +137,50 @@ def enum_value(value: Any) -> str:
     return str(value)
 
 
+def parse_int_list(value: int | str | list[int] | None) -> list[int] | None:
+    """Parse a single int, list of ints, or comma-separated string into ints.
+
+    Returns None when empty / unset. Used by HR report and meeting filters so
+    ``case_manager_user_id=1,2,3`` (and repeated query values coerced to a list)
+    work alongside legacy single-id callers.
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, list):
+        ids = [int(x) for x in value if x is not None and str(x).strip() != ""]
+        return ids or None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    ids: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        ids.append(int(part))
+    return ids or None
+
+
+def apply_case_manager_filter(stmt: Any, column: Any, case_manager_user_id: int | list[int] | None):
+    """Filter by one CM id (equality) or many (``IN_``). No-op when unset/empty."""
+    if case_manager_user_id is None:
+        return stmt
+    if isinstance(case_manager_user_id, list):
+        ids = [int(i) for i in case_manager_user_id if i is not None]
+        if not ids:
+            return stmt
+        return stmt.where(column.in_(ids))
+    return stmt.where(column == case_manager_user_id)
+
+
 def scoped_cases(
     db: Session,
     user: User | None,
     *,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
     active_only: bool = False,
 ) -> list[Case]:
     stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
@@ -150,8 +188,7 @@ def scoped_cases(
         stmt = apply_case_scope(stmt, user)
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
-    if case_manager_user_id:
-        stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
+    stmt = apply_case_manager_filter(stmt, Case.case_manager_user_id, case_manager_user_id)
     if active_only:
         stmt = stmt.where(Case.status == CaseStatus.ACTIVE)
     return list(db.scalars(stmt).all())

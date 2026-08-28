@@ -25,6 +25,8 @@ from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, M
 from app.models.meeting_action import MeetingAction
 from app.models.session import Session as TherapySession, SessionStatus
 from app.models.user import User
+from app.services.cm_meeting_service import parse_staff_attendee_ids
+from app.services.reports_export_helpers import parse_int_list
 
 router = APIRouter(tags=["meetings"])
 compat_router = APIRouter(tags=["cm-meetings"])
@@ -813,12 +815,39 @@ def list_meetings(
     month: Optional[int] = None,
     meeting_type: Optional[str] = None,
     case_manager_user_id: Optional[int] = None,
+    participant_role: Optional[str] = Query(
+        None,
+        description="Filter by participant role: case_manager | therapist | admin",
+    ),
+    participant_user_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated participant user ids (used with participant_role)",
+    ),
     search: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_meetings_read(user)
     role = _role_name(user)
+
+    try:
+        participant_ids = parse_int_list(participant_user_ids)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Looks like we still need valid participant_user_ids (comma-separated integers).",
+        ) from exc
+
+    participant_role_norm = (participant_role or "").strip().lower() or None
+    if participant_role_norm and participant_role_norm not in {
+        "case_manager",
+        "therapist",
+        "admin",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="participant_role must be case_manager, therapist, or admin.",
+        )
     
     stmt = select(CaseManagerMeeting).options(
         selectinload(CaseManagerMeeting.actions)
@@ -905,7 +934,14 @@ def list_meetings(
             )
         )
 
-    meetings = db.scalars(stmt).all()
+    # Participant role filter (SQL for CM/therapist; admin JSON post-filtered below).
+    if participant_role_norm and participant_ids:
+        if participant_role_norm == "case_manager":
+            stmt = stmt.where(CaseManagerMeeting.case_manager_user_id.in_(participant_ids))
+        elif participant_role_norm == "therapist":
+            stmt = stmt.where(CaseManagerMeeting.therapist_user_id.in_(participant_ids))
+
+    meetings = list(db.scalars(stmt).all())
     from app.services.admin_scope_service import user_sees_global_cases
     if role in {
         RoleName.ADMIN.value,
@@ -914,6 +950,14 @@ def list_meetings(
     } and not user_has_permission(user, "admin.override") and not user_sees_global_cases(user):
         from app.services.cm_meeting_service import user_can_view_meeting
         meetings = [m for m in meetings if user_can_view_meeting(m, user.id)]
+
+    if participant_role_norm == "admin" and participant_ids:
+        id_set = set(participant_ids)
+        meetings = [
+            m
+            for m in meetings
+            if id_set.intersection(parse_staff_attendee_ids(m.staff_attendee_user_ids_json))
+        ]
 
     return _serialize_many(meetings, db, viewer=user)
 
@@ -1285,13 +1329,29 @@ def export_meetings(
     year: Optional[int] = None,
     month: Optional[int] = None,
     case_id: Optional[int] = None,
+    participant_role: Optional[str] = Query(
+        None,
+        description="Filter by participant role: case_manager | therapist | admin",
+    ),
+    participant_user_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated participant user ids (used with participant_role)",
+    ),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_meetings_read(user)
 
     # 1. Fetch meetings using general list logic
-    meetings = list_meetings(case_id=case_id, year=year, month=month, user=user, db=db)
+    meetings = list_meetings(
+        case_id=case_id,
+        year=year,
+        month=month,
+        participant_role=participant_role,
+        participant_user_ids=participant_user_ids,
+        user=user,
+        db=db,
+    )
 
     headers = [
         "Meeting ID", "Case Code", "Client Name", "Meeting Type", "Date",
