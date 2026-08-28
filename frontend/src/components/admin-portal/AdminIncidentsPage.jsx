@@ -329,7 +329,7 @@ export function AdminIncidentsPage({ embedded = false, canManageIncidents = true
                         )}
                       </p>
                     </button>
-                    <StatusBadge status={inc.status} />
+                    <StatusBadge status={canonicalIncidentStatus(inc.status)} />
                   </div>
 
                   {expandedId === inc.id ? (

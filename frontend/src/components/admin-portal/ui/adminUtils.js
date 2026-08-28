@@ -5,6 +5,7 @@ const STATUS_LABELS = {
   CLOSED: 'Closed',
   UNDER_REVIEW: 'In review',
   IN_REVIEW: 'Escalated',
+  INVESTIGATING: 'Escalated',
   OPEN: 'Open',
   RESOLVED: 'Closed',
   ACTION_TAKEN: 'Closed',
@@ -36,7 +37,7 @@ export function formatStatus(status) {
 export function statusTone(status) {
   const key = String(status || '').toUpperCase()
   const lower = String(status || '').toLowerCase()
-  if (lower === 'escalated' || key === 'ESCALATED' || key === 'IN_REVIEW') return 'danger'
+  if (lower === 'escalated' || key === 'ESCALATED' || key === 'IN_REVIEW' || key === 'INVESTIGATING') return 'danger'
   if (['ACTIVE', 'APPROVED', 'PAID', 'RESOLVED', 'CLOSED', 'COMPLETED', 'ACTION_TAKEN'].includes(key) || lower === 'closed') {
     return 'success'
   }

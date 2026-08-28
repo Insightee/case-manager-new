@@ -27,6 +27,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Support history KPI counts align with visible rows (search + needs-attention); ticket queue filters and badges use canonical open / in_progress / closed / escalated buckets.
 - Case billing forms always show client amount (including monthly); monthly client draft invoices no longer fall back to ₹0.01 MANUAL_FEE when only `client_monthly_rate_inr` is set.
 - Therapist pay cannot exceed client billing amount; homecare share under 20% of client amount routes to the low-margin approval queue.
 - Alembic dual head after finance TDS + case Zoho ID merge: empty merge revision `b95440cc4d91` joins `fn9tds0cl1nt` and `z1o2h3o4i5d6`; registered in Postgres migration proof; single-head test expects the merge tip.

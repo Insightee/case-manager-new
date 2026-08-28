@@ -9,6 +9,7 @@ import { TicketFileInput } from '../support/TicketFileInput.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import { CaseCombobox } from '../shared/CaseCombobox.jsx'
 import '../support/support-tickets.css'
+import { CANONICAL_STATUS_OPTIONS, canonicalLabel, rowCanonicalStatus } from '../../lib/supportStatus.js'
 import {
   AdminCollapsibleFilters,
   AdminPageHeader,
@@ -22,6 +23,11 @@ import {
 } from './ui/index.js'
 
 const PAGE_SIZE = 25
+
+const TICKET_STATUS_FILTERS = [
+  { value: 'ALL', label: 'All statuses' },
+  ...CANONICAL_STATUS_OPTIONS.filter((o) => o.value),
+]
 
 export function AdminTicketsPage({ embedded = false }) {
   const [searchParams] = useSearchParams()
@@ -52,7 +58,7 @@ export function AdminTicketsPage({ embedded = false }) {
 
   const loadOpenCount = useCallback(async () => {
     try {
-      const qs = new URLSearchParams({ status: 'OPEN', page_size: '1' })
+      const qs = new URLSearchParams({ canonical_status: 'open', page_size: '1' })
       if (moduleFilter) qs.set('product_module', moduleFilter)
       const data = await apiFetch(`/api/v1/tickets?${qs.toString()}`)
       setOpenCount(data.total ?? 0)
@@ -66,7 +72,7 @@ export function AdminTicketsPage({ embedded = false }) {
     try {
       const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
       if (moduleFilter) qs.set('product_module', moduleFilter)
-      if (statusFilter !== 'ALL') qs.set('status', statusFilter)
+      if (statusFilter !== 'ALL') qs.set('canonical_status', statusFilter)
       if (searchDebounced.trim()) qs.set('search', searchDebounced.trim())
       const data = await apiFetch(`/api/v1/tickets?${qs.toString()}`)
       setTickets(data.items || [])
@@ -177,10 +183,11 @@ export function AdminTicketsPage({ embedded = false }) {
         onChange={(e) => setStatusFilter(e.target.value)}
         aria-label="Ticket status"
       >
-        <option value="ALL">All</option>
-        <option value="OPEN">Open</option>
-        <option value="IN_PROGRESS">In progress</option>
-        <option value="CLOSED">Closed</option>
+        {TICKET_STATUS_FILTERS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
       <ServiceFilterSelect
         className="admin-search__input"
@@ -231,7 +238,7 @@ export function AdminTicketsPage({ embedded = false }) {
               />
             }
             activeChips={[
-              statusFilter !== 'ALL' ? statusFilter.replace('_', ' ') : null,
+              statusFilter !== 'ALL' ? canonicalLabel(statusFilter) : null,
               moduleFilter || null,
               searchDebounced.trim() ? `Search: ${searchDebounced.trim()}` : null,
             ].filter(Boolean)}
@@ -351,7 +358,7 @@ export function AdminTicketsPage({ embedded = false }) {
                           {t.attachment_count > 0 ? ` · ${t.attachment_count} attachment(s)` : ''}
                         </p>
                       </button>
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={rowCanonicalStatus({ ...t, record_type: 'ticket' })} />
                     </div>
                     {expandedId === t.id ? (
                       <div style={{ marginTop: 12, width: '100%' }}>

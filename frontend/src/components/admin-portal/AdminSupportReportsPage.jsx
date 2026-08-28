@@ -156,37 +156,33 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
   )
 
   const sortedRows = useMemo(() => sortSupportHistoryByUrgency(rows), [rows])
-  const visibleRows = useMemo(() => {
-    let list = sortedRows
-    if (needsAttention) {
-      list = list.filter((r) => isUrgent(r))
-    }
+
+  const searchFilteredRows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return list
-    return list.filter((r) =>
+    if (!q) return sortedRows
+    return sortedRows.filter((r) =>
       [r.subject, r.code, r.client_name, r.therapist_name, r.reporter_name, r.assignee_name]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
         .includes(q),
     )
-  }, [sortedRows, search, needsAttention])
+  }, [sortedRows, search])
+
+  const visibleRows = useMemo(() => {
+    if (!needsAttention) return searchFilteredRows
+    return searchFilteredRows.filter((r) => isUrgent(r))
+  }, [searchFilteredRows, needsAttention])
 
   const kpis = useMemo(() => {
-    const base = sortedRows.filter((r) => {
-      const q = search.trim().toLowerCase()
-      if (!q) return true
-      return [r.subject, r.code, r.client_name, r.therapist_name, r.reporter_name, r.assignee_name]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    })
-    const tickets = base.filter((r) => r.record_type === 'ticket').length
-    const incidents = base.filter((r) => r.record_type === 'incident').length
-    const urgent = base.filter((r) => isUrgent(r)).length
-    return { tickets, incidents, urgent, matching: base.length }
-  }, [sortedRows, search])
+    const tickets = visibleRows.filter((r) => r.record_type === 'ticket').length
+    const incidents = visibleRows.filter((r) => r.record_type === 'incident').length
+    const urgent = searchFilteredRows.filter((r) => isUrgent(r)).length
+    return { tickets, incidents, urgent, matching: visibleRows.length }
+  }, [visibleRows, searchFilteredRows])
+
+  const matchingKpiLabel =
+    !loading && total > rows.length ? `${kpis.matching}+` : String(loading ? '…' : kpis.matching)
 
   const applyKpi = useCallback((kind) => {
     if (kind === 'all') {
@@ -235,8 +231,8 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
           !search
         )
       }
-      if (kind === 'tickets') return recordType === 'tickets' && !needsAttention
-      if (kind === 'incidents') return recordType === 'incidents' && !needsAttention
+      if (kind === 'tickets') return recordType === 'tickets' && !needsAttention && !status
+      if (kind === 'incidents') return recordType === 'incidents' && !needsAttention && !status
       if (kind === 'attention') return needsAttention
       return false
     },
@@ -394,7 +390,7 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
           onClick={() => applyKpi('all')}
           aria-pressed={kpiActive('all')}
         >
-          <div className="admin-reports__kpi-value">{loading ? '…' : total}</div>
+          <div className="admin-reports__kpi-value">{matchingKpiLabel}</div>
           <div className="admin-reports__kpi-label">Matching records</div>
         </button>
         <button

@@ -38,7 +38,7 @@ const ALLOWED_NEXT = {
 export function HRCasesPage() {
   const { can } = useAuth()
   const canChangeStatus = can('case.status_manage')
-  const canSeePay = can('case.billing.update')
+  const canSeePay = can('case.billing.update') || can('admin.override')
 
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
