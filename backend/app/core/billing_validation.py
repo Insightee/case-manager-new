@@ -8,8 +8,32 @@ from app.models.case import BillingType, Case, ClientBillingMode, CompensationMo
 
 # Homecare therapist share below this fraction of client amount is routed to review.
 HOMECARE_LOW_SHARE_RATIO = 0.20
-# Soft guidance floor (target band is 30–40%).
+# Soft guidance floor (target band is 30–40% therapist share of client).
 HOMECARE_GUIDANCE_SHARE_RATIO = 0.30
+# Insighte margin (client − therapist) / client — flag finance report rows below this.
+INSIGHTE_LOW_MARGIN_RATIO = 0.30
+
+
+def margin_pct_and_flag(*, client_total_inr: float, therapist_total_inr: float) -> dict:
+    """Insighte margin % and low-margin flag for finance margin-by-case reports."""
+    client = float(client_total_inr or 0)
+    therapist = float(therapist_total_inr or 0)
+    margin_inr = round(client - therapist, 2)
+    if client <= 0:
+        return {
+            "marginInr": margin_inr,
+            "marginPct": None,
+            "lowMargin": False,
+            "marginFlag": "NO_CLIENT_TOTAL",
+        }
+    margin_pct = round((margin_inr / client) * 100, 2)
+    low = margin_pct < (INSIGHTE_LOW_MARGIN_RATIO * 100)
+    return {
+        "marginInr": margin_inr,
+        "marginPct": margin_pct,
+        "lowMargin": low,
+        "marginFlag": "LOW_MARGIN_BELOW_30" if low else "",
+    }
 
 
 def resolve_therapist_pay(case: Case | dict | None) -> float:

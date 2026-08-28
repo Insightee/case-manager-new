@@ -250,7 +250,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
           <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
             Flat amount paid to the therapist. Must not exceed the client billing amount.
             {caseItem.product_module === 'homecare'
-              ? ' Homecare target share is typically 30–40% of the client amount; under 20% is flagged for review.'
+              ? ' Homecare therapist pay is typically 30–40% of the client amount; under 20% is flagged for review.'
               : ''}
           </span>
         </label>

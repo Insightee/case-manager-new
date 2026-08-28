@@ -25,7 +25,7 @@ const WIDE_COLUMNS = [
   { key: 'startDate', label: 'Start date' },
   { key: 'prepaidPostpaid', label: 'Prepaid/postpaid' },
   { key: 'clientBillingRate', label: 'Client billing (agreement)' },
-  { key: 'insighteShare', label: 'Insighte share' },
+  { key: 'insighteShare', label: 'Insighte margin' },
   { key: 'sessionsDelivered', label: 'Sessions delivered' },
   { key: 'leaves', label: 'Leaves' },
   { key: 'childAbsence', label: 'Child absence' },
@@ -117,7 +117,7 @@ function ExpandedDetail({ row, billingMonth, onRefresh }) {
           <h4>Billing inputs</h4>
           <dl>
             <dt>Agreement rate</dt><dd>{formatMaybeMoney(row.billingInputs?.clientBillingRate)}</dd>
-            <dt>Insighte share</dt><dd>{formatMaybeMoney(row.billingInputs?.insighteShare)}</dd>
+            <dt>Insighte margin</dt><dd>{formatMaybeMoney(row.billingInputs?.insighteShare)}</dd>
           </dl>
         </section>
         <section>

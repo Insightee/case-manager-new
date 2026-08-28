@@ -11,6 +11,8 @@
 
 ### Changed
 - Therapist compensation is lumpsum-only (`FIXED_LUMP`): UI and writers no longer offer percentage; `resolve_therapist_pay` reads `therapist_fixed_pay_inr` with fallback to legacy `pay_share_amount_inr`. Existing PERCENTAGE rows are copy-migrated (amounts already INR — not re-multiplied).
+- Finance **Margin by case** report includes `marginPct` and flags rows where Insighte margin is under 30% (`LOW_MARGIN_BELOW_30`); UI highlights those rows.
+- Payout preview / HR billing snapshot columns use lumpsum labels (`Therapist Pay (INR)`, `Per Session Pay (INR)`) instead of legacy “share” / PERCENTAGE wording; closed-month snapshots remap old headers on read.
 - Admin Session Logs Sessions tab is card-first on ≤1024px with duration, venue, both status pills, and thumb-zone View/Flag actions.
 - Superadmin home billing widget links to **Therapist payouts** (`/admin/therapist-payouts?sub=queue`) — the count is `invoices` in `IN_REVIEW`, not client invoices.
 - HR report column label **Client Name** renamed to **Child Name** on case-linked operational and legacy exports for clearer identification (CSV/JSON column order also places Child/Parent/Therapist identity columns together near Case ID).

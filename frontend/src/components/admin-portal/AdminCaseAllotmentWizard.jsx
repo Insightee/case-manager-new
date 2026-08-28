@@ -717,11 +717,11 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             <h3 className="admin-allotment-wizard__section-title">Client &amp; therapist billing</h3>
             {!therapistId ? (
               <p className="admin-allotment-wizard__section-lead admin-allotment-wizard__section-lead--warn">
-                Select a therapist above to set invoice type, package or per-session rates, and pay share.
+                Select a therapist above to set invoice type, package or per-session rates, and therapist lumpsum pay.
               </p>
             ) : (
               <p className="admin-allotment-wizard__section-lead">
-                Set what the family is charged and this therapist&apos;s pay share on the case.
+                Set what the family is charged and this therapist&apos;s lumpsum pay on the case.
               </p>
             )}
             <div className="admin-form-grid admin-allotment-wizard__billing-grid">

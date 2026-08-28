@@ -205,7 +205,7 @@ export function TherapistPayoutsTab() {
             <input
               className="admin-input"
               type="number"
-              placeholder="Pay share INR"
+              placeholder="Therapist pay INR"
               value={manualShare}
               onChange={(e) => setManualShare(e.target.value)}
             />

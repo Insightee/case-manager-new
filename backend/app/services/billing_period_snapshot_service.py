@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.billing_validation import case_billing_dict
+from app.core.billing_validation import case_billing_dict, margin_pct_and_flag
 from app.models.billing_period_snapshot import BillingMonthClose, BillingMonthCloseStatus, CaseBillingPeriodSnapshot
 from app.models.case import Case
 from app.models.client_billing import ClientInvoice
@@ -17,6 +17,27 @@ from app.services.billing_ledger_service import reconcile_month
 
 def normalize_billing_month(value: str | None) -> str:
     return billing_composer_service.normalize_billing_month(value or "")
+
+
+def enrich_margin_row(row: dict) -> dict:
+    """Attach marginPct / lowMargin / marginFlag without duplicating legacy share fields."""
+    client = float(row.get("clientTotalInr") or 0)
+    therapist = float(row.get("therapistTotalInr") or 0)
+    flags = margin_pct_and_flag(client_total_inr=client, therapist_total_inr=therapist)
+    # Prefer stored marginInr when present (frozen snapshots); else recompute.
+    margin_inr = row.get("marginInr")
+    if margin_inr is None:
+        margin_inr = flags["marginInr"]
+    return {
+        "caseId": row.get("caseId"),
+        "clientTotalInr": client,
+        "therapistTotalInr": therapist,
+        "marginInr": float(margin_inr),
+        "marginPct": flags["marginPct"],
+        "lowMargin": flags["lowMargin"],
+        "marginFlag": flags["marginFlag"],
+        "sessionCount": int(row.get("sessionCount") or 0),
+    }
 
 
 def get_month_close(db: Session, billing_month: str) -> BillingMonthClose | None:
@@ -60,13 +81,15 @@ def margin_rows_from_case_snapshots(db: Session, billing_month: str) -> list[dic
         .order_by(CaseBillingPeriodSnapshot.case_id)
     ).all()
     return [
-        {
-            "caseId": r.case_id,
-            "clientTotalInr": float(r.ledger_total_inr or 0),
-            "therapistTotalInr": float(r.therapist_payout_total_inr or 0),
-            "marginInr": float(r.margin_inr or 0),
-            "sessionCount": int(r.session_count or 0),
-        }
+        enrich_margin_row(
+            {
+                "caseId": r.case_id,
+                "clientTotalInr": float(r.ledger_total_inr or 0),
+                "therapistTotalInr": float(r.therapist_payout_total_inr or 0),
+                "marginInr": float(r.margin_inr or 0),
+                "sessionCount": int(r.session_count or 0),
+            }
+        )
         for r in rows
     ]
 
