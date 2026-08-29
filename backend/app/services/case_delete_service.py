@@ -144,6 +144,10 @@ WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
 sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target))
 UPDATE therapist_slots SET session_id = NULL WHERE session_id IN (SELECT id FROM sess);
 
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target))
+UPDATE sessions SET slot_id = NULL WHERE id IN (SELECT id FROM sess);
+
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM therapist_slots WHERE case_id IN (SELECT id FROM target);
 
