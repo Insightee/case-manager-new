@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -111,7 +112,7 @@ from app.core.rbac_access import (
     preview_access,
     sync_user_access_fields,
 )
-from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services import auth_service, case_delete_service, case_service, log_service, therapist_profile_service as profile_svc
 from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
 from app.services import therapist_profile_export_service as therapist_profile_export_svc
 from app.services.admin_scope_service import apply_case_scope, case_row_scope_clause
@@ -2328,7 +2329,6 @@ def admin_delete_case_by_code(
     """Hard-delete one case by case_code. Super-admin maintenance only."""
     if not payload.confirm:
         raise HTTPException(status_code=400, detail="Set confirm=true to delete")
-    from app.services import case_delete_service
 
     try:
         result = case_delete_service.delete_case_by_code(db, payload.case_code.strip())
@@ -2337,6 +2337,20 @@ def admin_delete_case_by_code(
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        orig = getattr(exc, "orig", None)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Delete blocked by database constraint: {orig or exc}",
+        ) from exc
+    except ProgrammingError as exc:
+        db.rollback()
+        orig = getattr(exc, "orig", None)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Delete failed (schema/SQL): {orig or exc}",
+        ) from exc
 
     meta = get_request_meta(request)
     log_audit(
@@ -2349,7 +2363,19 @@ def admin_delete_case_by_code(
         new_value={"case_code": payload.case_code, **result},
         **meta,
     )
-    commit_or_http(db)
+    try:
+        commit_or_http(db)
+    except HTTPException as exc:
+        # Surface actionable text for this super-admin maintenance path.
+        if "staff members" in str(exc.detail).lower() or "constraint" in str(exc.detail).lower():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Delete blocked by a remaining foreign key. "
+                    "Redeploy case_delete_service FK coverage, then retry."
+                ),
+            ) from exc
+        raise
     return result
 
 
