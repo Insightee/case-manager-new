@@ -182,6 +182,101 @@ def test_calendar_days_replacement_incoming():
     assert days == 13
 
 
+def test_calendar_days_future_segment_end_uses_in_month_last_log():
+    """IC-2026-SS-029 repro: July segment_end must not zero June payout."""
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=date(2026, 6, 4),
+        last_log=date(2026, 6, 28),
+        assignment_start=date(2026, 6, 4),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 7, 3),
+    )
+    assert days == 25
+
+
+def test_calendar_days_future_segment_end_no_in_month_logs_returns_zero():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=None,
+        last_log=None,
+        assignment_start=date(2026, 6, 4),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 7, 3),
+    )
+    assert days == 0
+
+
+def test_calendar_days_segment_closed_before_billing_month_returns_zero():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=None,
+        last_log=None,
+        assignment_start=date(2026, 5, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 5, 20),
+    )
+    assert days == 0
+
+
+def test_calendar_days_genuine_june_exit_unchanged():
+    """In-month segment_end is a no-op for correctly-paid outgoing cases."""
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=date(2026, 6, 1),
+        last_log=date(2026, 6, 12),
+        assignment_start=date(2026, 6, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 6, 12),
+    )
+    assert days == 12
+
+
+def test_calendar_days_non_outgoing_ongoing_unchanged():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=False,
+        first_log=date(2026, 6, 1),
+        last_log=date(2026, 6, 28),
+        assignment_start=date(2026, 6, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=None,
+    )
+    assert days == 30
+
+
+def test_calendar_days_never_exceeds_first_log_through_month_end():
+    month_start = date(2026, 6, 1)
+    month_end = date(2026, 6, 30)
+    first_log = date(2026, 6, 4)
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=first_log,
+        last_log=date(2026, 6, 28),
+        assignment_start=date(2026, 6, 4),
+        employment_start=None,
+        month_start=month_start,
+        month_end=month_end,
+        segment_end=date(2026, 7, 3),
+    )
+    assert days <= calendar_days_from_start_day(pay_month_day(first_log))
+
+
 def test_calendar_days_new_hire_employment_start():
     days = calendar_days_for_segment(
         is_incoming_replacement=False,
