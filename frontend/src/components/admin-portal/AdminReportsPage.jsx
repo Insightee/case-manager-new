@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { apiFetch, getTokens } from '../../lib/apiClient.js'
+import { apiFetch, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
   IEP_CATEGORY_ID,
@@ -10,20 +10,17 @@ import {
 } from '../../lib/reportFilters.js'
 import {
   AdminCollapsibleFilters,
-  AdminMobilePillTabs,
   AdminPageHeader,
   AdminSearchInput,
   AdminToolbar,
-  PortalTabBar,
   ServiceFilterSelect,
 } from './ui/index.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
 import { AdminClientStatusReportSection } from './AdminClientStatusReportSection.jsx'
+import { AdminMeetingsReportSection } from './AdminMeetingsReportSection.jsx'
 import './admin-reports.css'
-
-import { getApiBaseUrl } from '../../lib/apiClient.js'
 
 async function downloadExport(path, filename) {
   const { access } = getTokens()
@@ -56,17 +53,19 @@ function buildListQuery(filters, page, pageSize) {
 
 const CATEGORY_OPTIONS = reportCategoryOptions()
 
-const VIEW_TAB_OPTIONS = [
+const BASE_VIEW_OPTIONS = [
   { value: 'queue', label: 'Review queue' },
   { value: 'all', label: 'All reports' },
   { value: 'missing', label: 'Missing monthly' },
   { value: 'iep', label: 'Pending IEP' },
+  { value: 'meetings', label: 'Meetings report' },
   { value: 'client-status', label: 'Client status lifecycle' },
   { value: 'operations', label: 'Operations exports' },
 ]
 
-function viewTabLabel(tab) {
-  return VIEW_TAB_OPTIONS.find((o) => o.value === tab)?.label || 'Review queue'
+function viewOptionsForUser(seesAllCases) {
+  if (seesAllCases) return BASE_VIEW_OPTIONS
+  return BASE_VIEW_OPTIONS.filter((o) => o.value !== 'client-status' && o.value !== 'operations')
 }
 
 function parseDrawerId(searchParams) {
@@ -82,12 +81,6 @@ const KPI_FILTERS = [
     label: 'In review queue',
     valueKey: 'queue_total',
     apply: { tab: 'queue', type: 'all', status: '', parentReview: '' },
-  },
-  {
-    id: 'monthly_review',
-    label: 'Monthly under review',
-    valueKey: 'monthly_under_review',
-    apply: { tab: 'queue', type: 'monthly', status: 'UNDER_REVIEW', parentReview: '' },
   },
   {
     id: 'parent_changes',
@@ -148,6 +141,11 @@ export function AdminReportsPage() {
   const { canReviewReports } = useModuleWrite()
   const { can } = useAuth()
   const seesAllCases = can('case.read.all')
+  const viewTabOptions = useMemo(() => viewOptionsForUser(seesAllCases), [seesAllCases])
+  const viewTabLabel = useCallback(
+    (tabId) => viewTabOptions.find((o) => o.value === tabId)?.label || 'Review queue',
+    [viewTabOptions],
+  )
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'queue'
   const typeFilter = searchParams.get('type') || searchParams.get('kind') || 'all'
@@ -328,6 +326,12 @@ export function AdminReportsPage() {
     next.delete('reportId')
     setSearchParams(next, { replace: true })
   }
+
+  useEffect(() => {
+    if (!viewTabOptions.some((o) => o.value === tab)) {
+      setTab('queue')
+    }
+  }, [tab, viewTabOptions])
 
   function applyKpiFilter(apply) {
     const next = new URLSearchParams(searchParams)
@@ -601,69 +605,61 @@ export function AdminReportsPage() {
         </div>
       ) : null}
 
-      <AdminMobilePillTabs
-        className="admin-mobile-only"
-        ariaLabel="Report views"
-        activeId={tab}
-        onChange={setTab}
-        primaryIds={VIEW_TAB_OPTIONS.map((o) => o.value)}
-        overflowIds={[]}
-        tabs={VIEW_TAB_OPTIONS.map((o) => ({
-          id: o.value,
-          label: o.label,
-          badge: o.value === 'iep' && summary?.iep_pending != null ? String(summary.iep_pending) : undefined,
-        }))}
-      />
-
-      <PortalTabBar
-        className="admin-page__tabs-scroll admin-reports__tabs--desktop-only admin-desktop-only"
-        ariaLabel="Report views"
-        activeId={tab}
-        onChange={setTab}
-        tabs={VIEW_TAB_OPTIONS.map((o) => ({
-          id: o.value,
-          label: o.label,
-          badge: o.value === 'iep' && summary?.iep_pending != null ? String(summary.iep_pending) : undefined,
-        }))}
-      />
-
-      {showReportFilters ? (
-        <div className="admin-reports__filters admin-desktop-only" role="group" aria-label="Report filters">
-          <label className="admin-reports__filter">
-            <span className="admin-reports__filter-label">Report type</span>
-            <select
-              className="admin-select admin-reports__filter-select"
-              value={typeFilter}
-              onChange={(e) => setKindFilter(e.target.value)}
-              aria-label="Report type"
-            >
-              {REPORT_KIND_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-reports__filter">
-            <span className="admin-reports__filter-label">Category</span>
-            <select
-              className="admin-select admin-reports__filter-select"
-              value={category}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              aria-label="Report category"
-            >
-              {CATEGORY_OPTIONS.map((o) => (
-                <option key={o.value || 'all'} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="admin-reports__filter-hint admin-muted">
-            Incident documents and IEP plans are managed under Support and Case IEP — not in this hub.
-          </p>
-        </div>
-      ) : null}
+      <div className="admin-reports__filters admin-reports__filters--primary" role="group" aria-label="Report view and filters">
+        <label className="admin-reports__filter">
+          <span className="admin-reports__filter-label">View</span>
+          <select
+            className="admin-select admin-reports__filter-select"
+            value={tab}
+            onChange={(e) => setTab(e.target.value)}
+            aria-label="Report view"
+          >
+            {viewTabOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+                {o.value === 'iep' && summary?.iep_pending != null ? ` (${summary.iep_pending})` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {showReportFilters ? (
+          <>
+            <label className="admin-reports__filter">
+              <span className="admin-reports__filter-label">Report type</span>
+              <select
+                className="admin-select admin-reports__filter-select"
+                value={typeFilter}
+                onChange={(e) => setKindFilter(e.target.value)}
+                aria-label="Report type"
+              >
+                {REPORT_KIND_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-reports__filter">
+              <span className="admin-reports__filter-label">Category</span>
+              <select
+                className="admin-select admin-reports__filter-select"
+                value={category}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                aria-label="Report category"
+              >
+                {CATEGORY_OPTIONS.map((o) => (
+                  <option key={o.value || 'all'} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="admin-reports__filter-hint admin-muted">
+              Incident documents and IEP plans are managed under Support and Case IEP — not in this hub.
+            </p>
+          </>
+        ) : null}
+      </div>
 
       <AdminCollapsibleFilters
         open={filtersOpen}
@@ -693,22 +689,6 @@ export function AdminReportsPage() {
         }
       >
         <div className="admin-reports__filters admin-reports__filters--panel admin-mobile-only" role="group" aria-label="Report filters">
-          <label className="admin-reports__filter">
-            <span className="admin-reports__filter-label">View</span>
-            <select
-              className="admin-select admin-reports__filter-select"
-              value={tab}
-              onChange={(e) => setTab(e.target.value)}
-              aria-label="Report view"
-            >
-              {VIEW_TAB_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                  {o.value === 'iep' && summary?.iep_pending != null ? ` (${summary.iep_pending})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
           {showReportFilters ? (
             <>
               <label className="admin-reports__filter">
@@ -939,6 +919,8 @@ export function AdminReportsPage() {
             </div>
           )}
         </div>
+      ) : tab === 'meetings' ? (
+        <AdminMeetingsReportSection />
       ) : tab === 'client-status' ? (
         <AdminClientStatusReportSection />
       ) : tab === 'operations' ? (
@@ -1064,7 +1046,7 @@ export function AdminReportsPage() {
         />
       )}
 
-      {tab !== 'missing' && tab !== 'iep' && tab !== 'client-status' && tab !== 'operations' ? (
+      {tab !== 'missing' && tab !== 'iep' && tab !== 'meetings' && tab !== 'client-status' && tab !== 'operations' ? (
       <div className="admin-reports__pagination">
         <button
           type="button"

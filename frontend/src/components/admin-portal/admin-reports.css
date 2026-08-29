@@ -143,6 +143,32 @@
   border-radius: 10px;
 }
 
+.admin-reports__filters--primary {
+  margin-bottom: 12px;
+}
+
+.admin-meetings-report__row {
+  cursor: pointer;
+}
+
+.admin-meetings-report__row:hover {
+  background: #f8fafc;
+}
+
+.admin-meetings-report__notes {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .admin-meetings-report__notes {
+    max-width: none;
+    white-space: normal;
+  }
+}
+
 .admin-reports__filter {
   display: flex;
   flex-direction: column;

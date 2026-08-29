@@ -95,3 +95,13 @@
     margin-top: -4px;
   }
 }
+
+.admin-iep-upload-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .admin-iep-upload-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

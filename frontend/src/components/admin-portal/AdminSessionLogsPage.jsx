@@ -13,8 +13,26 @@ import {
   AdminTaskCard,
   StatusBadge,
 } from './ui/index.js'
-import { SessionAbsenceApprovals } from '../shared/SessionAbsenceApprovals.jsx'
 import './admin-sessions-dashboard.css'
+
+const SESSION_STATUS_OPTIONS = [
+  { value: 'SCHEDULED', label: 'Scheduled' },
+  { value: 'IN_PROGRESS', label: 'In progress' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+  { value: 'CLIENT_ABSENT', label: 'Child absence' },
+  { value: 'THERAPIST_LEAVE', label: 'Therapist leave' },
+  { value: 'FLAGGED', label: 'Flag / under review' },
+]
+
+const SESSION_STATUS_LABELS = Object.fromEntries(
+  SESSION_STATUS_OPTIONS.map(({ value, label }) => [value, label]),
+)
+
+function sessionStatusLabel(code) {
+  if (!code) return ''
+  return SESSION_STATUS_LABELS[code] || code.replaceAll('_', ' ')
+}
 
 const STATUS_COLORS = {
   COMPLETED:       '#10b981',
@@ -25,6 +43,7 @@ const STATUS_COLORS = {
   RESCHEDULED:     '#8b5cf6',
   CLIENT_ABSENT:   '#f97316',
   THERAPIST_LEAVE: '#94a3b8',
+  FLAGGED:         '#dc2626',
 }
 
 const PIE_PALETTE = ['#6366f1', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#f97316']
@@ -208,7 +227,10 @@ function OverviewTab({ data }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Status summary pill row */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-        {Object.entries(status_counts).map(([k, v]) => (
+        {Object.entries(status_counts)
+          .filter(([, v]) => v > 0)
+          .filter(([k]) => k !== 'NO_SHOW' && k !== 'RESCHEDULED')
+          .map(([k, v]) => (
           <div key={k} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: '#f8fafc', border: '1px solid #e2e8f0',
@@ -219,7 +241,7 @@ function OverviewTab({ data }) {
               width: 8, height: 8, borderRadius: '50%',
               background: STATUS_COLORS[k] || '#94a3b8', flexShrink: 0,
             }} />
-            {k.replaceAll('_', ' ')}: {v}
+            {sessionStatusLabel(k)}: {v}
           </div>
         ))}
       </div>
@@ -478,7 +500,12 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                       <span className="admin-table__meta">{s.mode?.toLowerCase() || ''}</span>
                     </td>
                     <td>
-                      <StatusBadge status={s.status} />
+                      {s.status ? <StatusBadge status={s.status} /> : null}
+                      {s.data_quality_flag ? (
+                        <span className="admin-badge admin-badge--danger sessions-dash__pill" style={{ marginLeft: 6 }}>
+                          Flagged
+                        </span>
+                      ) : null}
                       {s.actual_times_edited ? (
                         <span className="admin-badge admin-badge--warning sessions-dash__pill" style={{ marginLeft: 6 }}>
                           Times edited
@@ -540,7 +567,10 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                       meta={[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
                       badges={
                         <>
-                          <StatusBadge status={s.status} />
+                          {s.status ? <StatusBadge status={s.status} /> : null}
+                          {s.data_quality_flag ? (
+                            <span className="admin-badge admin-badge--danger sessions-dash__pill">Flagged</span>
+                          ) : null}
                           {s.actual_times_edited ? (
                             <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
                           ) : null}
@@ -679,7 +709,7 @@ export function AdminSessionLogsPage() {
   }
 
   const sc = data?.status_counts || {}
-  const totalInRange = Object.values(sc).reduce((a, b) => a + b, 0)
+  const totalInRange = data?.total_count ?? Object.values(sc).reduce((a, b) => a + b, 0)
 
   const filterChips = []
   if (filters.dateFrom || filters.dateTo) {
@@ -690,7 +720,7 @@ export function AdminSessionLogsPage() {
     filterChips.push(t?.therapist_name || t?.full_name || `Therapist #${filters.therapistId}`)
   }
   if (filters.productModule) filterChips.push(filters.productModule)
-  if (filters.status) filterChips.push(filters.status.replaceAll('_', ' '))
+  if (filters.status) filterChips.push(sessionStatusLabel(filters.status))
   if (filters.caseId) filterChips.push(`Case #${filters.caseId}`)
 
   const activeFilterCount = [
@@ -707,13 +737,6 @@ export function AdminSessionLogsPage() {
         title="Session logs"
         subtitle="Scheduled sessions and submitted daily logs — filter by case, therapist, and date."
       />
-
-      <AdminTaskCard title="Pending therapist leave" subtitle="Session-level therapist leave requests awaiting approval.">
-        <SessionAbsenceApprovals
-          listPath="/api/v1/sessions/absence/pending"
-          emptyLabel="No absence requests in the queue."
-        />
-      </AdminTaskCard>
 
       {filters.caseId ? (
         <div className="sessions-dash__case-banner">
@@ -786,9 +809,9 @@ export function AdminSessionLogsPage() {
             onChange={(e) => setFilter('status', e.target.value)}
           >
             <option value="">All statuses</option>
-            {['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED', 'CLIENT_ABSENT', 'THERAPIST_LEAVE'].map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
+            {SESSION_STATUS_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
@@ -801,7 +824,6 @@ export function AdminSessionLogsPage() {
           <KpiCard label="This week" value={data?.week_count} sub="sessions" accent="blue" />
           <KpiCard label="Completed" value={sc.COMPLETED} sub={`of ${totalInRange}`} accent="green" />
           <KpiCard label="Cancelled" value={(sc.CANCELLED || 0) + (sc.CLIENT_ABSENT || 0)} sub="in range" accent="red" />
-          <KpiCard label="No-shows" value={sc.NO_SHOW} accent="amber" />
         </div>
       ) : null}
 
@@ -820,7 +842,7 @@ export function AdminSessionLogsPage() {
             className={`sessions-dash__tab ${activeTab === 'sessions' ? 'is-active' : ''}`}
             onClick={() => switchTab('sessions')}
           >
-            Sessions ({data?.recent_sessions?.length ?? 0})
+            Sessions ({data?.total_count ?? data?.recent_sessions?.length ?? 0})
           </button>
         </div>
 

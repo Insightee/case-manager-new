@@ -77,6 +77,8 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     padding-bottom: 2px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail-summary__chips::-webkit-scrollbar {
@@ -152,6 +154,8 @@
   /* Primary tab pills */
   .admin-case-detail__mobile-nav {
     margin-bottom: 12px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail__primary-tabs {
@@ -164,6 +168,8 @@
     scrollbar-width: none;
     padding: 2px 0 8px;
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail__primary-tabs::-webkit-scrollbar {
@@ -206,6 +212,8 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     padding-bottom: 2px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail__quick-actions::-webkit-scrollbar {

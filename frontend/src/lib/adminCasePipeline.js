@@ -91,6 +91,16 @@ export function sortPipelineRows(rows, sort = 'priority') {
   })
 }
 
+/** First day of current month through today (ISO dates). */
+export function defaultOpenedRange(referenceDate = new Date()) {
+  const today = new Date(referenceDate)
+  today.setHours(0, 0, 0, 0)
+  const start = new Date(today.getFullYear(), today.getMonth(), 1)
+  return { from: isoDay(start), to: isoDay(today) }
+}
+
+const DEFAULT_OPENED = defaultOpenedRange()
+
 const EMPTY_FILTERS = {
   queue: 'all',
   search: '',
@@ -99,9 +109,9 @@ const EMPTY_FILTERS = {
   caseManagerId: 'all',
   therapistId: 'all',
   childId: 'all',
-  openedPreset: 'all',
-  dateFrom: '',
-  dateTo: '',
+  openedPreset: 'custom',
+  dateFrom: DEFAULT_OPENED.from,
+  dateTo: DEFAULT_OPENED.to,
   operationalStage: 'all',
   unassignedCmOnly: false,
   unassignedTherapistOnly: false,
@@ -165,7 +175,10 @@ function matchesCaseState(row, caseState) {
 }
 
 function isoDay(d) {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function openedDateBounds(preset, dateFrom, dateTo) {
@@ -319,7 +332,14 @@ export function countActivePipelineFilters(filters = {}) {
   if (f.caseManagerId !== 'all') n += 1
   if (f.therapistId !== 'all') n += 1
   if (f.childId !== 'all') n += 1
-  if (f.openedPreset !== 'all') n += 1
+  const defaultRange = defaultOpenedRange()
+  if (f.openedPreset === 'all') {
+    n += 1
+  } else if (f.openedPreset === 'custom') {
+    if (f.dateFrom !== defaultRange.from || f.dateTo !== defaultRange.to) n += 1
+  } else if (f.openedPreset !== 'this_month') {
+    n += 1
+  }
   if (f.operationalStage !== 'all') n += 1
   if (f.unassignedCmOnly) n += 1
   if (f.unassignedTherapistOnly) n += 1
@@ -424,10 +444,6 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
 
   actions.push({ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` })
-
-  if (writeCase && col !== 'closed') {
-    actions.push({ id: 'close', label: 'Close', variant: 'danger' })
-  }
 
   return actions
 }
