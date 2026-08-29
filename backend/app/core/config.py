@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     zeptomail_mailagent_key: str = ""
     # IANA timezone for Google Calendar links in CM meeting invite emails (ctz=).
     meeting_invite_calendar_timezone: str = "Asia/Kolkata"
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    # When false, booking slots use Insighte availability + meetings only (Google free/busy optional).
+    google_calendar_freebusy_enabled: bool = False
 
     # External integration API + remote MCP (read-only). Off by default in production-like envs
     # until explicitly enabled; tests/dev set INTEGRATION_API_ENABLED=true.

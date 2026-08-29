@@ -66,6 +66,7 @@ ALL_PERMISSIONS = [
     "iep.manage",
     "case_document.create",
     "case_document.review",
+    "case_document.publish",
     "hr_report.export",
 ]
 
@@ -91,6 +92,7 @@ _ROLE_MODULE_ADMIN = [
     "iep.manage",
     "case_document.create",
     "case_document.review",
+    "case_document.publish",
     "hr_report.export",
 ]
 
@@ -99,11 +101,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     RoleName.MODULE_ADMIN: _ROLE_MODULE_ADMIN,
     RoleName.ADMIN: _ROLE_MODULE_ADMIN,
     # Team/region scope only — not case.read.all (see admin home scope tests).
+    # No case.assign / slot.book_any / invoice.approve — allotment and billing are admin/HR/finance.
     RoleName.CASE_MANAGER: [
         "case.read.team",
         "case.create",
         "case.update",
-        "case.assign",
         "therapist.read",
         "session.read",
         "session.create",
@@ -111,14 +113,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "monthly_report.approve",
         "iep.read",
         "iep.manage",
-        "invoice.approve",
         "attachment.manage",
         "ticket.manage",
         "incident.read_sensitive",
         "slot.read",
-        "slot.book_any",
         "case_document.create",
         "case_document.review",
+        "case_document.publish",
         "user.read",
         "leave.manage",
     ],
@@ -138,6 +139,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "incident.read_sensitive",
         "iep.read",
         "case_document.review",
+        "case_document.publish",
         "user.read",
     ],
     RoleName.THERAPIST: [
@@ -164,6 +166,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "case.read.all",
         "case.billing.update",
         "case.status_manage",
+        "case.assign",
         "session.read",
         "therapist.read",
         "leave.manage",
@@ -173,10 +176,61 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "attachment.manage",
         "slot.read",
         "user.manage",
+        "case_document.publish",
     ],
     RoleName.PARENT: ["parent.read", "slot.book_parent"],
     RoleName.SCHOOL_COORDINATOR: ["case.read.scoped", "session.read"],
 }
+
+# Highest privilege first — used when a single "effective" role is required.
+ROLE_PRECEDENCE: tuple[RoleName, ...] = (
+    RoleName.SUPER_ADMIN,
+    RoleName.ADMIN,
+    RoleName.MODULE_ADMIN,
+    RoleName.SUPERVISOR,
+    RoleName.CASE_MANAGER,
+    RoleName.HR,
+    RoleName.FINANCE,
+    RoleName.THERAPIST,
+    RoleName.VIEWER,
+    RoleName.PARENT,
+    RoleName.SCHOOL_COORDINATOR,
+)
+
+
+def user_role_names(user: User | None) -> set[str]:
+    if user is None:
+        return set()
+    names = getattr(user, "role_names", None)
+    if names is not None:
+        return {str(n) for n in names if n}
+    roles = getattr(user, "roles", None) or []
+    return {getattr(r, "name", str(r)) for r in roles if r}
+
+
+def has_role(user: User | None, role: RoleName | str) -> bool:
+    target = role.value if isinstance(role, RoleName) else str(role)
+    return target in user_role_names(user)
+
+
+def has_any_role(user: User | None, *roles: RoleName | str) -> bool:
+    names = user_role_names(user)
+    for role in roles:
+        target = role.value if isinstance(role, RoleName) else str(role)
+        if target in names:
+            return True
+    return False
+
+
+def effective_role(user: User | None) -> str | None:
+    """Single role by ROLE_PRECEDENCE. Prefer this over roles[0] for branching."""
+    names = user_role_names(user)
+    if not names:
+        return None
+    for role in ROLE_PRECEDENCE:
+        if role.value in names:
+            return role.value
+    return next(iter(names), None)
 
 
 def user_has_permission(user: User, permission: str) -> bool:

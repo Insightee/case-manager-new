@@ -24,6 +24,12 @@ class CaseServiceAddressFields(BaseModel):
     service_longitude: Optional[float] = None
 
 
+class CaseContactRead(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
 class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
     case_code: Optional[str] = None
     child_id: int
@@ -68,6 +74,8 @@ class CaseRead(CaseBillingFields):
     case_manager_name: Optional[str] = None
     case_manager_email: Optional[str] = None
     access_as_mentor: bool = False
+    parent_contact: Optional[CaseContactRead] = None
+    therapist_contact: Optional[CaseContactRead] = None
     notes: Optional[str] = None
     region: Optional[str]
     operational_stage: Optional[str]

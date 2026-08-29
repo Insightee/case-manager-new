@@ -45,8 +45,16 @@ def uses_calendar_day_pay(case: Case) -> bool:
     return is_shadow_case(case) or is_b2b_case(case)
 
 
-def therapist_share_inr(case: Case) -> float:
-    """Monthly or per-session therapist share configured on the case (INR lumpsum)."""
+def therapist_share_inr(case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+    """Monthly or per-session therapist share configured on the case (INR lumpsum).
+
+    When db + as_of are provided, resolve from billing rate history so a future hike
+    on the case does not rewrite past month payouts.
+    """
+    if db is not None and as_of is not None:
+        from app.services import billing_rate_history_service
+
+        return billing_rate_history_service.resolve_therapist_pay_as_of(db, case, as_of)
     return resolve_therapist_pay(case)
 
 
@@ -237,10 +245,12 @@ def predicted_subtotal_inr(
     approved_sessions: int,
     calendar_days: int = SHADOW_MONTHLY_DAYS,
     unpaid_leaves: int = 0,
+    db: Session | None = None,
+    as_of: date | None = None,
 ) -> float:
     return predicted_amount_inr(
         case,
-        share=therapist_share_inr(case),
+        share=therapist_share_inr(case, db=db, as_of=as_of),
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid_leaves,
@@ -253,10 +263,17 @@ def predicted_client_amount_inr(
     approved_sessions: int,
     calendar_days: int = SHADOW_MONTHLY_DAYS,
     unpaid_leaves: int = 0,
+    db: Session | None = None,
+    as_of: date | None = None,
 ) -> float:
+    share = client_configured_share_inr(case)
+    if db is not None and as_of is not None:
+        from app.services import billing_rate_history_service
+
+        share = billing_rate_history_service.resolve_client_amount_as_of(db, case, as_of)
     return predicted_amount_inr(
         case,
-        share=client_configured_share_inr(case),
+        share=share,
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid_leaves,
@@ -294,24 +311,36 @@ class CycleSegment:
     last_log: date | None
     is_incoming_replacement: bool
     is_outgoing_replacement: bool
+    # Frozen remun from CaseAssignment.billing_snapshot (outgoing / ended).
+    locked_therapist_share_inr: float | None = None
 
-    def therapist_subtotal(self, case: Case) -> float:
-        return predicted_subtotal_inr(
+    def _therapist_share(
+        self, case: Case, *, db: Session | None = None, as_of: date | None = None
+    ) -> float:
+        if self.locked_therapist_share_inr is not None:
+            return float(self.locked_therapist_share_inr)
+        return therapist_share_inr(case, db=db, as_of=as_of)
+
+    def therapist_subtotal(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+        return predicted_amount_inr(
             case,
+            share=self._therapist_share(case, db=db, as_of=as_of),
             approved_sessions=self.approved_sessions,
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
         )
 
-    def therapist_gross(self, case: Case) -> float:
-        return round(self.therapist_subtotal(case) + self.transition_total, 2)
+    def therapist_gross(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+        return round(self.therapist_subtotal(case, db=db, as_of=as_of) + self.transition_total, 2)
 
-    def client_amount(self, case: Case) -> float:
+    def client_amount(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
         return predicted_client_amount_inr(
             case,
             approved_sessions=self.approved_sessions,
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
+            db=db,
+            as_of=as_of,
         )
 
 
@@ -811,6 +840,11 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
         leave_credits = int(
             balance.get("leave_credit_pending", balance.get("paid_remaining", 0)) or 0
         )
+        locked_share: float | None = None
+        if assignment is not None and isinstance(assignment.billing_snapshot, dict):
+            locked = resolve_therapist_pay(assignment.billing_snapshot)
+            if locked > 0:
+                locked_share = locked
         segments.append(
             CycleSegment(
                 therapist_user_id=segment.therapist_user_id,
@@ -831,6 +865,7 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
                 last_log=segment.last_log,
                 is_incoming_replacement=segment.is_incoming_replacement,
                 is_outgoing_replacement=segment.is_outgoing_replacement,
+                locked_therapist_share_inr=locked_share,
             )
         )
     return segments
@@ -846,19 +881,35 @@ def segment_for_therapist(
 
 
 def therapist_case_gross_inr(db: Session, case: Case, ym: str) -> float:
-    return round(sum(s.therapist_gross(case) for s in build_cycle_segments(db, case, ym)), 2)
+    _ms, month_end = month_bounds(ym)
+    return round(
+        sum(
+            s.therapist_gross(case, db=db, as_of=month_end)
+            for s in build_cycle_segments(db, case, ym)
+        ),
+        2,
+    )
 
 
 def client_case_gross_inr(db: Session, case: Case, ym: str) -> float:
     """Family charge for the case-month: same days/sessions as payout, client allotment rates."""
     segments = build_cycle_segments(db, case, ym)
+    _ms, month_end = month_bounds(ym)
     if not segments:
         return 0.0
     if case.billing_type == BillingType.MONTHLY_FIXED and not uses_calendar_day_pay(case):
         if any(s.approved_sessions > 0 for s in segments):
-            return round(client_configured_share_inr(case), 2)
+            from app.services import billing_rate_history_service
+
+            return round(
+                billing_rate_history_service.resolve_client_amount_as_of(db, case, month_end),
+                2,
+            )
         return 0.0
-    return round(sum(s.client_amount(case) for s in segments), 2)
+    return round(
+        sum(s.client_amount(case, db=db, as_of=month_end) for s in segments),
+        2,
+    )
 
 
 def payout_preview_row(
@@ -883,21 +934,25 @@ def payout_preview_row(
     pending_absence: int = 0,
     leave_taken: int | None = None,
     parent_info: dict[str, Any] | None = None,
+    db: Session | None = None,
 ) -> dict[str, Any]:
-    share = therapist_share_inr(case)
+    _month_start, month_end = month_bounds(ym)
+    share = therapist_share_inr(case, db=db, as_of=month_end)
     lumpsum = client_lumpsum_inr(case)
-    per_sess = per_session_share_inr(case)
+    per_sess = per_unit_from_share(case, share)
     unpaid = int(leave.get("unpaid", 0))
-    subtotal = predicted_subtotal_inr(
+    subtotal = predicted_amount_inr(
         case,
+        share=share,
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid if uses_calendar_day_pay(case) else 0,
     )
     leave_deduction = 0.0
     if uses_calendar_day_pay(case) and unpaid > 0:
-        gross_before = predicted_subtotal_inr(
+        gross_before = predicted_amount_inr(
             case,
+            share=share,
             approved_sessions=approved_sessions,
             calendar_days=calendar_days,
             unpaid_leaves=0,
@@ -1020,6 +1075,7 @@ def payout_preview_rows(
                     pending_absence=pending_absence,
                     leave_taken=leave_taken,
                     parent_info=parents.get(case.child_id) if case.child_id else None,
+                    db=db,
                 )
             )
 

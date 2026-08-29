@@ -76,11 +76,11 @@ export function MeetingDetailSheet({
         {hasNotes ? (
           <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
             {isTherapistView ? (
-              meeting.therapist_notes ? <p><strong>What was discussed:</strong> {meeting.therapist_notes}</p> : null
+              meeting.therapist_notes ? <p><strong>My private notes:</strong> {meeting.therapist_notes}</p> : null
             ) : (
               <>
-                {meeting.notes_outcome ? <p className="mb-1"><strong>Outcome:</strong> {MEETING_OUTCOME_LABELS[meeting.notes_outcome] || meeting.notes_outcome}</p> : null}
-                {meeting.notes_summary ? <p className="mb-1"><strong>Summary:</strong> {meeting.notes_summary}</p> : null}
+                {meeting.notes_outcome ? <p className="mb-1"><strong>Shared minutes outcome:</strong> {MEETING_OUTCOME_LABELS[meeting.notes_outcome] || meeting.notes_outcome}</p> : null}
+                {meeting.notes_summary ? <p className="mb-1"><strong>Shared minutes:</strong> {meeting.notes_summary}</p> : null}
                 {meeting.notes_next_meeting_required ? <p className="mb-1"><strong>Follow-up meeting:</strong> Required</p> : null}
                 {meeting.notes_additional ? <p className="mb-1"><strong>Additional notes:</strong> {meeting.notes_additional}</p> : null}
                 {meeting.notes_concerns ? <p className="mb-1"><strong>Concerns:</strong> {meeting.notes_concerns}</p> : null}
@@ -100,7 +100,7 @@ export function MeetingDetailSheet({
               className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800"
               onClick={() => onAddNotes?.(meeting)}
             >
-              {hasNotes ? 'Edit notes' : isTherapistView ? 'Add notes' : 'Add notes / complete'}
+              {hasNotes ? 'Edit notes' : isTherapistView ? 'Add private notes' : 'Add shared minutes'}
             </button>
           ) : null}
           {canManage ? (

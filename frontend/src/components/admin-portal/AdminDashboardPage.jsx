@@ -11,6 +11,7 @@ import {
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
+import { UpcomingMeetingsPanel } from '../shared/UpcomingMeetingsPanel.jsx'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
 import './admin-dashboard.css'
 
@@ -134,6 +135,14 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
           ))}
         </section>
       ) : null}
+
+      <UpcomingMeetingsPanel
+        title="Upcoming meetings"
+        subtitle="Next 7 days"
+        href="/admin/meetings"
+        variant="admin"
+        className="admin-dashboard__upcoming-meetings"
+      />
 
       <AdminRoleQueueSection
         roleHome={roleHome}

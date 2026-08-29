@@ -6,18 +6,20 @@ import json
 from datetime import date, datetime, time, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
+from app.core.timezone import IST, now_ist
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.core.config import settings
-from app.core.permissions import RoleName
+from app.core.permissions import RoleName, effective_role
 from app.models.user import User
 from app.services import notification_service, parent_service
+from app.services.calendar_ics import meeting_ics_attachment
 from app.services.email.google_calendar import build_google_calendar_add_url
-from app.services.email.service import cm_meeting_invite_email
+from app.services.email.service import cm_meeting_invite_email, cm_meeting_reminder_email, send_email
 
 
 def parse_staff_attendee_ids(raw: str | None) -> list[int]:
@@ -214,9 +216,7 @@ def fetch_my_meetings_for_calendar(
 ) -> list[CaseManagerMeeting]:
     """Scheduled meetings in range visible on the current user's personal calendar."""
     user_id = user.id
-    role = getattr(user, "role_name", None) or (
-        user.roles[0].name if getattr(user, "roles", None) and user.roles else ""
-    )
+    role = effective_role(user)
 
     assigned_case_ids = list(
         db.scalars(
@@ -367,9 +367,7 @@ def apply_attendee_selection(
 
 def _portal_url_for_user(user: User) -> str:
     base = (settings.frontend_url or "http://localhost:5173").rstrip("/")
-    role = getattr(user, "role_name", None) or (
-        user.roles[0].name if getattr(user, "roles", None) and user.roles else ""
-    )
+    role = effective_role(user)
     if role == RoleName.PARENT.value:
         return f"{base}/parent"
     if role == RoleName.THERAPIST.value:
@@ -396,6 +394,20 @@ def _meeting_calendar_details(
     return "\n".join(lines)
 
 
+def _meeting_series_sequence(db: Session, meeting: CaseManagerMeeting) -> int:
+    sequence = 0
+    current = meeting
+    visited: set[int] = set()
+    while current.rescheduled_from_id and current.id not in visited:
+        visited.add(current.id)
+        parent = db.get(CaseManagerMeeting, current.rescheduled_from_id)
+        if not parent:
+            break
+        sequence += 1
+        current = parent
+    return sequence
+
+
 def send_meeting_invite_emails(
     db: Session,
     meeting: CaseManagerMeeting,
@@ -413,6 +425,7 @@ def send_meeting_invite_emails(
     actor = db.get(User, actor_user_id)
     organizer_name = (actor.full_name if actor else None) or "Insighte"
     actor_email = (actor.email or "").strip().lower() if actor and actor.email else ""
+    ics_attachment = meeting_ics_attachment(meeting, method="REQUEST", sequence=_meeting_series_sequence(db, meeting))
 
     sent_to: set[str] = set()
     if actor_email:
@@ -453,6 +466,7 @@ def send_meeting_invite_emails(
             child_name=child_name,
             case_code=case_code,
             is_update=is_update,
+            attachments=[ics_attachment],
         )
 
     for uid in meeting_participant_user_ids(meeting):
@@ -516,3 +530,211 @@ def notify_meeting_invites_respecting_flags(
         invite_case_manager=invite_case_manager,
         is_update=is_update,
     )
+
+
+def notify_meeting_cancellation(
+    db: Session,
+    meeting: CaseManagerMeeting,
+    *,
+    actor_user_id: int,
+) -> None:
+    """In-app notifications and email alerts for cancelled meetings."""
+    case = db.get(Case, meeting.case_id) if meeting.case_id else None
+    child_name = case.child.full_name if case and case.child else None
+    title_text = _meeting_display_title(meeting)
+    when = _format_meeting_when(meeting)
+    reason = (meeting.cancel_reason or "").strip() or "No reason provided"
+    ics_attachment = meeting_ics_attachment(
+        meeting,
+        method="CANCEL",
+        sequence=_meeting_series_sequence(db, meeting),
+        status="CANCELLED",
+    )
+    body_parts = [f"{title_text} was cancelled."]
+    if child_name:
+        body_parts.append(f"Case: {child_name}")
+    if when:
+        body_parts.append(f"When: {when}")
+    body_parts.append(f"Reason: {reason}")
+    body = " · ".join(body_parts)
+
+    sent_to: set[str] = set()
+    actor = db.get(User, actor_user_id)
+    actor_email = (actor.email or "").strip().lower() if actor and actor.email else ""
+    if actor_email:
+        sent_to.add(actor_email)
+
+    for uid in meeting_participant_user_ids(meeting):
+        if uid == actor_user_id:
+            continue
+        user = db.get(User, uid)
+        if not user or not (user.email or "").strip():
+            continue
+        notification_service.create_notification(
+            db,
+            user_id=uid,
+            title="CM meeting cancelled",
+            body=body,
+            entity_type="cm_meeting",
+            entity_id=meeting.id,
+        )
+        addr = user.email.strip().lower()
+        if addr in sent_to:
+            continue
+        sent_to.add(addr)
+        send_email(
+            to=addr,
+            subject=f"Meeting cancelled — {_meeting_display_title(meeting)}",
+            body_text=(
+                f"{body}\n\n"
+                f"Insighte: {(settings.frontend_url or 'http://localhost:5173').rstrip('/')}/admin/meetings\n"
+            ),
+            event=None,
+            attachments=[ics_attachment],
+        )
+
+
+def _meeting_start_ist(meeting: CaseManagerMeeting) -> datetime | None:
+    if not meeting.scheduled_date or not meeting.scheduled_time:
+        return None
+    return datetime.combine(meeting.scheduled_date, meeting.scheduled_time, tzinfo=IST)
+
+
+def _normalise_ist(value: datetime | None = None) -> datetime:
+    current = value or now_ist()
+    if current.tzinfo is None:
+        return current.replace(tzinfo=IST)
+    return current.astimezone(IST)
+
+
+def _meeting_reminder_body(meeting: CaseManagerMeeting, *, case: Case | None) -> tuple[str, str]:
+    title_text = _meeting_display_title(meeting)
+    when = _format_meeting_when(meeting)
+    case_code = case.case_code if case else None
+    child_name = case.child.full_name if case and case.child else None
+    body_parts = [f"{title_text} starts soon."]
+    if child_name:
+        body_parts.append(f"Case: {child_name}")
+    if when:
+        body_parts.append(f"When: {when}")
+    if meeting.meeting_url:
+        body_parts.append(f"Join: {meeting.meeting_url}")
+    return " · ".join(body_parts), when
+
+
+def _deliver_meeting_reminder(
+    db: Session,
+    meeting: CaseManagerMeeting,
+    *,
+    now_ist_dt: datetime | None = None,
+    dry_run: bool = False,
+) -> bool:
+    if meeting.status != MeetingStatus.SCHEDULED or meeting.reminder_sent_at:
+        return False
+
+    start_ist = _meeting_start_ist(meeting)
+    if not start_ist:
+        return False
+
+    now_ist_dt = _normalise_ist(now_ist_dt)
+    if dry_run:
+        return True
+
+    claimed = db.execute(
+        update(CaseManagerMeeting)
+        .where(
+            CaseManagerMeeting.id == meeting.id,
+            CaseManagerMeeting.reminder_sent_at.is_(None),
+            CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+        )
+        .values(reminder_sent_at=now_ist_dt)
+    ).rowcount
+    if claimed != 1:
+        return False
+
+    db.refresh(meeting)
+
+    case = db.get(Case, meeting.case_id) if meeting.case_id else None
+    body, when = _meeting_reminder_body(meeting, case=case)
+    title_text = _meeting_display_title(meeting)
+    case_code = case.case_code if case else None
+    child_name = case.child.full_name if case and case.child else None
+
+    for uid in meeting_participant_user_ids(meeting):
+        user = db.get(User, uid)
+        if not user:
+            continue
+        notification_service.create_notification(
+            db,
+            user_id=uid,
+            title="CM meeting reminder",
+            body=body,
+            entity_type="cm_meeting",
+            entity_id=meeting.id,
+            dedupe_key=f"meeting_reminder:{meeting.id}:{uid}",
+        )
+        addr = (user.email or "").strip()
+        if not addr:
+            continue
+        cm_meeting_reminder_email(
+            to=addr,
+            full_name=user.full_name or user.email,
+            meeting_title=title_text,
+            when=when,
+            meeting_url=meeting.meeting_url,
+            portal_url=_portal_url_for_user(user),
+            child_name=child_name,
+            case_code=case_code,
+        )
+
+    return True
+
+
+def send_meeting_reminder_if_within_hour(
+    db: Session,
+    meeting: CaseManagerMeeting,
+    *,
+    now_ist_dt: datetime | None = None,
+    dry_run: bool = False,
+) -> bool:
+    now_ist_dt = _normalise_ist(now_ist_dt)
+    start_ist = _meeting_start_ist(meeting)
+    if not start_ist:
+        return False
+    if start_ist <= now_ist_dt:
+        return False
+    if start_ist - now_ist_dt >= timedelta(minutes=60):
+        return False
+    return _deliver_meeting_reminder(db, meeting, now_ist_dt=now_ist_dt, dry_run=dry_run)
+
+
+def send_due_meeting_reminders(
+    db: Session,
+    now_ist_dt: datetime | None = None,
+    *,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    now_ist_dt = _normalise_ist(now_ist_dt)
+    window_start = now_ist_dt + timedelta(minutes=55)
+    window_end = now_ist_dt + timedelta(minutes=70)
+    stmt = (
+        select(CaseManagerMeeting)
+        .where(
+            CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+            CaseManagerMeeting.reminder_sent_at.is_(None),
+            CaseManagerMeeting.scheduled_time.is_not(None),
+            CaseManagerMeeting.scheduled_date >= window_start.date(),
+            CaseManagerMeeting.scheduled_date <= window_end.date(),
+        )
+        .order_by(CaseManagerMeeting.scheduled_date, CaseManagerMeeting.scheduled_time)
+        .with_for_update(skip_locked=True)
+    )
+    meetings = list(db.scalars(stmt).all())
+    sent = 0
+    for meeting in meetings:
+        start_ist = _meeting_start_ist(meeting)
+        if not start_ist or start_ist < window_start or start_ist > window_end:
+            continue
+        if _deliver_meeting_reminder(db, meeting, now_ist_dt=now_ist_dt, dry_run=dry_run):
+            sent += 1
+    return {"selected": len(meetings), "sent": sent}

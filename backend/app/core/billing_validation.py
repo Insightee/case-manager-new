@@ -81,17 +81,35 @@ def client_amount_inr(case: Case | dict | None) -> float:
     return float(package or monthly or rate or 0)
 
 
-def is_homecare_product(case: Case | dict | None) -> bool:
+def _product_token(case: Case | dict | None) -> str:
     if case is None:
-        return False
+        return ""
     if isinstance(case, dict):
         mod = (case.get("product_module") or "") or ""
         service = (case.get("service_type") or "") or ""
     else:
         mod = (case.product_module or "") if case else ""
         service = (case.service_type or "") if case else ""
-    token = f"{mod} {service}".lower()
+    return f"{mod} {service}".lower()
+
+
+def is_homecare_product(case: Case | dict | None) -> bool:
+    token = _product_token(case)
     return "homecare" in token or "home care" in token
+
+
+def is_counselling_product(case: Case | dict | None) -> bool:
+    token = _product_token(case)
+    return "counsel" in token or "counselling" in token
+
+
+def is_shadow_product(case: Case | dict | None) -> bool:
+    return "shadow" in _product_token(case)
+
+
+def is_margin_gated_product(case: Case | dict | None) -> bool:
+    """Homecare / counselling use Insighte-margin % gates (not the absolute ₹5k floor)."""
+    return is_homecare_product(case) or is_counselling_product(case)
 
 
 def therapist_share_ratio(case: Case | dict | None) -> float | None:
@@ -102,14 +120,32 @@ def therapist_share_ratio(case: Case | dict | None) -> float | None:
     return resolve_therapist_pay(case) / client
 
 
+def insighte_margin_ratio(case: Case | dict | None) -> float | None:
+    """(client − therapist) / client. None when client amount is missing/zero."""
+    client = client_amount_inr(case)
+    if client <= 0:
+        return None
+    return (client - resolve_therapist_pay(case)) / client
+
+
 def needs_low_share_review(case: Case | dict | None) -> bool:
-    """Homecare share under 20% of client amount should go to the review queue."""
+    """Legacy: homecare therapist share under 20% of client amount → review queue."""
     if not is_homecare_product(case):
         return False
     ratio = therapist_share_ratio(case)
     if ratio is None:
         return False
     return ratio < HOMECARE_LOW_SHARE_RATIO
+
+
+def needs_low_insighte_margin_review(case: Case | dict | None) -> bool:
+    """Homecare/counselling: Insighte margin below 30% needs super-admin review."""
+    if not is_margin_gated_product(case):
+        return False
+    ratio = insighte_margin_ratio(case)
+    if ratio is None:
+        return False
+    return ratio < INSIGHTE_LOW_MARGIN_RATIO
 
 
 def _require_compensation(case: Case, *, context: str) -> None:
@@ -198,6 +234,15 @@ def validate_case_billing(case: Case) -> None:
         _require_compensation(case, context="package")
 
 
+# Meta keys carried on billing PATCH for audit / rate history — not Case columns.
+BILLING_META_KEYS = frozenset(
+    {
+        "client_billing_effective_from",
+        "therapist_remuneration_effective_from",
+    }
+)
+
+
 def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) -> None:
     billing_keys = {
         "product_billing_rule_id",
@@ -215,6 +260,8 @@ def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) ->
     if not any(k in data for k in billing_keys):
         return
     for k, v in data.items():
+        if k in BILLING_META_KEYS:
+            continue
         if k in billing_keys and v is not None:
             if k in ("billing_type", "compensation_mode", "client_billing_mode") and isinstance(v, str):
                 if k == "billing_type":

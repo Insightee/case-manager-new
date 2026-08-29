@@ -11,7 +11,7 @@ import {
   MODAL_INPUT_STYLE,
   MODAL_LABEL_STYLE,
 } from './meetingConstants.js'
-import { buildMeetingsAvailabilityQuery } from './meetingUtils.js'
+import { buildSharedAvailabilityQuery } from './meetingUtils.js'
 
 const ADMIN_ROLES = new Set(['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN'])
 const INTERNAL_STAFF_ROLES = new Set(['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER'])
@@ -173,14 +173,17 @@ export function BookMeetingModal({
       return
     }
     setSlotsLoading(true)
-    const qs = buildMeetingsAvailabilityQuery({
+    const userIds = [
+      caseManagerId,
+      attendees.therapist && therapistUserId ? Number(therapistUserId) : null,
+      ...(attendees.inviteStaff ? availabilityAdminIds : []),
+    ].filter(Boolean)
+    const qs = buildSharedAvailabilityQuery({
       targetDate: form.scheduled_date,
       durationMinutes: form.duration_minutes,
-      caseManagerId,
-      therapistId: attendees.therapist && therapistUserId ? Number(therapistUserId) : null,
-      adminIds: availabilityAdminIds,
+      userIds,
     })
-    apiFetch(`/api/v1/meetings/availability?${qs}`)
+    apiFetch(`/api/v1/calendar/availability?${qs}`)
       .then(setStaffSlots)
       .catch(() => setStaffSlots(null))
       .finally(() => setSlotsLoading(false))
@@ -614,6 +617,11 @@ export function BookMeetingModal({
               onSelectTime={(time) => set('scheduled_time', time)}
               onSelectDate={(date) => set('scheduled_date', date)}
             />
+          ) : null}
+          {activeSlots?.freebusy_stale ? (
+            <p style={{ margin: '-6px 0 10px', fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 12px' }}>
+              Google Calendar was temporarily unavailable for at least one attendee, so these slots were calculated from local availability first.
+            </p>
           ) : null}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>

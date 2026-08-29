@@ -531,6 +531,8 @@ def therapist_package_payout_amount(
     case: Case,
     *,
     payable_units: int,
+    db: Session | None = None,
+    as_of: date | None = None,
 ) -> float:
     """FIX 2: never use client package_amount_inr for therapist payout.
 
@@ -539,7 +541,12 @@ def therapist_package_payout_amount(
     if not case.package_session_count or int(case.package_session_count) <= 0:
         raise ValueError(BillingCalcExceptionCode.MISSING_PACKAGE_COUNT.value)
     pkg_count = int(case.package_session_count)
-    base = resolve_therapist_pay(case)
+    if db is not None and as_of is not None:
+        from app.services import billing_rate_history_service
+
+        base = billing_rate_history_service.resolve_therapist_pay_as_of(db, case, as_of)
+    else:
+        base = resolve_therapist_pay(case)
     return round((base / pkg_count) * payable_units, 2)
 
 

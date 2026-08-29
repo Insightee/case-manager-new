@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { isFinanceDeskUser } from '../../lib/financeDesk.js'
 import {
   CASE_STATE_OPTIONS,
-  OPENED_DATE_PRESETS,
   activateCaseAllotment,
   buildPipelineActions,
   countActivePipelineFilters,
@@ -354,30 +353,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
             value={filters.caseState}
             onChange={(e) => patchFilters({ caseState: e.target.value })}
             options={CASE_STATE_OPTIONS}
-          />
-          <FilterDateRange
-            label="Opened"
-            from={filters.dateFrom}
-            to={filters.dateTo}
-            onFromChange={(e) =>
-              patchFilters({ openedPreset: 'custom', dateFrom: e.target.value })
-            }
-            onToChange={(e) => patchFilters({ openedPreset: 'custom', dateTo: e.target.value })}
-            className="admin-cases-pipeline__filter-span-2"
-          />
-          <FilterSelect
-            label="Opened preset"
-            value={filters.openedPreset}
-            onChange={(e) => {
-              const preset = e.target.value
-              if (preset === 'custom') {
-                const range = defaultOpenedRange()
-                patchFilters({ openedPreset: preset, dateFrom: range.from, dateTo: range.to })
-              } else {
-                patchFilters({ openedPreset: preset })
-              }
-            }}
-            options={OPENED_DATE_PRESETS}
           />
           <FilterSelect
             label="Programme"
