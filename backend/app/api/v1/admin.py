@@ -1083,13 +1083,9 @@ def sessions_analytics(
             tu = db.get(User, s.therapist_user_id)
             therapist_name = tu.full_name if tu else None
         duration_mins = None
-        if s.actual_start_at and s.actual_end_at:
-            duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
-        elif s.start_time and s.end_time:
-            from datetime import datetime as dt
-            s_start = dt.combine(s.scheduled_date, s.start_time)
-            s_end = dt.combine(s.scheduled_date, s.end_time)
-            duration_mins = int((s_end - s_start).total_seconds() / 60)
+        from app.services import session_duration_compliance_service as duration_svc
+
+        duration_mins = duration_svc.admin_list_duration_minutes(s, s.daily_log)
         recent_sessions.append({
             "id": s.id,
             "case_id": s.case_id,
@@ -1207,12 +1203,16 @@ def export_sessions_xlsx(
     sessions_rows = db.scalars(
         select(TherapySession)
         .join(Case, TherapySession.case_id == Case.id)
-        .options(selectinload(TherapySession.case).selectinload(Case.child))
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
+        )
         .where(TherapySession.scheduled_date >= d_from, TherapySession.scheduled_date <= d_to, *base_filters)
         .order_by(TherapySession.scheduled_date.desc())
     ).all()
 
     from app.services.export_document_service import export_meta, xlsx_footer_rows, xlsx_preamble_rows
+    from app.services import session_duration_compliance_service as duration_svc
 
     meta = export_meta(user)
     wb = openpyxl.Workbook()
@@ -1239,14 +1239,7 @@ def export_sessions_xlsx(
             parent_info=parents.get(case_obj.child_id) if case_obj and case_obj.child_id else None,
             include_therapist=False,
         )["Parent Name"]
-        duration_mins = ""
-        if s.actual_start_at and s.actual_end_at:
-            duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
-        elif s.start_time and s.end_time:
-            from datetime import datetime as dt
-            s_start = dt.combine(s.scheduled_date, s.start_time)
-            s_end = dt.combine(s.scheduled_date, s.end_time)
-            duration_mins = int((s_end - s_start).total_seconds() / 60)
+        duration_mins = duration_svc.admin_list_duration_minutes(s, s.daily_log) or ""
         ws.append([
             s.id,
             s.scheduled_date.isoformat(),
@@ -1519,6 +1512,40 @@ def export_session_logs(
             log.late_addition,
         ])
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=session_logs.csv"})
+
+
+@router.get("/session-logs/duration-outliers/export/xlsx")
+def export_session_log_duration_outliers_xlsx(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    month: Optional[str] = Query(None, description="YYYY-MM (overrides date_from/date_to when set)"),
+    therapist_user_id: Optional[int] = Query(None, alias="therapist_id"),
+    product_module: Optional[str] = None,
+    case_id: Optional[int] = None,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import session_duration_outlier_export_service as outlier_export
+
+    d_from, d_to = outlier_export.resolve_export_date_range(
+        date_from=date_from,
+        date_to=date_to,
+        month=month,
+    )
+    content, filename = outlier_export.build_duration_outliers_xlsx(
+        db,
+        user=user,
+        date_from=d_from,
+        date_to=d_to,
+        product_module=product_module,
+        therapist_user_id=therapist_user_id,
+        case_id=case_id,
+    )
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 def require_user_directory_read(user: User = Depends(get_current_user)) -> User:
