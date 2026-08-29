@@ -33,9 +33,13 @@ ACTION_LABELS: dict[str, str] = {
 def _billing_audit_detail(old_value: Any, new_value: Any) -> str | None:
     if not isinstance(old_value, dict):
         old_value = {}
-    proposed = new_value.get("proposed_billing") if isinstance(new_value, dict) else None
+    proposed = None
+    if isinstance(new_value, dict):
+        proposed = new_value.get("proposed_billing") or new_value.get("applied_billing")
+        if not isinstance(proposed, dict):
+            proposed = new_value
     if not isinstance(proposed, dict):
-        proposed = new_value if isinstance(new_value, dict) else {}
+        proposed = {}
     from app.core.billing_validation import client_amount_inr, resolve_therapist_pay
 
     parts: list[str] = []

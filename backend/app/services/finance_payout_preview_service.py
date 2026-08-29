@@ -311,15 +311,23 @@ class CycleSegment:
     last_log: date | None
     is_incoming_replacement: bool
     is_outgoing_replacement: bool
+    # Frozen remun from CaseAssignment.billing_snapshot (outgoing / ended).
+    locked_therapist_share_inr: float | None = None
+
+    def _therapist_share(
+        self, case: Case, *, db: Session | None = None, as_of: date | None = None
+    ) -> float:
+        if self.locked_therapist_share_inr is not None:
+            return float(self.locked_therapist_share_inr)
+        return therapist_share_inr(case, db=db, as_of=as_of)
 
     def therapist_subtotal(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
-        return predicted_subtotal_inr(
+        return predicted_amount_inr(
             case,
+            share=self._therapist_share(case, db=db, as_of=as_of),
             approved_sessions=self.approved_sessions,
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
-            db=db,
-            as_of=as_of,
         )
 
     def therapist_gross(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
@@ -832,6 +840,11 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
         leave_credits = int(
             balance.get("leave_credit_pending", balance.get("paid_remaining", 0)) or 0
         )
+        locked_share: float | None = None
+        if assignment is not None and isinstance(assignment.billing_snapshot, dict):
+            locked = resolve_therapist_pay(assignment.billing_snapshot)
+            if locked > 0:
+                locked_share = locked
         segments.append(
             CycleSegment(
                 therapist_user_id=segment.therapist_user_id,
@@ -852,6 +865,7 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
                 last_log=segment.last_log,
                 is_incoming_replacement=segment.is_incoming_replacement,
                 is_outgoing_replacement=segment.is_outgoing_replacement,
+                locked_therapist_share_inr=locked_share,
             )
         )
     return segments

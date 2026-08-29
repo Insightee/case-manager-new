@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -17,6 +17,11 @@ class CaseBillingRateChange(Base):
     Case columns hold the *current* configured amounts (what the client is charged
     going forward). Payout/invoice calculators must resolve amounts as-of a service
     date via this history, not only the live case fields.
+
+    source:
+      FORM — admin billing PATCH
+      AUDIT_BACKFILL — reconstructed from historical audit_events (idempotent)
+      ASSIGNMENT_SNAPSHOT — locked outgoing-assignment pay (optional linkage)
     """
 
     __tablename__ = "case_billing_rate_changes"
@@ -35,6 +40,12 @@ class CaseBillingRateChange(Base):
     previous_snapshot: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON().with_variant(SQLiteJSON(), "sqlite"), nullable=True)
     new_snapshot: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON().with_variant(SQLiteJSON(), "sqlite"), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="FORM", server_default="FORM", index=True)
+    audit_event_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, unique=True, index=True)
+    therapist_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
 
     changed_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(

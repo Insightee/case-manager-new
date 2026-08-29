@@ -25,6 +25,8 @@ def _package_payload(*, client_amount: float, therapist_amount: float) -> dict:
         "compensation_mode": "PERCENTAGE",
         "pay_share_amount_inr": therapist_amount,
         "therapist_fixed_pay_inr": None,
+        "client_billing_effective_from": "2026-06-01",
+        "therapist_remuneration_effective_from": "2026-06-01",
     }
 
 

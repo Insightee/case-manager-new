@@ -49,6 +49,10 @@ def merged_billing(case: Case, proposed: dict) -> dict:
     merged = case_billing_dict(case)
     merged.pop("billing_updated_at", None)
     merged.update(proposed)
+    for key in ("client_billing_effective_from", "therapist_remuneration_effective_from"):
+        value = merged.get(key)
+        if hasattr(value, "isoformat") and not isinstance(value, str):
+            merged[key] = value.isoformat()
     return merged
 
 
@@ -114,6 +118,9 @@ def apply_or_request(
 
     previous = case_billing_dict(case)
     merged = validate_proposed_billing(case, proposed)
+    billing_rate_history_service.ensure_effective_dates_for_amount_change(
+        previous=previous, proposed=proposed, merged=merged
+    )
     if requires_approval(merged) and not is_designated_approver(db, requester):
         return request_approval(db, case=case, proposed=proposed, requester=requester)
     apply_billing_payload(case, proposed, requester.id)
@@ -123,6 +130,7 @@ def apply_or_request(
         previous=previous,
         proposed=proposed,
         changed_by_user_id=requester.id,
+        source="FORM",
     )
     return None
 
@@ -220,6 +228,7 @@ def approve(db: Session, row: BillingApprovalRequest, approver: User) -> Case:
         previous=previous,
         proposed=row.proposed_billing or {},
         changed_by_user_id=approver.id,
+        source="FORM",
     )
     row.status = BillingApprovalStatus.APPROVED
     row.reviewed_by_user_id = approver.id

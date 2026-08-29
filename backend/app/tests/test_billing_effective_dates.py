@@ -171,3 +171,176 @@ def test_billing_patch_records_rate_change_and_timeline_detail():
     )
     assert "1500" in details and "1600" in details
     assert "1050" in details and "1100" in details
+
+
+def test_billing_patch_without_effective_dates_is_rejected():
+    headers = login_headers(client, "superadmin@demo.com")
+    case_id = api_first_case_id(client, headers)
+
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None
+        from app.models.case import BillingType
+
+        case.product_module = "homecare"
+        case.billing_type = BillingType.PER_SESSION
+        case.client_rate_per_session_inr = 1500
+        case.therapist_fixed_pay_inr = 1050
+        case.pay_share_amount_inr = 1050
+        db.commit()
+
+    missing = client.patch(
+        f"/api/v1/cases/{case_id}/billing",
+        headers=headers,
+        json={
+            "billing_type": "PER_SESSION",
+            "client_billing_mode": "POSTPAID",
+            "client_rate_per_session_inr": 1700,
+            "compensation_mode": "FIXED_LUMP",
+            "therapist_fixed_pay_inr": 1100,
+            "pay_share_amount_inr": 1100,
+        },
+    )
+    assert missing.status_code == 400, missing.text
+    assert "effective from" in missing.json()["detail"].lower()
+
+
+def test_audit_backfill_inserts_idempotent_history_without_mutating_case():
+    from datetime import datetime, timezone
+
+    from app.core.audit import log_audit
+    from app.models.audit_event import AuditEvent
+
+    with SessionLocal() as db:
+        case = db.scalars(select(Case).limit(1)).first()
+        assert case is not None
+        live_client = float(case.client_rate_per_session_inr or case.package_amount_inr or 0)
+        live_therapist = float(case.therapist_fixed_pay_inr or case.pay_share_amount_inr or 0)
+
+        for old in db.scalars(
+            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
+        ).all():
+            db.delete(old)
+        db.flush()
+
+        previous = {
+            "billing_type": "PER_SESSION",
+            "client_rate_per_session_inr": 1400,
+            "therapist_fixed_pay_inr": 1000,
+            "pay_share_amount_inr": 1000,
+        }
+        proposed = {
+            "billing_type": "PER_SESSION",
+            "client_rate_per_session_inr": 1500,
+            "therapist_fixed_pay_inr": 1050,
+            "pay_share_amount_inr": 1050,
+        }
+        log_audit(
+            db,
+            actor_user_id=1,
+            action="update_billing",
+            entity_type="case",
+            entity_id=case.id,
+            case_id=case.id,
+            old_value=previous,
+            new_value={"proposed_billing": proposed, "applied": True},
+        )
+        db.commit()
+
+        ev = db.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.case_id == case.id, AuditEvent.action == "update_billing")
+            .order_by(AuditEvent.id.desc())
+        ).first()
+        assert ev is not None
+        # Force a known IST calendar date for the audit timestamp.
+        ev.created_at = datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc)
+        db.commit()
+
+        first = billing_rate_history_service.backfill_rate_history_from_audits(
+            db, dry_run=False, case_id=case.id
+        )
+        db.commit()
+        assert first["inserted_or_would_insert"] >= 1
+
+        row = db.scalars(
+            select(CaseBillingRateChange).where(CaseBillingRateChange.audit_event_id == ev.id)
+        ).first()
+        assert row is not None
+        assert row.source == "AUDIT_BACKFILL"
+        assert row.client_effective_from == date(2026, 3, 15)
+        assert float(row.new_therapist_amount_inr or 0) == 1050.0
+
+        db.refresh(case)
+        assert float(case.client_rate_per_session_inr or case.package_amount_inr or 0) == live_client
+        assert float(case.therapist_fixed_pay_inr or case.pay_share_amount_inr or 0) == live_therapist
+
+        second = billing_rate_history_service.backfill_rate_history_from_audits(
+            db, dry_run=False, case_id=case.id
+        )
+        assert second["inserted_or_would_insert"] == 0
+
+
+def test_outgoing_assignment_snapshot_locks_therapist_share_on_segment():
+    from app.services.finance_payout_preview_service import CycleSegment
+    from app.models.case import BillingType
+
+    with SessionLocal() as db:
+        case = db.scalars(select(Case).limit(1)).first()
+        assert case is not None
+        for old in db.scalars(
+            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
+        ).all():
+            db.delete(old)
+        case.billing_type = BillingType.PER_SESSION
+        case.therapist_fixed_pay_inr = 1200
+        case.pay_share_amount_inr = 1200
+        db.commit()
+        db.refresh(case)
+
+        segment = CycleSegment(
+            therapist_user_id=1,
+            approved_sessions=4,
+            approved_absence=0,
+            hours=4.0,
+            calendar_days=0,
+            unpaid_leaves=0,
+            paid_leaves=0,
+            leave_credits=0,
+            transition_days=0,
+            transition_day_type="",
+            transition_total=0.0,
+            therapist_start_date=None,
+            case_start_date=None,
+            case_end_date=None,
+            first_log=None,
+            last_log=None,
+            is_incoming_replacement=False,
+            is_outgoing_replacement=True,
+            locked_therapist_share_inr=1000.0,
+        )
+        # Live case is 1200; locked outgoing remun must stay 1000 × sessions.
+        assert segment.therapist_subtotal(case, db=db, as_of=date(2026, 8, 31)) == 4000.0
+
+        unlocked = CycleSegment(
+            therapist_user_id=2,
+            approved_sessions=4,
+            approved_absence=0,
+            hours=4.0,
+            calendar_days=0,
+            unpaid_leaves=0,
+            paid_leaves=0,
+            leave_credits=0,
+            transition_days=0,
+            transition_day_type="",
+            transition_total=0.0,
+            therapist_start_date=None,
+            case_start_date=None,
+            case_end_date=None,
+            first_log=None,
+            last_log=None,
+            is_incoming_replacement=True,
+            is_outgoing_replacement=False,
+            locked_therapist_share_inr=None,
+        )
+        assert unlocked.therapist_subtotal(case, db=db, as_of=date(2026, 8, 31)) == 4800.0

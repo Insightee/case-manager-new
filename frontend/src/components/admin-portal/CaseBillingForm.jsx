@@ -91,6 +91,35 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
     onError?.('')
     try {
       const lump = form.therapist_fixed_pay_inr ? Number(form.therapist_fixed_pay_inr) : null
+      const nextClient =
+        form.billing_type === 'PER_SESSION'
+          ? (form.client_rate_per_session_inr ? Number(form.client_rate_per_session_inr) : null)
+          : form.billing_type === 'MONTHLY_FIXED'
+            ? (form.client_monthly_rate_inr ? Number(form.client_monthly_rate_inr) : null)
+            : form.billing_type === 'PACKAGE'
+              ? (form.package_amount_inr ? Number(form.package_amount_inr) : null)
+              : null
+      const prevClient =
+        caseItem.billing_type === 'PER_SESSION'
+          ? Number(caseItem.client_rate_per_session_inr || 0)
+          : caseItem.billing_type === 'MONTHLY_FIXED'
+            ? Number(caseItem.client_monthly_rate_inr || caseItem.package_amount_inr || 0)
+            : Number(caseItem.package_amount_inr || 0)
+      const prevTherapist = Number(resolvedTherapistPay(caseItem) || 0)
+      const clientChanged =
+        nextClient != null && Math.round(nextClient * 100) !== Math.round(prevClient * 100)
+      const therapistChanged =
+        lump != null && Math.round(lump * 100) !== Math.round(prevTherapist * 100)
+      if (clientChanged && !form.client_billing_effective_from) {
+        throw new Error(
+          'Looks like we still need the client billing effective from date before we can save this rate change.',
+        )
+      }
+      if (therapistChanged && !form.therapist_remuneration_effective_from) {
+        throw new Error(
+          'Looks like we still need the therapist remuneration effective from date before we can save this rate change.',
+        )
+      }
       const payload = {
         product_billing_rule_id: form.product_billing_rule_id ? Number(form.product_billing_rule_id) : null,
         billing_type: form.billing_type || null,
@@ -274,7 +303,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
               onChange={(e) => setField('client_billing_effective_from', e.target.value)}
             />
             <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
-              From which date the revised client charge applies for invoices.
+              Required when the client charge changes. Invoices use this date for the service period.
             </span>
           </label>
           <label>
@@ -285,7 +314,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
               onChange={(e) => setField('therapist_remuneration_effective_from', e.target.value)}
             />
             <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
-              Payout uses this date for service periods — not the live case amount alone.
+              Required when therapist pay changes. Payout uses this for service periods — not the live case amount alone.
             </span>
           </label>
         </>

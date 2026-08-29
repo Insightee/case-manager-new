@@ -83,6 +83,8 @@ def test_patch_case_billing_coerces_to_fixed_lump():
             "package_amount_inr": 30000.0,
             "compensation_mode": "PERCENTAGE",
             "pay_share_amount_inr": 25000.0,
+            "client_billing_effective_from": "2026-06-01",
+            "therapist_remuneration_effective_from": "2026-06-01",
         },
     )
     assert patch.status_code == 200, patch.text
