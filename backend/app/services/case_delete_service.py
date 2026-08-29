@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 # Statement order respects FK dependencies (children before parents).
@@ -375,8 +376,18 @@ def delete_case_by_code(db: Session, case_code: str) -> dict:
 
     for stmt in DELETE_CASE_SQL.strip().split(";"):
         sql = stmt.strip()
-        if sql:
+        if not sql:
+            continue
+        savepoint = db.begin_nested()
+        try:
             db.execute(text(sql), {"case_code": case_code})
+            savepoint.commit()
+        except ProgrammingError as exc:
+            savepoint.rollback()
+            message = str(getattr(exc, "orig", exc)).lower()
+            if "does not exist" in message or "undefined_table" in message:
+                continue
+            raise
 
     after = case_snapshot(db, case_code)
     if after is not None:
