@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 
-import pytest
-from sqlalchemy import select
+import uuid
 
+import pytest
 from sqlalchemy import select
 
 from app.core.database import SessionLocal
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import BillingType, Case, CompensationMode
+from app.models.case import BillingType, Case, CaseDayType, CaseStatus, CompensationMode
+from app.models.child import Child
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.ledger_billing import ProductBillingRule
@@ -123,18 +124,50 @@ def test_invoice_breakdown_from_preview_net_matches_subtotal():
         db.close()
 
 
+def _isolated_shadow_calendar_case(db) -> tuple[User, Case]:
+    """Dedicated shadow case so calendar-day leave tests do not depend on seed case modules."""
+    therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+    child = db.scalars(select(Child).limit(1)).first()
+    assert therapist is not None and child is not None
+    case = Case(
+        case_code=f"SHADOW-LEAVE-{uuid.uuid4().hex[:8]}",
+        child_id=child.id,
+        service_type="Shadow Support",
+        product_module="shadow_support",
+        status=CaseStatus.ACTIVE,
+        billing_type=BillingType.PER_SESSION,
+        compensation_mode=CompensationMode.FIXED_LUMP,
+        client_rate_per_session_inr=1000,
+        therapist_fixed_pay_inr=20000,
+        pay_share_amount_inr=20000,
+        day_type=CaseDayType.FULL_DAY,
+    )
+    db.add(case)
+    db.flush()
+    db.add(
+        CaseAssignment(
+            case_id=case.id,
+            therapist_user_id=therapist.id,
+            status=CaseAssignmentStatus.ACTIVE,
+            start_date=date(2026, 1, 1),
+        )
+    )
+    db.commit()
+    return therapist, case
+
+
 def test_calendar_day_unpaid_leave_deduction():
     db = SessionLocal()
     try:
-        therapist, case = _shadow_case(db)
-        ym = "2026-07"
+        therapist, case = _isolated_shadow_calendar_case(db)
+        ym = "2099-08"
         leave = TherapistLeave(
             therapist_user_id=therapist.id,
             case_id=case.id,
             leave_type=LeaveType.UNPAID,
             billing_category=LeaveBillingCategory.UNPAID,
-            start_date=date(2026, 7, 10),
-            end_date=date(2026, 7, 11),
+            start_date=date(2099, 8, 10),
+            end_date=date(2099, 8, 11),
             reason="Shadow unpaid leave",
             status=LeaveStatus.APPROVED,
             includes_shadow_cases=True,

@@ -1,24 +1,27 @@
 """Therapist payout finance queue, resolve path, Monday brief — Loop 2."""
 from __future__ import annotations
 
+import uuid
 from datetime import date
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.audit_event import AuditEvent
 from app.models.assignment import CaseAssignment
 from app.models.case import Case
+from app.models.finance_writable import FinancePayoutDeduction
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, SessionLineSource, SessionLineType
 from app.models.user import User
 from app.models.therapist_statement_dispute import TherapistStatementDispute
 from app.models.therapist_payout_flag import TherapistPayoutFlag
 from app.seed.demo_seed import run as seed_run
-from app.services import statement_dispute_service, therapist_payout_queue_service
+from app.services import payout_settlement_service, statement_dispute_service, therapist_payout_queue_service
 from app.services.therapist_payout_queue_service import _compute_statement_balances
+from app.tests.conftest import isolated_homecare_case
 
 client = TestClient(app)
 
@@ -35,13 +38,23 @@ def _therapist_id(db) -> int:
     return u.id
 
 
-def _invoice_with_session_line(db, *, amount: float = 1000.0, session_amount: float = 300.0, session_id: int = 9001):
+def _invoice_with_session_line(
+    db,
+    *,
+    amount: float = 1000.0,
+    session_amount: float = 300.0,
+    session_id: int = 9001,
+    month: str = "2099-06",
+    case: Case | None = None,
+):
     tid = _therapist_id(db)
-    case = db.scalar(select(Case).limit(1))
+    if case is None:
+        case = db.scalar(select(Case).limit(1))
     assert case is not None
+    year, month_num = (int(month[:4]), int(month[5:7])) if "-" in month else (2099, 6)
     inv = Invoice(
         therapist_user_id=tid,
-        month="2099-06",
+        month=month,
         amount_inr=amount,
         subtotal_inr=amount,
         status=InvoiceStatus.IN_REVIEW,
@@ -62,7 +75,7 @@ def _invoice_with_session_line(db, *, amount: float = 1000.0, session_amount: fl
     sl = InvoiceSessionLine(
         invoice_case_line_id=cl.id,
         session_id=session_id,
-        session_date=date(2099, 6, 15),
+        session_date=date(year, month_num, 15),
         line_type=SessionLineType.PER_SESSION,
         amount_inr=session_amount,
         source=SessionLineSource.LOG,
@@ -171,17 +184,41 @@ def test_payout_queue_payable_now_split():
 
 
 def test_payout_queue_in_review_is_not_blocked_and_tds_pending():
-    seed_run()
     db = SessionLocal()
     try:
-        inv, _, session_amount = _invoice_with_session_line(db, session_id=9021)
+        therapist_id = _therapist_id(db)
+        case = isolated_homecare_case(db)
+        month = "2099-11"
+        session_id = int(uuid.uuid4().hex[:7], 16) % 900000 + 100000
+        db.execute(
+            delete(FinancePayoutDeduction).where(
+                FinancePayoutDeduction.case_id == case.id,
+                FinancePayoutDeduction.billing_month == month,
+            )
+        )
+        db.execute(
+            delete(TherapistStatementDispute).where(
+                TherapistStatementDispute.therapist_user_id == therapist_id,
+                TherapistStatementDispute.month.in_([month, "Nov 2099"]),
+            )
+        )
+        inv, _, session_amount = _invoice_with_session_line(
+            db,
+            case=case,
+            amount=300.0,
+            session_amount=300.0,
+            session_id=session_id,
+            month=month,
+        )
         db.commit()
         invoice_id = inv.id
+        settlement = payout_settlement_service.compute_invoice_settlement(db, inv)
+        assert settlement.get("blocked") is False, settlement
     finally:
         db.close()
 
     finance_h = _login("finance@demo.com")
-    q = client.get("/api/v1/admin/therapist-payouts/queue?month=2099-06", headers=finance_h)
+    q = client.get("/api/v1/admin/therapist-payouts/queue?month=2099-11", headers=finance_h)
     assert q.status_code == 200, q.text
     row = next(s for s in q.json()["statements"] if s["invoiceId"] == invoice_id)
     assert row["status"] == "IN_REVIEW"
@@ -202,7 +239,7 @@ def test_payout_queue_in_review_is_not_blocked_and_tds_pending():
     assert tds.json()["tdsInr"] == 0
     assert tds.json()["netInr"] == round(float(session_amount), 2)
 
-    q2 = client.get("/api/v1/admin/therapist-payouts/queue?month=Jun 2099", headers=finance_h)
+    q2 = client.get("/api/v1/admin/therapist-payouts/queue?month=Nov 2099", headers=finance_h)
     assert q2.status_code == 200, q2.text
     row2 = next(s for s in q2.json()["statements"] if s["invoiceId"] == invoice_id)
     assert row2["tdsPending"] is False

@@ -273,7 +273,7 @@ def test_create_deduction_via_api():
         case_id = case.id
         therapist = db.scalar(select(User).where(User.email == "therapist@demo.com"))
         therapist_id = therapist.id
-        _setup_case_month_invoice_and_payout(db, case=case, billing_month="2099-07")
+        _setup_case_month_invoice_and_payout(db, case=case, billing_month="2099-10")
     finally:
         db.close()
 
@@ -283,7 +283,7 @@ def test_create_deduction_via_api():
         headers=headers,
         json={
             "case_id": case_id,
-            "billing_month": "2099-07",
+            "billing_month": "2099-10",
             "therapist_user_id": therapist_id,
             "amount_inr": 200,
             "direction": "DEDUCT",

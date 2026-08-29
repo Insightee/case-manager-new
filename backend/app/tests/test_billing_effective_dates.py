@@ -13,7 +13,7 @@ from app.models.case import Case
 from app.models.case_billing_rate_change import CaseBillingRateChange
 from app.services import billing_rate_history_service
 from app.services.billing_approval_service import requires_approval
-from app.tests.conftest import api_first_case_id, login_headers
+from app.tests.conftest import isolated_homecare_case, login_headers
 
 
 client = TestClient(app)
@@ -70,14 +70,7 @@ def test_counselling_uses_margin_gate_not_5k():
 
 def test_resolve_therapist_pay_as_of_uses_effective_date():
     with SessionLocal() as db:
-        case = db.scalars(select(Case).limit(1)).first()
-        assert case is not None
-        for old in db.scalars(
-            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
-        ).all():
-            db.delete(old)
-        case.therapist_fixed_pay_inr = 1200
-        case.pay_share_amount_inr = 1200
+        case = isolated_homecare_case(db)
         db.add(
             CaseBillingRateChange(
                 case_id=case.id,
@@ -109,23 +102,13 @@ def test_resolve_therapist_pay_as_of_uses_effective_date():
 
 def test_billing_patch_records_rate_change_and_timeline_detail():
     headers = login_headers(client, "superadmin@demo.com")
-    case_id = api_first_case_id(client, headers)
-
     with SessionLocal() as db:
-        case = db.get(Case, case_id)
-        assert case is not None
-        case.product_module = "homecare"
-        case.billing_type = case.billing_type  # noqa: keep
-        from app.models.case import BillingType
-
-        case.billing_type = BillingType.PER_SESSION
+        case = isolated_homecare_case(db)
         case.client_rate_per_session_inr = 1500
-        case.client_monthly_rate_inr = None
-        case.package_amount_inr = None
         case.therapist_fixed_pay_inr = 1050
         case.pay_share_amount_inr = 1050
+        case_id = case.id
         db.commit()
-
     updated = client.patch(
         f"/api/v1/cases/{case_id}/billing",
         headers=headers,
@@ -175,20 +158,13 @@ def test_billing_patch_records_rate_change_and_timeline_detail():
 
 def test_billing_patch_without_effective_dates_is_rejected():
     headers = login_headers(client, "superadmin@demo.com")
-    case_id = api_first_case_id(client, headers)
-
     with SessionLocal() as db:
-        case = db.get(Case, case_id)
-        assert case is not None
-        from app.models.case import BillingType
-
-        case.product_module = "homecare"
-        case.billing_type = BillingType.PER_SESSION
+        case = isolated_homecare_case(db)
         case.client_rate_per_session_inr = 1500
         case.therapist_fixed_pay_inr = 1050
         case.pay_share_amount_inr = 1050
+        case_id = case.id
         db.commit()
-
     missing = client.patch(
         f"/api/v1/cases/{case_id}/billing",
         headers=headers,
@@ -212,16 +188,9 @@ def test_audit_backfill_inserts_idempotent_history_without_mutating_case():
     from app.models.audit_event import AuditEvent
 
     with SessionLocal() as db:
-        case = db.scalars(select(Case).limit(1)).first()
-        assert case is not None
+        case = isolated_homecare_case(db)
         live_client = float(case.client_rate_per_session_inr or case.package_amount_inr or 0)
         live_therapist = float(case.therapist_fixed_pay_inr or case.pay_share_amount_inr or 0)
-
-        for old in db.scalars(
-            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
-        ).all():
-            db.delete(old)
-        db.flush()
 
         previous = {
             "billing_type": "PER_SESSION",
@@ -283,18 +252,9 @@ def test_audit_backfill_inserts_idempotent_history_without_mutating_case():
 
 def test_outgoing_assignment_snapshot_locks_therapist_share_on_segment():
     from app.services.finance_payout_preview_service import CycleSegment
-    from app.models.case import BillingType
 
     with SessionLocal() as db:
-        case = db.scalars(select(Case).limit(1)).first()
-        assert case is not None
-        for old in db.scalars(
-            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
-        ).all():
-            db.delete(old)
-        case.billing_type = BillingType.PER_SESSION
-        case.therapist_fixed_pay_inr = 1200
-        case.pay_share_amount_inr = 1200
+        case = isolated_homecare_case(db)
         db.commit()
         db.refresh(case)
 
