@@ -270,8 +270,10 @@ def test_create_deduction_via_api():
     db = SessionLocal()
     try:
         case = _case_with_share_ratio(db)
+        case_id = case.id
         therapist = db.scalar(select(User).where(User.email == "therapist@demo.com"))
         therapist_id = therapist.id
+        _setup_case_month_invoice_and_payout(db, case=case, billing_month="2099-07")
     finally:
         db.close()
 
@@ -280,7 +282,7 @@ def test_create_deduction_via_api():
         "/api/v1/admin/finance-writable/deductions",
         headers=headers,
         json={
-            "case_id": case.id,
+            "case_id": case_id,
             "billing_month": "2099-07",
             "therapist_user_id": therapist_id,
             "amount_inr": 200,
