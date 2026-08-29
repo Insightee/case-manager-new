@@ -73,7 +73,7 @@ export function FinanceMondayBrief() {
     setLoading(true)
     setLoadError(null)
     const q = `billing_month=${encodeURIComponent(billingMonth)}`
-    apiFetch(`/api/v1/admin/finance-control-tower/summary?${q}`)
+    apiFetch(`/api/v1/admin/finance-control-tower/summary?${q}`, { timeoutMs: 120_000 })
       .then((data) => {
         if (cancelled) return
         setFinanceSummary(data?.financeSummary || null)
