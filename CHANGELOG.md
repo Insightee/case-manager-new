@@ -28,6 +28,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Finance snapshot summary on production: extended control-tower summary fetch to 120s (prod aggregation can exceed the default 30s client timeout and looked like an API connectivity failure).
 - Therapist invoice breakdown uses stored payout snapshots (case + session lines) instead of rebuilding from live logs — fixes empty or ₹0 breakdowns on paid/in-review invoices when line items were missing.
 - Therapist invoice session breakdown on mobile: stacked session cards, full-height bottom sheets, and thumb-zone Done/Submit actions (no horizontal scroll table).
 - Support history KPI counts align with visible rows (search + needs-attention); ticket queue filters and badges use canonical open / in_progress / closed / escalated buckets.
