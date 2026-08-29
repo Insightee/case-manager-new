@@ -171,6 +171,13 @@ def calendar_days_for_segment(
     if bound_end is None and is_outgoing_replacement:
         bound_end = last_log
     if bound_end is not None:
+        # A segment end outside the billing month must never drive in-month day counts.
+        if bound_end > month_end:
+            if last_log is None:
+                return 0
+            bound_end = last_log
+        elif bound_end < month_start:
+            return 0
         return calendar_days_outgoing(last_log=bound_end, segment_start_day=seg_start)
 
     if is_incoming_replacement and first_log is not None:

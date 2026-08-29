@@ -2313,6 +2313,46 @@ def backfill_therapist_case_managers(
     return outcome
 
 
+class DeleteCaseByCodeBody(BaseModel):
+    case_code: str = Field(min_length=3, max_length=64)
+    confirm: bool = False
+
+
+@router.post("/maintenance/delete-case-by-code")
+def admin_delete_case_by_code(
+    payload: DeleteCaseByCodeBody,
+    request: Request,
+    user: User = Depends(require_permission("admin.override")),
+    db: Session = Depends(get_db),
+):
+    """Hard-delete one case by case_code. Super-admin maintenance only."""
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm=true to delete")
+    from app.services import case_delete_service
+
+    try:
+        result = case_delete_service.delete_case_by_code(db, payload.case_code.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete_case",
+        entity_type="case",
+        entity_id=result.get("case_id"),
+        case_id=result.get("case_id"),
+        new_value={"case_code": payload.case_code, **result},
+        **meta,
+    )
+    commit_or_http(db)
+    return result
+
+
 @router.get("/therapist-profiles/summary")
 def therapist_profiles_summary(
     user: User = Depends(require_permission("user.manage")),
