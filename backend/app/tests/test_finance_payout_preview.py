@@ -220,6 +220,28 @@ def test_homecare_package_divides_by_session_count():
     assert predicted_subtotal_inr(case, approved_sessions=8, calendar_days=30, unpaid_leaves=2) == 6000
 
 
+def test_client_lumpsum_fills_per_session_and_monthly():
+    """Client Amount (INR) must not be blank for non-package billing."""
+    per_session = _case(
+        billing_type=BillingType.PER_SESSION,
+        compensation_mode=CompensationMode.FIXED_LUMP,
+        client_rate_per_session_inr=1200,
+        therapist_fixed_pay_inr=840,
+    )
+    assert client_lumpsum_inr(per_session) == 1200
+
+    monthly = _case(
+        billing_type=BillingType.MONTHLY_FIXED,
+        compensation_mode=CompensationMode.FIXED_LUMP,
+        client_monthly_rate_inr=18000,
+        therapist_fixed_pay_inr=9000,
+    )
+    assert client_lumpsum_inr(monthly) == 18000
+
+    empty = _case(billing_type=BillingType.PER_SESSION, client_rate_per_session_inr=None)
+    assert client_lumpsum_inr(empty) is None
+
+
 def test_shadow_uses_calendar_days_minus_unpaid_leaves():
     case = _case(
         service_type="Shadow Support",
@@ -341,14 +363,18 @@ def test_normalize_legacy_share_column_headers():
         {
             "Therapist Share": 4500,
             "Per Session Share": 150,
+            "Lumpsum Amount": 12000,
             "Predicted Total": 4500,
             "Therapist ID": "T9",
         }
     )
     assert row["Therapist Pay (INR)"] == 4500
-    assert row["Per Session Pay (INR)"] == 150
+    assert row["Therapist Unit Pay (INR)"] == 150
+    assert row["Client Amount (INR)"] == 12000
     assert "Therapist Share" not in row
     assert "Per Session Share" not in row
+    assert "Lumpsum Amount" not in row
+    assert "Per Session Pay (INR)" not in row
 
 
 def test_finance_payout_preview_report_json():
@@ -380,11 +406,19 @@ def test_finance_payout_preview_report_json():
         assert "Transition Day Type" in row
         assert "Transition Days Total Amount" in row
         assert "Predicted Total" in row
-        assert "Per Session Pay (INR)" in row
+        assert "Billing Type" in row
+        assert "Client Amount (INR)" in row
         assert "Therapist Pay (INR)" in row
+        assert "Therapist Unit Pay (INR)" in row
+        assert "Lumpsum Amount" not in row
         assert "Therapist Share" not in row
         assert "Per Session Share" not in row
+        assert "Per Session Pay (INR)" not in row
         assert "Therapist Total" in row
+        # Homecare per-session must carry client amount (not blank package-only lumpsum)
+        per_session_rows = [r for r in body["rows"] if r.get("Billing Type") == "PER_SESSION"]
+        if per_session_rows:
+            assert any(r.get("Client Amount (INR)") not in (None, "") for r in per_session_rows)
 
 
 def test_finance_payout_preview_report_csv():

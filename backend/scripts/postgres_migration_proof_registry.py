@@ -892,6 +892,49 @@ register_head(
 )
 
 
+def _seed_v6w7x8y9z0a1(db: Session) -> dict[str, Any]:
+    """Prove billing rate-change source columns after head upgrade."""
+    from datetime import date
+
+    from app.models.case import Case
+    from app.models.case_billing_rate_change import CaseBillingRateChange
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    actor = db.scalar(select(User).limit(1))
+    if not case or not actor:
+        raise RuntimeError("Need seeded case + user — run demo_seed first")
+    row = CaseBillingRateChange(
+        case_id=case.id,
+        previous_client_amount_inr=1000,
+        new_client_amount_inr=1200,
+        previous_therapist_amount_inr=600,
+        new_therapist_amount_inr=720,
+        client_effective_from=date.today(),
+        therapist_effective_from=date.today(),
+        notes="postgres migration proof",
+        changed_by_user_id=actor.id,
+        source="FORM",
+        therapist_user_id=None,
+        audit_event_id=None,
+    )
+    db.add(row)
+    db.flush()
+    return {"rate_change_id": row.id, "case_id": case.id}
+
+
+register_head(
+    "v6w7x8y9z0a1",
+    tables_added=[],
+    columns_added=[
+        ("case_billing_rate_changes", "source"),
+        ("case_billing_rate_changes", "audit_event_id"),
+        ("case_billing_rate_changes", "therapist_user_id"),
+    ],
+    seed=_seed_v6w7x8y9z0a1,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

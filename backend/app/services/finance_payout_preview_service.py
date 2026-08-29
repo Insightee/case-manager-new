@@ -59,12 +59,13 @@ def therapist_share_inr(case: Case, *, db: Session | None = None, as_of: date | 
 
 
 def client_lumpsum_inr(case: Case) -> float | None:
-    """Parent/client charge lump where applicable (package or shadow monthly)."""
-    if case.billing_type == BillingType.PACKAGE and case.package_amount_inr:
-        return float(case.package_amount_inr)
-    if is_shadow_case(case) and case.package_amount_inr:
-        return float(case.package_amount_inr)
-    return None
+    """Configured client billing amount for finance payout preview exports.
+
+    Matches case billing: package/monthly period charge, or per-session client rate.
+    Shown as ``Client Amount (INR)`` (legacy header ``Lumpsum Amount`` remapped on read).
+    """
+    amount = float(client_configured_share_inr(case) or 0)
+    return round(amount, 2) if amount > 0 else None
 
 
 def per_unit_from_share(case: Case, share: float) -> float:
@@ -986,9 +987,13 @@ def payout_preview_row(
         "Leave Credits": leave_credits,
         "Total Hours": round(hours, 2),
         "Billable Sessions": billable_sessions,
-        "Lumpsum Amount": lumpsum if lumpsum is not None else "",
+        "Billing Type": (
+            case.billing_type.value if getattr(case.billing_type, "value", None) else (case.billing_type or "")
+        ),
+        # Aligned to case billing model: client charge + therapist lumpsum (no %).
+        "Client Amount (INR)": lumpsum if lumpsum is not None else "",
         "Therapist Pay (INR)": round(share, 2) if share else "",
-        "Per Session Pay (INR)": per_sess if per_sess else "",
+        "Therapist Unit Pay (INR)": per_sess if per_sess else "",
         "Predicted Subtotal": subtotal if subtotal else "",
         "Transition Days": transition_days,
         "Transition Day Type": transition_day_type,
@@ -1102,15 +1107,17 @@ def _therapist_group_key(row: dict[str, Any]) -> str:
     return (row.get("Therapist Name") or "").lower()
 
 
-# Closed-month snapshots may still store pre-lumpsum column titles — remap on read.
+# Closed-month / pre-alignment snapshots — remap legacy headers on read.
 _LEGACY_PAYOUT_PREVIEW_COLUMNS = {
     "Therapist Share": "Therapist Pay (INR)",
-    "Per Session Share": "Per Session Pay (INR)",
+    "Per Session Share": "Therapist Unit Pay (INR)",
+    "Per Session Pay (INR)": "Therapist Unit Pay (INR)",
+    "Lumpsum Amount": "Client Amount (INR)",
 }
 
 
 def normalize_payout_preview_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Rename legacy percentage-era headers; drop duplicate legacy keys."""
+    """Rename legacy percentage/package-era headers; drop duplicate legacy keys."""
     out: dict[str, Any] = {}
     for key, value in row.items():
         canon = _LEGACY_PAYOUT_PREVIEW_COLUMNS.get(key, key)

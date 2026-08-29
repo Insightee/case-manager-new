@@ -3,31 +3,18 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
-
 from app.core.database import SessionLocal
-from app.models.case import BillingType, Case
 from app.models.case_billing_rate_change import CaseBillingRateChange
 from app.models.invoice_line import SessionLineType
 from app.services import finance_payout_preview_service as payout
 from app.services import invoice_billing_service as billing
+from app.tests.conftest import isolated_homecare_case
 
 
 def test_invoice_session_line_uses_therapist_rate_as_of_session_date():
     """Mid-month hike: sessions before effective date keep old pay; after use new."""
     with SessionLocal() as db:
-        case = db.scalars(select(Case).limit(1)).first()
-        assert case is not None
-        for old in db.scalars(
-            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
-        ).all():
-            db.delete(old)
-        case.product_module = "homecare"
-        case.service_type = "homecare"
-        case.billing_type = BillingType.PER_SESSION
-        case.client_rate_per_session_inr = 1500
-        case.therapist_fixed_pay_inr = 1200
-        case.pay_share_amount_inr = 1200
+        case = isolated_homecare_case(db)
         db.add(
             CaseBillingRateChange(
                 case_id=case.id,
@@ -59,18 +46,8 @@ def test_invoice_session_line_uses_therapist_rate_as_of_session_date():
 
 def test_predicted_subtotal_respects_month_end_as_of():
     with SessionLocal() as db:
-        case = db.scalars(select(Case).limit(1)).first()
-        assert case is not None
-        for old in db.scalars(
-            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
-        ).all():
-            db.delete(old)
-        case.product_module = "homecare"
-        case.service_type = "homecare"
-        case.billing_type = BillingType.PER_SESSION
+        case = isolated_homecare_case(db)
         case.package_session_count = None
-        case.therapist_fixed_pay_inr = 1200
-        case.pay_share_amount_inr = 1200
         db.add(
             CaseBillingRateChange(
                 case_id=case.id,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -117,3 +118,46 @@ def today_meeting_date() -> str:
     from app.core.timezone import today_ist
 
     return today_ist().isoformat()
+
+
+def isolated_homecare_case(db):
+    """Dedicated PER_SESSION homecare case for billing tests (avoids mutating seed cases)."""
+    from sqlalchemy import select
+
+    from app.models.case import BillingType, Case, CaseStatus, CompensationMode
+    from app.models.child import Child
+
+    child = db.scalars(select(Child).limit(1)).first()
+    assert child is not None
+    case = Case(
+        case_code=f"ISO-HC-{uuid.uuid4().hex[:8]}",
+        child_id=child.id,
+        service_type="homecare",
+        product_module="homecare",
+        status=CaseStatus.ACTIVE,
+        billing_type=BillingType.PER_SESSION,
+        compensation_mode=CompensationMode.PERCENTAGE,
+        client_rate_per_session_inr=1500,
+        therapist_fixed_pay_inr=1200,
+        pay_share_amount_inr=1200,
+    )
+    db.add(case)
+    db.flush()
+    return case
+
+
+def restore_demo_seed_case_modules(db) -> None:
+    """Reset canonical demo case product lines after tests that repurpose case rows."""
+    from sqlalchemy import select
+
+    from app.models.case import Case
+
+    for code, module, service in (
+        ("IC-2026-041", "shadow_support", "Shadow Support"),
+        ("IC-2026-053", "homecare", "Homecare"),
+    ):
+        case = db.scalars(select(Case).where(Case.case_code == code)).first()
+        if case is not None:
+            case.product_module = module
+            case.service_type = service
+    db.commit()

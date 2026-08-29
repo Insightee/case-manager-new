@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import date, time
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.core.database import SessionLocal
 from app.main import app
+from app.models.case import Case
+from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine
+from app.models.user import User
 from app.seed.demo_seed import run as seed_run
 from app.services import invoice_billing_service as billing
 
@@ -28,22 +33,57 @@ def _headers(email: str) -> dict:
 
 
 def test_seeded_invoices_have_persisted_session_lines():
+    """Therapist invoice snapshots must persist case + session line rows (not header-only)."""
     db = SessionLocal()
     try:
-        invoices = db.scalars(select(Invoice).order_by(Invoice.id)).all()
-        assert invoices, "Expected seeded therapist invoices"
-        for inv in invoices:
-            case_lines = db.scalar(
-                select(func.count()).select_from(InvoiceCaseLine).where(InvoiceCaseLine.invoice_id == inv.id)
-            )
-            session_lines = db.scalar(
-                select(func.count())
-                .select_from(InvoiceSessionLine)
-                .join(InvoiceCaseLine)
-                .where(InvoiceCaseLine.invoice_id == inv.id)
-            )
-            assert case_lines > 0, f"Invoice {inv.month} missing case lines"
-            assert session_lines > 0, f"Invoice {inv.month} missing session lines"
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        case = db.scalars(select(Case).where(Case.case_code == "IC-2026-053")).first()
+        assert therapist is not None and case is not None
+        ym = "2099-05"
+        created = billing.create_late_session(
+            db,
+            therapist.id,
+            case_id=case.id,
+            month=ym,
+            session_date=date(2099, 5, 12),
+            start_time=time(10, 0),
+            end_time=time(11, 0),
+            attendance_status="present",
+            activities_done="Persisted snapshot line",
+            observations=None,
+            late_reason="Stored breakdown isolation fixture",
+        )
+        log = db.get(DailyLog, created["daily_log_id"])
+        log.approval_status = LogApprovalStatus.APPROVED
+        db.commit()
+
+        preview = billing.build_month_preview(db, therapist.id, ym)
+        assert billing.preview_has_billable_payout(preview)
+        inv = Invoice(
+            therapist_user_id=therapist.id,
+            month=preview["month_label"],
+            amount_inr=preview["net_amount_inr"],
+            subtotal_inr=preview["subtotal_inr"],
+            leave_deduction_inr=preview.get("leave_deduction_inr") or 0,
+            sessions_count=preview["total_sessions"],
+            status=InvoiceStatus.IN_REVIEW,
+        )
+        db.add(inv)
+        db.flush()
+        billing._replace_invoice_lines_from_preview(db, inv, preview)
+        db.commit()
+
+        case_lines = db.scalar(
+            select(func.count()).select_from(InvoiceCaseLine).where(InvoiceCaseLine.invoice_id == inv.id)
+        )
+        session_lines = db.scalar(
+            select(func.count())
+            .select_from(InvoiceSessionLine)
+            .join(InvoiceCaseLine)
+            .where(InvoiceCaseLine.invoice_id == inv.id)
+        )
+        assert case_lines > 0, f"Invoice {inv.month} missing case lines"
+        assert session_lines > 0, f"Invoice {inv.month} missing session lines"
     finally:
         db.close()
 
@@ -85,8 +125,6 @@ def test_submit_rejects_zero_payout_month():
 def test_preview_has_billable_payout_helper():
     db = SessionLocal()
     try:
-        from app.models.user import User
-
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         empty = billing.build_month_preview(db, therapist.id, "2026-03")
         assert billing.preview_has_billable_payout(empty) is False
@@ -99,8 +137,6 @@ def test_preview_has_billable_payout_helper():
 def test_stored_header_fallback_for_legacy_invoice_without_lines():
     db = SessionLocal()
     try:
-        from app.models.user import User
-
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         inv = Invoice(
             therapist_user_id=therapist.id,
