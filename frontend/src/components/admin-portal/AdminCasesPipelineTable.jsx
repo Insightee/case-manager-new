@@ -6,13 +6,12 @@ import { isFinanceDeskUser } from '../../lib/financeDesk.js'
 import {
   CASE_STATE_OPTIONS,
   OPENED_DATE_PRESETS,
-  OPENED_MONTH_OPTIONS,
   activateCaseAllotment,
   buildPipelineActions,
   countActivePipelineFilters,
   defaultCaseManagerFilterId,
+  defaultOpenedRange,
   defaultPipelineFilters,
-  deriveOpenedYearOptions,
   derivePipelineFilterOptions,
   filterPipelineRows,
   filterPipelineRowsForQueueCounts,
@@ -40,7 +39,6 @@ import {
 
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
 import { AdminBulkAssignModal } from './AdminBulkAssignModal.jsx'
-import { CaseCloseModal } from './CaseCloseModal.jsx'
 import './admin-cases-pipeline.css'
 
 const QUEUE_TABS = [
@@ -75,7 +73,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const [sort, setSort] = useState('priority')
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [assignCard, setAssignCard] = useState(null)
-  const [closeCard, setCloseCard] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState('')
@@ -171,8 +168,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
     [programmeOptions],
   )
 
-  const yearOptions = useMemo(() => deriveOpenedYearOptions(allRows), [allRows])
-
   const statusOptions = useMemo(
     () =>
       QUEUE_TABS.map((tab) => {
@@ -215,10 +210,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
     setSelectedIds(new Set(eligible.map((r) => r.id)))
   }
 
-  async function closeCase(card) {
-    setCloseCard(card)
-  }
-
   async function confirmAllotment(card) {
     const therapist = card.therapist_name ? ` (${card.therapist_name})` : ''
     if (
@@ -247,10 +238,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
     }
     if (action.id === 'reallot') {
       setAssignCard(row)
-      return
-    }
-    if (action.id === 'close') {
-      closeCase(row)
       return
     }
     if (action.href) {
@@ -283,19 +270,17 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           options={statusOptions}
           className="admin-cases-pipeline__statusbar-field"
         />
-        <FilterSelect
-          label="Month"
-          value={filters.openedMonth}
-          onChange={(e) => patchFilters({ openedMonth: e.target.value })}
-          options={OPENED_MONTH_OPTIONS}
-          className="admin-cases-pipeline__statusbar-field"
-        />
-        <FilterSelect
-          label="Year"
-          value={filters.openedYear}
-          onChange={(e) => patchFilters({ openedYear: e.target.value })}
-          options={yearOptions}
-          className="admin-cases-pipeline__statusbar-field"
+        <FilterDateRange
+          label="Opened"
+          from={filters.dateFrom}
+          to={filters.dateTo}
+          onFromChange={(e) =>
+            patchFilters({ openedPreset: 'custom', dateFrom: e.target.value, openedMonth: 'all', openedYear: 'all' })
+          }
+          onToChange={(e) =>
+            patchFilters({ openedPreset: 'custom', dateTo: e.target.value, openedMonth: 'all', openedYear: 'all' })
+          }
+          className="admin-cases-pipeline__statusbar-field admin-cases-pipeline__statusbar-dates"
         />
         <FilterSelect
           label="Sort"
@@ -370,22 +355,30 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
             onChange={(e) => patchFilters({ caseState: e.target.value })}
             options={CASE_STATE_OPTIONS}
           />
-          <FilterSelect
+          <FilterDateRange
             label="Opened"
+            from={filters.dateFrom}
+            to={filters.dateTo}
+            onFromChange={(e) =>
+              patchFilters({ openedPreset: 'custom', dateFrom: e.target.value })
+            }
+            onToChange={(e) => patchFilters({ openedPreset: 'custom', dateTo: e.target.value })}
+            className="admin-cases-pipeline__filter-span-2"
+          />
+          <FilterSelect
+            label="Opened preset"
             value={filters.openedPreset}
-            onChange={(e) => patchFilters({ openedPreset: e.target.value })}
+            onChange={(e) => {
+              const preset = e.target.value
+              if (preset === 'custom') {
+                const range = defaultOpenedRange()
+                patchFilters({ openedPreset: preset, dateFrom: range.from, dateTo: range.to })
+              } else {
+                patchFilters({ openedPreset: preset })
+              }
+            }}
             options={OPENED_DATE_PRESETS}
           />
-          {filters.openedPreset === 'custom' ? (
-            <FilterDateRange
-              label="Date range"
-              from={filters.dateFrom}
-              to={filters.dateTo}
-              onFromChange={(e) => patchFilters({ dateFrom: e.target.value })}
-              onToChange={(e) => patchFilters({ dateTo: e.target.value })}
-              className="admin-cases-pipeline__filter-span-2"
-            />
-          ) : null}
           <FilterSelect
             label="Programme"
             value={filters.productModule}
@@ -756,19 +749,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           load()
         }}
       />
-
-      {closeCard ? (
-        <CaseCloseModal
-          caseId={closeCard.id}
-          caseCode={closeCard.case_code}
-          onClose={() => setCloseCard(null)}
-          onSuccess={() => {
-            setToast(`Case ${closeCard.case_code} closed.`)
-            setCloseCard(null)
-            load()
-          }}
-        />
-      ) : null}
 
       <AdminBulkAssignModal
         open={bulkOpen}

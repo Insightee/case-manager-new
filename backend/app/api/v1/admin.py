@@ -892,8 +892,9 @@ def sessions_analytics(
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
         base_filters.append(Case.product_module == product_module)
-    if session_status:
-        base_filters.append(TherapySession.status == session_status)
+    from app.services.session_analytics_filters import append_session_status_filter
+
+    append_session_status_filter(base_filters, session_status)
     if case_id:
         base_filters.append(TherapySession.case_id == case_id)
 
@@ -1038,9 +1039,8 @@ def sessions_analytics(
         .join(Case, TherapySession.case_id == Case.id)
         .where(
             TherapySession.scheduled_date >= month_start,
-            *([TherapySession.therapist_user_id == therapist_id] if therapist_id else []),
-            *([Case.product_module == product_module] if product_module else []),
-            *(base_filters[0:1] if base_filters else []),
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
         )
         .group_by("yr", "mo")
         .order_by("yr", "mo")
@@ -1055,9 +1055,19 @@ def sessions_analytics(
         for r in month_rows
     ]
 
-    # Recent sessions for the table (last 50 within filter range)
+    # Recent sessions for the table (within filter range)
     from sqlalchemy.orm import selectinload
-    recent_limit = 200 if case_id else 50
+    recent_limit = 200
+    total_count = db.scalar(
+        select(func.count())
+        .select_from(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+    ) or 0
     sessions_q = (
         select(TherapySession)
         .join(Case, TherapySession.case_id == Case.id)
@@ -1108,12 +1118,14 @@ def sessions_analytics(
             "has_daily_log": s.daily_log is not None,
             "actual_times_edited": bool(getattr(s, "actual_times_edited", False)),
             "duplicate_day_session": bool(getattr(s, "is_additional_visit", False)),
+            "data_quality_flag": getattr(s, "data_quality_flag", None),
         })
 
     return {
         "today_count": today_count,
         "week_count": week_count,
         "status_counts": status_counts,
+        "total_count": total_count,
         "by_therapist": by_therapist,
         "by_product": by_product,
         "by_day": by_day,
@@ -1194,8 +1206,9 @@ def export_sessions_xlsx(
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
         base_filters.append(Case.product_module == product_module)
-    if session_status:
-        base_filters.append(TherapySession.status == session_status)
+    from app.services.session_analytics_filters import append_session_status_filter
+
+    append_session_status_filter(base_filters, session_status)
     if case_id:
         base_filters.append(TherapySession.case_id == case_id)
 
@@ -1299,8 +1312,9 @@ def export_sessions_pdf(
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
         base_filters.append(Case.product_module == product_module)
-    if session_status:
-        base_filters.append(TherapySession.status == session_status)
+    from app.services.session_analytics_filters import append_session_status_filter
+
+    append_session_status_filter(base_filters, session_status)
     if case_id:
         base_filters.append(TherapySession.case_id == case_id)
 
