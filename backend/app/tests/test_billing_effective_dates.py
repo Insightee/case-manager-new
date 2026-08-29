@@ -72,6 +72,10 @@ def test_resolve_therapist_pay_as_of_uses_effective_date():
     with SessionLocal() as db:
         case = db.scalars(select(Case).limit(1)).first()
         assert case is not None
+        for old in db.scalars(
+            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case.id)
+        ).all():
+            db.delete(old)
         case.therapist_fixed_pay_inr = 1200
         case.pay_share_amount_inr = 1200
         db.add(

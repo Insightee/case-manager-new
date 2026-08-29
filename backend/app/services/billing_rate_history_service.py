@@ -43,6 +43,47 @@ def amounts_changed(*, previous: dict, proposed: dict, case_after: Case) -> tupl
     return prev_client != new_client, prev_therapist != new_therapist
 
 
+def _sync_client_rate_period(
+    db: Session,
+    *,
+    case: Case,
+    new_rate: float,
+    effective_from: date,
+    changed_by_user_id: int,
+) -> None:
+    """Keep Step-6 case_client_rate_periods aligned with billing rate history."""
+    from datetime import timedelta
+
+    from app.models.billing_step6 import CaseClientRatePeriod
+
+    open_rows = list(
+        db.scalars(
+            select(CaseClientRatePeriod).where(
+                CaseClientRatePeriod.case_id == case.id,
+                CaseClientRatePeriod.end_date.is_(None),
+            )
+        ).all()
+    )
+    for row in open_rows:
+        if row.start_date < effective_from:
+            row.end_date = effective_from - timedelta(days=1)
+        elif row.start_date >= effective_from:
+            row.end_date = row.start_date
+    db.add(
+        CaseClientRatePeriod(
+            case_id=case.id,
+            start_date=effective_from,
+            end_date=None,
+            rate_inr=new_rate,
+            label="normal",
+            effective_date_choice="CHANGE_DATE",
+            resolved_effective_date=effective_from,
+            created_by_user_id=changed_by_user_id,
+            notes="Synced from case_billing_rate_changes",
+        )
+    )
+
+
 def record_rate_change(
     db: Session,
     *,
@@ -90,6 +131,16 @@ def record_rate_change(
     )
     db.add(row)
     db.flush()
+
+    if client_changed and client_eff is not None and new_client is not None:
+        _sync_client_rate_period(
+            db,
+            case=case,
+            new_rate=float(new_client),
+            effective_from=client_eff,
+            changed_by_user_id=changed_by_user_id,
+        )
+        db.flush()
     return row
 
 

@@ -245,10 +245,12 @@ def predicted_subtotal_inr(
     approved_sessions: int,
     calendar_days: int = SHADOW_MONTHLY_DAYS,
     unpaid_leaves: int = 0,
+    db: Session | None = None,
+    as_of: date | None = None,
 ) -> float:
     return predicted_amount_inr(
         case,
-        share=therapist_share_inr(case),
+        share=therapist_share_inr(case, db=db, as_of=as_of),
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid_leaves,
@@ -261,10 +263,17 @@ def predicted_client_amount_inr(
     approved_sessions: int,
     calendar_days: int = SHADOW_MONTHLY_DAYS,
     unpaid_leaves: int = 0,
+    db: Session | None = None,
+    as_of: date | None = None,
 ) -> float:
+    share = client_configured_share_inr(case)
+    if db is not None and as_of is not None:
+        from app.services import billing_rate_history_service
+
+        share = billing_rate_history_service.resolve_client_amount_as_of(db, case, as_of)
     return predicted_amount_inr(
         case,
-        share=client_configured_share_inr(case),
+        share=share,
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid_leaves,
@@ -303,23 +312,27 @@ class CycleSegment:
     is_incoming_replacement: bool
     is_outgoing_replacement: bool
 
-    def therapist_subtotal(self, case: Case) -> float:
+    def therapist_subtotal(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
         return predicted_subtotal_inr(
             case,
             approved_sessions=self.approved_sessions,
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
+            db=db,
+            as_of=as_of,
         )
 
-    def therapist_gross(self, case: Case) -> float:
-        return round(self.therapist_subtotal(case) + self.transition_total, 2)
+    def therapist_gross(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+        return round(self.therapist_subtotal(case, db=db, as_of=as_of) + self.transition_total, 2)
 
-    def client_amount(self, case: Case) -> float:
+    def client_amount(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
         return predicted_client_amount_inr(
             case,
             approved_sessions=self.approved_sessions,
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
+            db=db,
+            as_of=as_of,
         )
 
 
@@ -854,19 +867,35 @@ def segment_for_therapist(
 
 
 def therapist_case_gross_inr(db: Session, case: Case, ym: str) -> float:
-    return round(sum(s.therapist_gross(case) for s in build_cycle_segments(db, case, ym)), 2)
+    _ms, month_end = month_bounds(ym)
+    return round(
+        sum(
+            s.therapist_gross(case, db=db, as_of=month_end)
+            for s in build_cycle_segments(db, case, ym)
+        ),
+        2,
+    )
 
 
 def client_case_gross_inr(db: Session, case: Case, ym: str) -> float:
     """Family charge for the case-month: same days/sessions as payout, client allotment rates."""
     segments = build_cycle_segments(db, case, ym)
+    _ms, month_end = month_bounds(ym)
     if not segments:
         return 0.0
     if case.billing_type == BillingType.MONTHLY_FIXED and not uses_calendar_day_pay(case):
         if any(s.approved_sessions > 0 for s in segments):
-            return round(client_configured_share_inr(case), 2)
+            from app.services import billing_rate_history_service
+
+            return round(
+                billing_rate_history_service.resolve_client_amount_as_of(db, case, month_end),
+                2,
+            )
         return 0.0
-    return round(sum(s.client_amount(case) for s in segments), 2)
+    return round(
+        sum(s.client_amount(case, db=db, as_of=month_end) for s in segments),
+        2,
+    )
 
 
 def payout_preview_row(

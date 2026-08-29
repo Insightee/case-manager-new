@@ -63,25 +63,49 @@ def session_duration_minutes(session: TherapySession, log: DailyLog | None = Non
     return 60
 
 
-def _per_session_amount(case: Case) -> float:
+def _per_session_amount(case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+    if db is not None and as_of is not None:
+        from app.services import billing_rate_history_service
+
+        return billing_rate_history_service.resolve_therapist_pay_as_of(db, case, as_of)
     return resolve_therapist_pay(case)
 
 
-def _package_per_session_rate(case: Case, use_therapist_fixed: bool = True) -> float:
+def _package_per_session_rate(
+    case: Case,
+    use_therapist_fixed: bool = True,
+    *,
+    db: Session | None = None,
+    as_of: date | None = None,
+) -> float:
+    _ = use_therapist_fixed
     pkg_count = int(case.package_session_count) if case.package_session_count else 0
     if pkg_count <= 0:
         raise ValueError("MISSING_PACKAGE_COUNT")
-    base = resolve_therapist_pay(case)
+    base = _per_session_amount(case, db=db, as_of=as_of)
     return base / pkg_count
 
 
-def compute_session_line_amount(case: Case, line_type: SessionLineType) -> float:
+def compute_session_line_amount(
+    case: Case,
+    line_type: SessionLineType,
+    *,
+    db: Session | None = None,
+    as_of: date | None = None,
+) -> float:
+    _ = line_type
     if case.billing_type == BillingType.PER_SESSION:
-        return round(_per_session_amount(case), 2)
-    return round(_package_per_session_rate(case), 2)
+        return round(_per_session_amount(case, db=db, as_of=as_of), 2)
+    return round(_package_per_session_rate(case, db=db, as_of=as_of), 2)
 
 
-def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int, float]:
+def compute_case_totals(
+    case: Case,
+    session_lines: list[dict],
+    *,
+    db: Session | None = None,
+    as_of: date | None = None,
+) -> tuple[int, int, float]:
     regular_lines = [
         line for line in session_lines if not (line.get("flags") or {}).get("transition_log")
     ]
@@ -103,7 +127,9 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
         if pkg_count <= 0:
             raise ValueError("MISSING_PACKAGE_COUNT")
 
-    subtotal = payout_cycle.predicted_subtotal_inr(case, approved_sessions=approved)
+    subtotal = payout_cycle.predicted_subtotal_inr(
+        case, approved_sessions=approved, db=db, as_of=as_of
+    )
     return included, additional, round(subtotal + transition_total, 2)
 
 
@@ -124,9 +150,11 @@ def engine_case_gross(
     *,
     segment: payout_cycle.CycleSegment | None,
     before_leave_deduction: bool = False,
+    db: Session | None = None,
+    as_of: date | None = None,
 ) -> tuple[int, int, float]:
     """Payout-report gross for one therapist × case. No TDS."""
-    included, additional, line_total = compute_case_totals(case, session_lines)
+    included, additional, line_total = compute_case_totals(case, session_lines, db=db, as_of=as_of)
     if payout_cycle.uses_calendar_day_pay(case):
         if segment is None:
             return included, additional, line_total
@@ -137,19 +165,23 @@ def engine_case_gross(
                     approved_sessions=segment.approved_sessions,
                     calendar_days=segment.calendar_days,
                     unpaid_leaves=0,
+                    db=db,
+                    as_of=as_of,
                 )
                 + segment.transition_total,
                 2,
             )
             return included, additional, gross
-        return included, additional, segment.therapist_gross(case)
+        return included, additional, segment.therapist_gross(case, db=db, as_of=as_of)
     trans = _transition_total_from_lines(session_lines)
     approved = sum(
         1
         for line in session_lines
         if line.get("included") and not (line.get("flags") or {}).get("transition_log")
     )
-    subtotal = payout_cycle.predicted_subtotal_inr(case, approved_sessions=approved)
+    subtotal = payout_cycle.predicted_subtotal_inr(
+        case, approved_sessions=approved, db=db, as_of=as_of
+    )
     return included, additional, round(subtotal + trans, 2)
 
 
@@ -264,6 +296,7 @@ def session_line_dict(
     included: bool = True,
     source: SessionLineSource = SessionLineSource.LOG,
     extra_flags: dict | None = None,
+    db: Session | None = None,
 ) -> dict:
     flags = dict(extra_flags or {})
     if log.transition_day_id and log.transition_day:
@@ -277,7 +310,9 @@ def session_line_dict(
             }
         )
     else:
-        amount = compute_session_line_amount(case, line_type)
+        amount = compute_session_line_amount(
+            case, line_type, db=db, as_of=session.scheduled_date
+        )
     return {
         "session_id": session.id,
         "daily_log_id": log.id,
@@ -532,8 +567,14 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         pending_approval_count += len(pending_approval_lines)
 
         segment = payout_cycle.segment_for_therapist(db, case, therapist_user_id, ym)
+        _ms, month_end = month_date_range(year, month_num)
         included, additional, case_total = engine_case_gross(
-            case, session_lines, segment=segment, before_leave_deduction=True
+            case,
+            session_lines,
+            segment=segment,
+            before_leave_deduction=True,
+            db=db,
+            as_of=month_end,
         )
         case_total = round(case_total + absence_total, 2)
         subtotal += case_total

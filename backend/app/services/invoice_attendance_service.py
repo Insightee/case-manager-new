@@ -223,8 +223,14 @@ def _child_absence_policy(rule: ProductBillingRule | None) -> tuple[bool, bool]:
     return payable, consumes
 
 
-def _child_absence_amount(case: Case, line_type: SessionLineType) -> float:
-    return billing.compute_session_line_amount(case, line_type)
+def _child_absence_amount(
+    case: Case,
+    line_type: SessionLineType,
+    *,
+    db: Session | None = None,
+    as_of: date | None = None,
+) -> float:
+    return billing.compute_session_line_amount(case, line_type, db=db, as_of=as_of)
 
 
 def _sort_key_session(session: TherapySession) -> tuple:
@@ -253,8 +259,10 @@ def build_child_absence_line(
     rule: ProductBillingRule | None,
     *,
     package_index: int | None = None,
+    db: Session | None = None,
 ) -> dict[str, Any]:
     payable, consumes = _child_absence_policy(rule)
+    as_of = session.scheduled_date
     if req.status == SessionAbsenceStatus.APPROVED and payable:
         if case.billing_type == BillingType.PER_SESSION:
             line_type = SessionLineType.PER_SESSION
@@ -262,7 +270,7 @@ def build_child_absence_line(
             line_type = _line_type_for_package_index(case, package_index)
         else:
             line_type = SessionLineType.ADDITIONAL
-        amount = _child_absence_amount(case, line_type)
+        amount = _child_absence_amount(case, line_type, db=db, as_of=as_of)
         ui_label = _child_absence_ui_label(payable=True, consumes_slot=consumes)
         return {
             "session_id": session.id,
@@ -277,7 +285,7 @@ def build_child_absence_line(
             "reason": req.reason,
         }
     if req.status == SessionAbsenceStatus.PENDING_APPROVAL:
-        amount = _child_absence_amount(case, SessionLineType.INCLUDED)
+        amount = _child_absence_amount(case, SessionLineType.INCLUDED, db=db, as_of=as_of)
         return {
             "session_id": session.id,
             "absence_request_id": req.id,
@@ -318,6 +326,7 @@ def build_pending_approval_line(
     case: Case,
     *,
     package_index: int,
+    db: Session | None = None,
 ) -> dict[str, Any]:
     line_type = _line_type_for_package_index(case, package_index)
     late = bool(log.late_addition)
@@ -333,6 +342,7 @@ def build_pending_approval_line(
             "pending_approval": True,
             "pending_reason": _pending_reason_tag(late=late),
         },
+        db=db,
     )
 
 
@@ -344,6 +354,8 @@ def compute_leave_deduction_inr(
 ) -> float:
     """Unpaid approved leave deduction for calendar-day cases only."""
     total = 0.0
+    year, month_num = int(ym[:4]), int(ym[5:7])
+    _start, month_end = _month_date_range(year, month_num)
     for case in cases:
         if billing_profile_for_case(case) != BillingProfile.CALENDAR_DAY:
             continue
@@ -359,12 +371,16 @@ def compute_leave_deduction_inr(
             approved_sessions=approved_sessions,
             calendar_days=calendar_days,
             unpaid_leaves=0,
+            db=db,
+            as_of=month_end,
         )
         gross_after = payout_cycle.predicted_subtotal_inr(
             case,
             approved_sessions=approved_sessions,
             calendar_days=calendar_days,
             unpaid_leaves=unpaid,
+            db=db,
+            as_of=month_end,
         )
         total += max(gross_before - gross_after, 0.0)
     return round(total, 2)
@@ -492,14 +508,14 @@ def month_attendance_facts(
         for req, session in approved_absence_sorted:
             if payable and consumes_policy:
                 line = build_child_absence_line(
-                    req, session, case_row, rule, package_index=package_slot_index
+                    req, session, case_row, rule, package_index=package_slot_index, db=db
                 )
                 package_slot_index += 1
                 consuming_absences.append((session.scheduled_date, session.start_time))
             elif payable:
-                line = build_child_absence_line(req, session, case_row, rule)
+                line = build_child_absence_line(req, session, case_row, rule, db=db)
             else:
-                line = build_child_absence_line(req, session, case_row, rule)
+                line = build_child_absence_line(req, session, case_row, rule, db=db)
                 rejected_notes.append(
                     {
                         "type": "child_absence",
@@ -516,7 +532,7 @@ def month_attendance_facts(
 
         for req, session in case_absences:
             if req.status == SessionAbsenceStatus.PENDING_APPROVAL:
-                line = build_child_absence_line(req, session, case_row, rule)
+                line = build_child_absence_line(req, session, case_row, rule, db=db)
                 child_absence_lines.append(line)
                 attendance["pending_absence"] += 1
             elif req.status == SessionAbsenceStatus.REJECTED:
@@ -546,7 +562,7 @@ def month_attendance_facts(
             offset = _slot_consuming_before(consuming_absences, session)
             pending_approval_lines.append(
                 build_pending_approval_line(
-                    session, log, case_row, package_index=base_index + offset
+                    session, log, case_row, package_index=base_index + offset, db=db
                 )
             )
 
@@ -558,10 +574,14 @@ def month_attendance_facts(
             for idx, (session, log) in enumerate(regular_items):
                 offset = _slot_consuming_before(consuming_absences, session)
                 line_type = _line_type_for_package_index(case_row, idx + offset)
-                session_lines.append(billing.session_line_dict(session, log, case_row, line_type))
+                session_lines.append(
+                    billing.session_line_dict(session, log, case_row, line_type, db=db)
+                )
             for session, log in transition_items:
                 session_lines.append(
-                    billing.session_line_dict(session, log, case_row, SessionLineType.PER_SESSION)
+                    billing.session_line_dict(
+                        session, log, case_row, SessionLineType.PER_SESSION, db=db
+                    )
                 )
 
         attendance["approved_sessions"] = len([l for l in session_lines if l.get("included", True)])
