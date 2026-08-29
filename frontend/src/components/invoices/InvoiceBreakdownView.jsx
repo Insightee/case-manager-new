@@ -10,6 +10,86 @@ import {
 } from './invoiceUtils.js'
 import { AddLateSessionForm } from './AddLateSessionForm.jsx'
 
+function lineKey(line, idx) {
+  return line.session_id ?? line.id ?? line.absence_request_id ?? `line-${idx}`
+}
+
+function SessionLineTags({ line, pending, tagLabel }) {
+  const tag = tagLabel || line.flags?.pending_reason
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      <span className="text-xs text-slate-500">{line.ui_label || lineTypeLabel(line.line_type)}</span>
+      {tag ? (
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">{tag}</span>
+      ) : null}
+      {pending ? (
+        <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">Pending approval</span>
+      ) : null}
+    </div>
+  )
+}
+
+function SessionLineAction({ line, editable, pending, onToggle, onRemove }) {
+  if (!editable) return null
+  const excluded = line.included === false && !pending
+  if (pending && onRemove) {
+    return (
+      <button
+        type="button"
+        className="mt-3 min-h-[44px] w-full rounded-xl border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-700"
+        onClick={() => onRemove(line)}
+      >
+        Remove
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className="mt-3 min-h-[44px] w-full rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-700"
+      onClick={() => onToggle?.(line)}
+    >
+      {excluded ? 'Include in payout' : 'Exclude from payout'}
+    </button>
+  )
+}
+
+function SessionLineCards({ lines, editable, onToggle, onRemove, pending }) {
+  if (!lines?.length) return null
+  return (
+    <ul className="space-y-2 sm:hidden">
+      {lines.map((line, idx) => {
+        const excluded = line.included === false && !pending
+        return (
+          <li
+            key={lineKey(line, idx)}
+            className={`rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-sm ${excluded ? 'opacity-50' : ''}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-900">{formatDisplayDate(line.session_date)}</p>
+                <p className="text-xs text-slate-600">{line.duration_minutes ?? 60} min</p>
+                <SessionLineTags line={line} pending={pending} tagLabel={line.flags?.pending_reason} />
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-base font-bold tabular-nums text-slate-900">{formatInr(line.amount_inr)}</p>
+                {pending ? <p className="text-[10px] font-medium text-amber-800">Excluded from payout</p> : null}
+              </div>
+            </div>
+            <SessionLineAction
+              line={line}
+              editable={editable}
+              pending={pending}
+              onToggle={onToggle}
+              onRemove={onRemove}
+            />
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function SessionRow({ line, editable, onToggle, onRemove, pending, tagLabel }) {
   const excluded = line.included === false && !pending
   const tag = tagLabel || line.flags?.pending_reason
@@ -54,30 +134,42 @@ function SessionRow({ line, editable, onToggle, onRemove, pending, tagLabel }) {
 function SessionTable({ lines, editable, onToggle, onRemove, pending }) {
   if (!lines?.length) return null
   return (
-    <table className="w-full min-w-[480px]">
-      <thead>
-        <tr className="text-left text-xs font-semibold uppercase text-slate-500">
-          <th className="pb-2 pr-3">Date</th>
-          <th className="pb-2 pr-3">Duration</th>
-          <th className="pb-2 pr-3">Type</th>
-          <th className="pb-2 pr-3 text-right">Amount</th>
-          {editable ? <th className="pb-2 text-right">Action</th> : null}
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((line, idx) => (
-          <SessionRow
-            key={line.session_id ?? line.id ?? line.absence_request_id ?? `line-${idx}`}
-            line={line}
-            editable={editable}
-            pending={pending}
-            tagLabel={line.flags?.pending_reason}
-            onToggle={onToggle}
-            onRemove={onRemove}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className="hidden overflow-x-auto sm:block">
+      <table className="w-full min-w-[520px]">
+        <thead>
+          <tr className="text-left text-xs font-semibold uppercase text-slate-500">
+            <th className="pb-2 pr-3">Date</th>
+            <th className="pb-2 pr-3">Duration</th>
+            <th className="pb-2 pr-3">Type</th>
+            <th className="pb-2 pr-3 text-right">Amount</th>
+            {editable ? <th className="pb-2 text-right">Action</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, idx) => (
+            <SessionRow
+              key={lineKey(line, idx)}
+              line={line}
+              editable={editable}
+              pending={pending}
+              tagLabel={line.flags?.pending_reason}
+              onToggle={onToggle}
+              onRemove={onRemove}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function SessionLines({ lines, editable, onToggle, onRemove, pending }) {
+  if (!lines?.length) return null
+  return (
+    <>
+      <SessionLineCards lines={lines} editable={editable} onToggle={onToggle} onRemove={onRemove} pending={pending} />
+      <SessionTable lines={lines} editable={editable} onToggle={onToggle} onRemove={onRemove} pending={pending} />
+    </>
   )
 }
 
@@ -241,8 +333,8 @@ export function InvoiceBreakdownView({
 
         return (
           <section key={caseGroup.case_id} className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white">
-            <header className="border-b border-[#E2E8F0] bg-indigo-50/50 px-4 py-3">
-              <p className="font-semibold text-slate-900">
+            <header className="border-b border-[#E2E8F0] bg-indigo-50/50 px-3 py-3 sm:px-4">
+              <p className="font-semibold leading-snug text-slate-900">
                 {caseGroup.case_code}
                 {caseGroup.child_name ? ` · ${caseGroup.child_name}` : ''}
               </p>
@@ -267,8 +359,8 @@ export function InvoiceBreakdownView({
                 </p>
               ) : null}
             </header>
-            <div className="overflow-x-auto px-4 py-2">
-              <SessionTable
+            <div className="px-3 py-2 sm:px-4">
+              <SessionLines
                 lines={caseGroup.session_lines}
                 editable={editable}
                 onToggle={onToggleSession ? (line) => onToggleSession(caseGroup.case_id, line) : undefined}
@@ -276,19 +368,19 @@ export function InvoiceBreakdownView({
               {absenceLines.length > 0 ? (
                 <div className="mt-4 border-t border-indigo-100 pt-3">
                   <p className="mb-2 text-xs font-semibold uppercase text-indigo-800">Child absence</p>
-                  <SessionTable lines={absenceLines} editable={false} />
+                  <SessionLines lines={absenceLines} editable={false} />
                 </div>
               ) : null}
               {pendingLines.length > 0 || pendingAbsenceLines.length > 0 ? (
                 <div className="mt-4 border-t border-amber-100 pt-3">
                   <p className="mb-2 text-xs font-semibold uppercase text-amber-800">Pending approval</p>
-                  <SessionTable
+                  <SessionLines
                     lines={[...pendingLines, ...pendingAbsenceLines]}
                     editable={editable}
                     pending
                     onRemove={
-                      onRemoveLateSession && line.flags?.added_late
-                        ? (line) => line.session_id && onRemoveLateSession(line.session_id)
+                      onRemoveLateSession
+                        ? (line) => line.flags?.added_late && line.session_id && onRemoveLateSession(line.session_id)
                         : undefined
                     }
                   />
