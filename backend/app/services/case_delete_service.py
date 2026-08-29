@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+# Statement order respects FK dependencies (children before parents).
 DELETE_CASE_SQL = """
 WITH target AS (
   SELECT id FROM cases WHERE case_code = :case_code
@@ -45,10 +46,25 @@ WHERE client_invoice_id IN (SELECT id FROM case_invoices)
    OR session_id IN (SELECT id FROM sess);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM finance_correction_proposals WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_finance_notes WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM finance_payout_deductions WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_billing_period_snapshots WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM client_invoices WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM care_packages WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM client_package_cycles WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
 sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target))
@@ -64,7 +80,54 @@ WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM billing_ledger WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM billing_approval_requests WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM billing_calc_exceptions WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM billing_period_flags WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_client_rate_periods WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_billing_rate_changes WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM case_appointment_usage WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target))
+DELETE FROM session_absence_requests
+WHERE case_id IN (SELECT id FROM target)
+   OR session_id IN (SELECT id FROM sess);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target)),
+logs AS (SELECT id FROM daily_logs WHERE session_id IN (SELECT id FROM sess))
+UPDATE goal_repository_items
+SET source_daily_log_id = NULL
+WHERE source_daily_log_id IN (SELECT id FROM logs)
+   OR case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target)),
+logs AS (SELECT id FROM daily_logs WHERE session_id IN (SELECT id FROM sess))
+UPDATE strategy_repository_items
+SET source_daily_log_id = NULL, linked_goal_card_id = NULL
+WHERE source_daily_log_id IN (SELECT id FROM logs)
+   OR case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target)),
+logs AS (SELECT id FROM daily_logs WHERE session_id IN (SELECT id FROM sess))
+DELETE FROM session_goal_entries WHERE daily_log_id IN (SELECT id FROM logs);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target)),
+logs AS (SELECT id FROM daily_logs WHERE session_id IN (SELECT id FROM sess))
+DELETE FROM strategy_use_events WHERE daily_log_id IN (SELECT id FROM logs);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
 sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target))
@@ -94,17 +157,95 @@ WHERE report_type = 'monthly'
   AND report_id IN (SELECT id FROM monthly_reports WHERE case_id IN (SELECT id FROM target));
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM monthly_report_sections
+WHERE report_id IN (SELECT id FROM monthly_reports WHERE case_id IN (SELECT id FROM target));
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM progress_report_sections
+WHERE report_id IN (SELECT id FROM monthly_reports WHERE case_id IN (SELECT id FROM target));
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM monthly_reports WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM observation_reports WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+reports AS (SELECT id FROM clinical_reports WHERE case_id IN (SELECT id FROM target))
+DELETE FROM clinical_report_review_events WHERE report_id IN (SELECT id FROM reports);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+reports AS (SELECT id FROM clinical_reports WHERE case_id IN (SELECT id FROM target))
+DELETE FROM clinical_report_evidence
+WHERE report_id IN (SELECT id FROM reports)
+   OR case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+reports AS (SELECT id FROM clinical_reports WHERE case_id IN (SELECT id FROM target))
+DELETE FROM clinical_report_sections WHERE report_id IN (SELECT id FROM reports);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+reports AS (SELECT id FROM clinical_reports WHERE case_id IN (SELECT id FROM target))
+UPDATE goal_repository_items
+SET source_clinical_report_id = NULL
+WHERE source_clinical_report_id IN (SELECT id FROM reports);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+reports AS (SELECT id FROM clinical_reports WHERE case_id IN (SELECT id FROM target))
+UPDATE strategy_repository_items
+SET source_clinical_report_id = NULL
+WHERE source_clinical_report_id IN (SELECT id FROM reports);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+reports AS (SELECT id FROM clinical_reports WHERE case_id IN (SELECT id FROM target))
+DELETE FROM clinical_report_versions WHERE report_id IN (SELECT id FROM reports);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM clinical_reports WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM goal_evidence_events WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+iep AS (SELECT id FROM iep_plans WHERE case_id IN (SELECT id FROM target))
+DELETE FROM iep_support_priorities
+WHERE iep_plan_id IN (SELECT id FROM iep)
+   OR case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+iep AS (SELECT id FROM iep_plans WHERE case_id IN (SELECT id FROM target))
+UPDATE strategy_repository_items SET linked_goal_card_id = NULL
+WHERE linked_goal_card_id IN (
+  SELECT id FROM iep_goal_cards
+  WHERE iep_plan_id IN (SELECT id FROM iep) OR case_id IN (SELECT id FROM target)
+);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+iep AS (SELECT id FROM iep_plans WHERE case_id IN (SELECT id FROM target))
+DELETE FROM iep_goal_cards
+WHERE iep_plan_id IN (SELECT id FROM iep)
+   OR case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
 iep AS (SELECT id FROM iep_plans WHERE case_id IN (SELECT id FROM target))
 DELETE FROM iep_plan_suggestions WHERE iep_plan_id IN (SELECT id FROM iep);
 
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+iep AS (SELECT id FROM iep_plans WHERE case_id IN (SELECT id FROM target))
+DELETE FROM iep_strategy_items WHERE iep_plan_id IN (SELECT id FROM iep);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+iep AS (SELECT id FROM iep_plans WHERE case_id IN (SELECT id FROM target))
+DELETE FROM iep_goal_items WHERE iep_plan_id IN (SELECT id FROM iep);
+
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM iep_plans WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+UPDATE goal_repository_items SET case_id = NULL WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+UPDATE strategy_repository_items SET case_id = NULL WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
 docs AS (SELECT id FROM case_documents WHERE case_id IN (SELECT id FROM target))
@@ -148,6 +289,10 @@ DELETE FROM ticket_messages WHERE ticket_id IN (SELECT id FROM tix);
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM support_tickets WHERE case_id IN (SELECT id FROM target);
 
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+meetings AS (SELECT id FROM case_manager_meetings WHERE case_id IN (SELECT id FROM target))
+DELETE FROM meeting_actions WHERE meeting_id IN (SELECT id FROM meetings);
+
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM case_manager_meetings WHERE case_id IN (SELECT id FROM target);
 
@@ -155,7 +300,20 @@ WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM case_status_requests WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_client_status_audit WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM recurring_schedule_assignments WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM therapist_payout_flags WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+tr AS (SELECT id FROM case_therapist_transitions WHERE case_id IN (SELECT id FROM target))
+DELETE FROM case_therapist_transition_days WHERE transition_id IN (SELECT id FROM tr);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_therapist_transitions WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM case_assignments WHERE case_id IN (SELECT id FROM target);
@@ -171,6 +329,9 @@ DELETE FROM attachments WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM parent_billing_statements WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM integration_case_grants WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 UPDATE therapist_leaves SET case_id = NULL WHERE case_id IN (SELECT id FROM target);
