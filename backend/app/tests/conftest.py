@@ -96,3 +96,24 @@ def cm_headers_for_case(client, case_id: int, password: str = "demo123") -> dict
     finally:
         db.close()
     return login_headers(client, email, password=password)
+
+
+def future_meeting_date(days_ahead: int = 14) -> str:
+    """ISO date safely in the future for meeting booking tests."""
+    from datetime import date, timedelta
+
+    return (date.today() + timedelta(days=days_ahead)).isoformat()
+
+
+def past_meeting_date(days_ago: int = 1) -> str:
+    """ISO date in the past for meeting completion tests."""
+    from datetime import date, timedelta
+
+    return (date.today() - timedelta(days=days_ago)).isoformat()
+
+
+def today_meeting_date() -> str:
+    """Today's date in IST for same-day meeting tests."""
+    from app.core.timezone import today_ist
+
+    return today_ist().isoformat()

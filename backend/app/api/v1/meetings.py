@@ -18,7 +18,7 @@ from app.core.database import get_db
 from app.core.db_errors import commit_or_http
 from app.core.module_access import get_allowed_case_product_modules, is_view_only_user
 from app.core.module_write import ensure_feature_write_access, guard_clinical_case
-from app.core.timezone import now_ist, today_ist
+from app.core.timezone import IST, now_ist, today_ist
 from app.core.permissions import (
     RoleName,
     case_scope_check,
@@ -282,7 +282,7 @@ def _meeting_start_dt(meeting_date: date | None, meeting_time: time | None) -> d
     if meeting_date is None:
         return None
     start_time = meeting_time or time(0, 0)
-    return datetime.combine(meeting_date, start_time)
+    return datetime.combine(meeting_date, start_time, tzinfo=IST)
 
 
 def _can_complete_meeting(user: User, meeting: CaseManagerMeeting) -> bool:

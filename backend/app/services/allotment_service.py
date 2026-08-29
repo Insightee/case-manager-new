@@ -94,6 +94,7 @@ def allot_case(
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     client_mode = data.pop("client_billing_mode", None)

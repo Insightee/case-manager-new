@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_first_case_id, api_items, login_headers
+from app.tests.conftest import api_first_case_id, api_items, future_meeting_date, login_headers
 
 client = TestClient(app)
 
@@ -282,15 +282,15 @@ def test_allotment_next_code_increments_without_client_code():
     assert preview.status_code == 200
     expected_code = preview.json()["case_code"]
 
+    admin_token = _login("superadmin@demo.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     therapists = client.get(
         "/api/v1/admin/allotment/therapists?product_module=homecare&approved_only=false",
-        headers=headers,
+        headers=admin_headers,
     )
     assert therapists.status_code == 200
     therapist_id = therapists.json()[0]["therapist_user_id"]
 
-    admin_token = _login("superadmin@demo.com")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     suffix = uuid.uuid4().hex[:8]
     fam = client.post(
         "/api/v1/admin/families",
@@ -367,16 +367,15 @@ def test_allotment_therapists_and_allot_case():
 
     token = _login("casemanager@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
+    admin_headers = login_headers(client, "superadmin@demo.com")
     therapists = client.get(
         "/api/v1/admin/allotment/therapists?product_module=homecare&approved_only=false",
-        headers=headers,
+        headers=admin_headers,
     )
     assert therapists.status_code == 200
     assert therapists.json()
     therapist_id = therapists.json()[0]["therapist_user_id"]
 
-    admin_token = _login("superadmin@demo.com")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     suffix = uuid.uuid4().hex[:8]
     fam = client.post(
         "/api/v1/admin/families",
@@ -913,7 +912,7 @@ def test_cm_meeting_booking_sends_invite_emails(monkeypatch):
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-01",
+            "scheduled_date": future_meeting_date(14),
             "scheduled_time": "14:00:00",
             "duration_minutes": 45,
             "meeting_type": "PARENT_MEETING",
@@ -949,7 +948,7 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-01",
+            "scheduled_date": future_meeting_date(14),
             "scheduled_time": "10:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -995,7 +994,7 @@ def test_therapist_cm_meeting_without_case_returns_400_not_module_error():
         "/api/v1/cm-meetings",
         headers=th_headers,
         json={
-            "scheduled_date": "2026-06-02",
+            "scheduled_date": future_meeting_date(15),
             "scheduled_time": "11:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -1018,7 +1017,7 @@ def test_therapist_can_update_cm_meeting_notes():
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-03",
+            "scheduled_date": future_meeting_date(16),
             "scheduled_time": "15:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -1052,7 +1051,7 @@ def test_therapist_cannot_complete_cm_meeting():
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-04",
+            "scheduled_date": future_meeting_date(17),
             "scheduled_time": "16:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -1092,7 +1091,7 @@ def test_cm_meeting_invites_respect_attendee_selection(monkeypatch):
         headers=cm_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-05",
+            "scheduled_date": future_meeting_date(18),
             "scheduled_time": "11:00:00",
             "duration_minutes": 30,
             "meeting_type": "THERAPIST_SUPPORT",
