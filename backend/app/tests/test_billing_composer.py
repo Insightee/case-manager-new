@@ -121,6 +121,9 @@ def test_parent_invoice_detail_no_finance_margin():
 
 
 def test_composer_therapist_payout_matches_therapist_invoice_preview():
+    from app.core.database import SessionLocal
+    from app.models.case_billing_rate_change import CaseBillingRateChange
+
     admin = _login("superadmin@demo.com")
     therapist = _login("therapist@demo.com")
     admin_h = {"Authorization": f"Bearer {admin}"}
@@ -132,6 +135,20 @@ def test_composer_therapist_payout_matches_therapist_invoice_preview():
     if not therapist_body.get("cases"):
         pytest.skip("No therapist invoice cases in May 2026 seed")
     case_id = therapist_body["cases"][0]["case_id"]
+
+    db = SessionLocal()
+    try:
+        for old in db.scalars(
+            select(CaseBillingRateChange).where(CaseBillingRateChange.case_id == case_id)
+        ).all():
+            db.delete(old)
+        db.commit()
+    finally:
+        db.close()
+
+    preview = client.get(f"/api/v1/invoices/preview?month={month}", headers=th_h)
+    assert preview.status_code == 200
+    therapist_body = preview.json()
     expected = float(therapist_body["cases"][0]["therapist_share_inr"] or 0)
     finance = client.get(
         f"/api/v1/admin/client-billing/composer-preview?case_id={case_id}&billing_month={month}",
