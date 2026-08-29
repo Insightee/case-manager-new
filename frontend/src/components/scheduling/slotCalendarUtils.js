@@ -69,6 +69,8 @@ export const THERAPIST_STATUS_STYLES = {
   IN_PROGRESS: 'bg-amber-100 text-amber-900 border-amber-300',
   CLIENT_ABSENT: 'bg-orange-100 text-orange-900 border-orange-200 line-through',
   CHILD_ABSENT_PENDING: 'bg-amber-50 text-amber-900 border-amber-300',
+  AVAILABILITY_BLOCK: 'bg-amber-100 text-amber-950 border-amber-300',
+  EXTERNAL_BUSY: 'bg-slate-100 text-slate-700 border-slate-300',
 }
 
 export function isCaseUnderReview(caseStatus) {
@@ -85,7 +87,7 @@ export function calendarEventLabel(s, mode = 'therapist') {
   if (s.event_type === 'cm_meeting') {
     return `CM · ${s.title || s.child_name || s.case_code || 'Meeting'}`
   }
-  if (s.event_type === 'session') {
+  if (s.event_type === 'therapy_session' || s.event_type === 'session') {
     const underReview = isCaseUnderReview(s.case_status)
     const who = s.child_name || s.case_code || 'Visit'
     if (s.on_leave) {
@@ -100,6 +102,12 @@ export function calendarEventLabel(s, mode = 'therapist') {
     const prefix =
       s.status === 'IN_PROGRESS' ? 'In progress · ' : underReview ? 'Under review · ' : 'Session · '
     return `${prefix}${who}`
+  }
+  if (s.event_type === 'availability_block') {
+    return `Blocked · ${s.title || s.start_time}`
+  }
+  if (s.event_type === 'external_busy') {
+    return `Busy · ${s.start_time}`
   }
   if (s.status === 'BOOKED') {
     const who = s.child_name || s.case_code || 'Booked'
@@ -134,7 +142,10 @@ export function calendarEventStyle(s, mode = 'therapist') {
   if (s.on_leave) {
     return THERAPIST_STATUS_STYLES.HOLIDAY
   }
-  if (s.event_type === 'session') {
+  if (s.event_type === 'cm_meeting') {
+    return THERAPIST_STATUS_STYLES.SESSION
+  }
+  if (s.event_type === 'therapy_session' || s.event_type === 'session') {
     if (s.status === 'CLIENT_ABSENT' || s.child_absence_status === 'approved') {
       return THERAPIST_STATUS_STYLES.CLIENT_ABSENT
     }
@@ -142,6 +153,12 @@ export function calendarEventStyle(s, mode = 'therapist') {
       return THERAPIST_STATUS_STYLES.CHILD_ABSENT_PENDING
     }
     return THERAPIST_STATUS_STYLES[s.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'SESSION']
+  }
+  if (s.event_type === 'availability_block') {
+    return THERAPIST_STATUS_STYLES.AVAILABILITY_BLOCK
+  }
+  if (s.event_type === 'external_busy') {
+    return THERAPIST_STATUS_STYLES.EXTERNAL_BUSY
   }
   if (s.status === 'BOOKED') {
     if (s.child_absence_status === 'approved') {
@@ -174,12 +191,38 @@ function cmMeetingsAsGridEvents(meetings) {
   }))
 }
 
+function unifiedEventsAsGridEvents(events) {
+  return (events || [])
+    .map((event) => {
+      const slotDate = event.date || event.slot_date
+      if (!slotDate) return null
+      return {
+        id: event.id || `${event.event_type || 'event'}-${slotDate}-${event.start_time || 'all-day'}`,
+        meeting_id: event.meeting_id || null,
+        session_id: event.session_id || null,
+        event_type: event.event_type || 'external_busy',
+        status: event.status || null,
+        slot_date: slotDate,
+        start_time: event.start_time || '00:00:00',
+        end_time: event.end_time || null,
+        child_name: event.child_name || null,
+        case_code: event.case_code || null,
+        title: event.title || null,
+        case_id: event.case_id ?? null,
+        url: event.url || null,
+        user_ids: event.user_ids || [],
+      }
+    })
+    .filter(Boolean)
+}
+
 /** Slots, therapy sessions, and CM meetings returned by the calendar API. */
 export function calendarGridEvents(calendar) {
   return [
     ...(calendar?.slots || []),
     ...(calendar?.sessions || []),
     ...cmMeetingsAsGridEvents(calendar?.cm_meetings),
+    ...unifiedEventsAsGridEvents(calendar?.events),
   ]
 }
 

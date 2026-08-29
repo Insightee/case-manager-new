@@ -13,6 +13,7 @@ class EmailEvent(str, Enum):
     SESSION_DISPUTED = "session_disputed"
     THERAPIST_ASSIGNED = "therapist_assigned"
     CM_MEETING_INVITE = "cm_meeting_invite"
+    CM_MEETING_REMINDER = "cm_meeting_reminder"
     SESSION_LOG_SUBMITTED = "session_log_submitted"
     SESSION_LOG_PUBLISHED = "session_log_published"
     SESSION_LOG_REVIEWED = "session_log_reviewed"

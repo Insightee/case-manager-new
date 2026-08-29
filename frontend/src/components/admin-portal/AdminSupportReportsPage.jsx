@@ -4,6 +4,7 @@ import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useClinicalProductModules, clinicalProductModuleLabel } from '../../hooks/useClinicalProductModules.js'
 import { sortSupportHistoryByUrgency, isUrgent } from './supportHistoryPriority.js'
+import { CANONICAL_STATUS_OPTIONS, canonicalLabel } from '../../lib/supportStatus.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -26,17 +27,7 @@ const RECORD_TYPE_OPTIONS = [
   { value: 'incidents', label: 'Incidents only' },
 ]
 
-const STATUS_OPTIONS = [
-  { value: '', label: 'Any status' },
-  { value: 'OPEN', label: 'Open (tickets)' },
-  { value: 'IN_PROGRESS', label: 'In progress' },
-  { value: 'RESOLVED', label: 'Resolved' },
-  { value: 'CLOSED', label: 'Closed' },
-  { value: 'REPORTED', label: 'Reported (incidents)' },
-  { value: 'IN_REVIEW', label: 'In review' },
-  { value: 'ACTION_TAKEN', label: 'Action taken' },
-  { value: 'ESCALATED', label: 'Escalated' },
-]
+const STATUS_OPTIONS = CANONICAL_STATUS_OPTIONS
 
 function recordTypeLabel(value) {
   return RECORD_TYPE_OPTIONS.find((o) => o.value === value)?.label || 'All types'
@@ -44,7 +35,7 @@ function recordTypeLabel(value) {
 
 function statusLabel(value) {
   if (!value) return null
-  return STATUS_OPTIONS.find((o) => o.value === value)?.label || value
+  return canonicalLabel(value) || STATUS_OPTIONS.find((o) => o.value === value)?.label || value
 }
 
 function formatDate(iso) {
@@ -108,6 +99,7 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
 
   const [recordType, setRecordType] = useState('all')
   const [status, setStatus] = useState('')
+  const [needsAttention, setNeedsAttention] = useState(false)
   const [moduleFilter, setModuleFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -139,6 +131,7 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
       [
         recordType !== 'all' ? recordTypeLabel(recordType) : null,
         statusLabel(status),
+        needsAttention ? 'Needs attention' : null,
         moduleFilter ? clinicalProductModuleLabel(moduleFilter, moduleLabels) : null,
         dateFrom ? `From ${dateFrom}` : null,
         dateTo ? `To ${dateTo}` : null,
@@ -146,11 +139,25 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
         childId ? childOptions.find((c) => c.value === childId)?.label : null,
         search ? `Search: ${search}` : null,
       ].filter(Boolean),
-    [recordType, status, moduleFilter, dateFrom, dateTo, therapistId, childId, search, therapists, childOptions, moduleLabels],
+    [
+      recordType,
+      status,
+      needsAttention,
+      moduleFilter,
+      dateFrom,
+      dateTo,
+      therapistId,
+      childId,
+      search,
+      therapists,
+      childOptions,
+      moduleLabels,
+    ],
   )
 
   const sortedRows = useMemo(() => sortSupportHistoryByUrgency(rows), [rows])
-  const visibleRows = useMemo(() => {
+
+  const searchFilteredRows = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return sortedRows
     return sortedRows.filter((r) =>
@@ -162,12 +169,75 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
     )
   }, [sortedRows, search])
 
+  const visibleRows = useMemo(() => {
+    if (!needsAttention) return searchFilteredRows
+    return searchFilteredRows.filter((r) => isUrgent(r))
+  }, [searchFilteredRows, needsAttention])
+
   const kpis = useMemo(() => {
     const tickets = visibleRows.filter((r) => r.record_type === 'ticket').length
     const incidents = visibleRows.filter((r) => r.record_type === 'incident').length
-    const urgent = visibleRows.filter((r) => isUrgent(r)).length
-    return { tickets, incidents, urgent }
-  }, [visibleRows])
+    const urgent = searchFilteredRows.filter((r) => isUrgent(r)).length
+    return { tickets, incidents, urgent, matching: visibleRows.length }
+  }, [visibleRows, searchFilteredRows])
+
+  const matchingKpiLabel =
+    !loading && total > rows.length ? `${kpis.matching}+` : String(loading ? '…' : kpis.matching)
+
+  const applyKpi = useCallback((kind) => {
+    if (kind === 'all') {
+      setRecordType('all')
+      setStatus('')
+      setNeedsAttention(false)
+      setModuleFilter('')
+      setDateFrom('')
+      setDateTo('')
+      setTherapistId('')
+      setChildId('')
+      setSearch('')
+      return
+    }
+    if (kind === 'tickets') {
+      setRecordType('tickets')
+      setNeedsAttention(false)
+      setStatus('')
+      return
+    }
+    if (kind === 'incidents') {
+      setRecordType('incidents')
+      setNeedsAttention(false)
+      setStatus('')
+      return
+    }
+    if (kind === 'attention') {
+      setNeedsAttention(true)
+      setStatus('')
+      setRecordType('all')
+    }
+  }, [])
+
+  const kpiActive = useCallback(
+    (kind) => {
+      if (kind === 'all') {
+        return (
+          recordType === 'all' &&
+          !status &&
+          !needsAttention &&
+          !moduleFilter &&
+          !dateFrom &&
+          !dateTo &&
+          !therapistId &&
+          !childId &&
+          !search
+        )
+      }
+      if (kind === 'tickets') return recordType === 'tickets' && !needsAttention && !status
+      if (kind === 'incidents') return recordType === 'incidents' && !needsAttention && !status
+      if (kind === 'attention') return needsAttention
+      return false
+    },
+    [recordType, status, needsAttention, moduleFilter, dateFrom, dateTo, therapistId, childId, search],
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -222,6 +292,7 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
   function clearFilters() {
     setRecordType('all')
     setStatus('')
+    setNeedsAttention(false)
     setModuleFilter('')
     setDateFrom('')
     setDateTo('')
@@ -235,13 +306,19 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
       <FilterSelect
         label="Type"
         value={recordType}
-        onChange={(e) => setRecordType(e.target.value)}
+        onChange={(e) => {
+          setRecordType(e.target.value)
+          setNeedsAttention(false)
+        }}
         options={recordTypeOptions}
       />
       <FilterSelect
         label="Status"
         value={status}
-        onChange={(e) => setStatus(e.target.value)}
+        onChange={(e) => {
+          setStatus(e.target.value)
+          setNeedsAttention(false)
+        }}
         options={STATUS_OPTIONS}
       />
       <FilterSelect
@@ -306,23 +383,43 @@ export function AdminSupportReportsPage({ embedded = false, capabilities = null 
 
       {loadError ? <p className="admin-alert admin-alert--error">{loadError}</p> : null}
 
-      <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
-        <div className="admin-reports__kpi">
-          <div className="admin-reports__kpi-value">{loading ? '…' : total}</div>
+      <div className="admin-reports__kpis" style={{ marginBottom: 16 }} role="group" aria-label="Support history summary filters">
+        <button
+          type="button"
+          className={`admin-reports__kpi${kpiActive('all') ? ' is-active' : ''}`}
+          onClick={() => applyKpi('all')}
+          aria-pressed={kpiActive('all')}
+        >
+          <div className="admin-reports__kpi-value">{matchingKpiLabel}</div>
           <div className="admin-reports__kpi-label">Matching records</div>
-        </div>
-        <div className="admin-reports__kpi">
+        </button>
+        <button
+          type="button"
+          className={`admin-reports__kpi${kpiActive('tickets') ? ' is-active' : ''}`}
+          onClick={() => applyKpi('tickets')}
+          aria-pressed={kpiActive('tickets')}
+        >
           <div className="admin-reports__kpi-value">{loading ? '…' : kpis.tickets}</div>
           <div className="admin-reports__kpi-label">Tickets (shown)</div>
-        </div>
-        <div className="admin-reports__kpi">
+        </button>
+        <button
+          type="button"
+          className={`admin-reports__kpi${kpiActive('incidents') ? ' is-active' : ''}`}
+          onClick={() => applyKpi('incidents')}
+          aria-pressed={kpiActive('incidents')}
+        >
           <div className="admin-reports__kpi-value">{loading ? '…' : kpis.incidents}</div>
           <div className="admin-reports__kpi-label">Incidents (shown)</div>
-        </div>
-        <div className="admin-reports__kpi">
+        </button>
+        <button
+          type="button"
+          className={`admin-reports__kpi${kpiActive('attention') ? ' is-active' : ''}`}
+          onClick={() => applyKpi('attention')}
+          aria-pressed={kpiActive('attention')}
+        >
           <div className="admin-reports__kpi-value">{loading ? '…' : kpis.urgent}</div>
           <div className="admin-reports__kpi-label">Needs attention</div>
-        </div>
+        </button>
       </div>
 
       <AdminPanel

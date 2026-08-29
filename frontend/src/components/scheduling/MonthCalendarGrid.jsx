@@ -69,9 +69,11 @@ export function MonthCalendarGrid({
               const dayEvents = eventsForDate(calendar, ds)
               const overlay = calendar?.day_overlays?.[ds]
               const dayWideLeave = isTherapistWideLeaveOverlay(overlay)
-              const hasBooked = dayEvents.some(
-                (s) => s.status === 'BOOKED' || s.event_type === 'session',
-              )
+              const hasMeeting = dayEvents.some((s) => s.event_type === 'cm_meeting')
+              const hasSession = dayEvents.some((s) => s.event_type === 'therapy_session' || s.event_type === 'session')
+              const hasBlock = dayEvents.some((s) => s.event_type === 'availability_block')
+              const hasBusy = dayEvents.some((s) => s.event_type === 'external_busy')
+              const hasBooked = dayEvents.some((s) => s.status === 'BOOKED' || s.event_type === 'session')
               const hasAvailable = dayEvents.some((s) => s.status === 'AVAILABLE')
               const isToday = ds === today
               return (
@@ -92,6 +94,18 @@ export function MonthCalendarGrid({
                         className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
                         title={leaveOverlayHeaderLabel(overlay)}
                       />
+                    ) : null}
+                    {hasMeeting ? (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-600" title="CM meeting" />
+                    ) : null}
+                    {hasSession ? (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-500" title="Therapy session" />
+                    ) : null}
+                    {hasBlock ? (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" title="Availability block" />
+                    ) : null}
+                    {hasBusy ? (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-500" title="External busy" />
                     ) : null}
                     {hasBooked ? (
                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-600" title="Booked" />

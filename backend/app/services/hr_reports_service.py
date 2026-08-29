@@ -62,7 +62,7 @@ def run_hr_report(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     product_module: Optional[str] = None,
-    case_manager_user_id: Optional[int] = None,
+    case_manager_user_id: int | list[int] | None = None,
     therapist_user_id: Optional[int] = None,
     case_id: Optional[int] = None,
     user: User | None = None,

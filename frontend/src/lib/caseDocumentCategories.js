@@ -27,8 +27,11 @@ const STATUS_LABELS = {
 
 const VISIBILITY_LABELS = {
   INTERNAL_ONLY: 'Internal only',
+  INTERNAL: 'Internal',
   CLIENT_VISIBLE_AFTER_APPROVAL: 'Family after approval',
+  CARE_TEAM: 'Care team',
   CLIENT_VISIBLE: 'Shared with family',
+  CLIENT: 'Family',
 }
 
 const WORKFLOW_LABELS = {

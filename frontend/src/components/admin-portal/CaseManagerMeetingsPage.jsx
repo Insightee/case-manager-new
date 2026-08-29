@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
 import { dateStr } from '../scheduling/slotCalendarUtils.js'
 import { BookMeetingModal } from '../meetings/BookMeetingModal.jsx'
 import { MeetingDetailSheet } from '../meetings/MeetingDetailSheet.jsx'
+import { MeetingNotesSheet } from '../meetings/MeetingNotesSheet.jsx'
 import { RescheduleMeetingModal } from '../meetings/RescheduleMeetingModal.jsx'
 import {
   MONTH_FILTER_OPTIONS,
   SEARCH_DEBOUNCE_MS,
-  MEETING_OUTCOME_OPTIONS,
   STATUS_FILTER_OPTIONS,
   STATUS_LABELS,
   TYPE_FILTER_OPTIONS,
@@ -19,7 +19,14 @@ import {
 import { formatAttendeeList, meetingDisplayTitle, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
-import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminPageHeader,
+  AdminSearchInput,
+  FilterSelect,
+  StaffCategoryPeopleFilter,
+  STAFF_CATEGORY_TO_PARTICIPANT_ROLE,
+} from './ui/index.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import './admin-reports.css'
 import './admin-scheduling-hub.css'
@@ -33,126 +40,83 @@ function StatusBadge({ status }) {
   )
 }
 
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function createEmptyAvailabilityDraft() {
+  return {
+    rules: [],
+    exceptions: [],
+    booking_policy: {
+      min_notice_minutes: 120,
+      max_days_ahead: 60,
+      buffer_minutes: 0,
+      allowed_durations: [30, 45, 60, 90],
+    },
+  }
+}
+
+function normalizeAvailabilityDraft(payload) {
+  const draft = createEmptyAvailabilityDraft()
+  if (!payload) return draft
+  draft.rules = Array.isArray(payload.rules) ? payload.rules : []
+  draft.exceptions = Array.isArray(payload.exceptions) ? payload.exceptions : []
+  draft.booking_policy = {
+    min_notice_minutes: payload.booking_policy?.min_notice_minutes ?? 120,
+    max_days_ahead: payload.booking_policy?.max_days_ahead ?? 60,
+    buffer_minutes: payload.booking_policy?.buffer_minutes ?? 0,
+    allowed_durations: Array.isArray(payload.booking_policy?.allowed_durations)
+      ? payload.booking_policy.allowed_durations
+      : [30, 45, 60, 90],
+  }
+  return draft
+}
+
 function CmNotesModal({ meeting, onClose, onUpdated }) {
-  const [form, setForm] = useState({
-    notes_outcome: meeting.notes_outcome || '',
-    notes_summary: meeting.notes_summary || '',
-    notes_next_meeting_required: meeting.notes_next_meeting_required || false,
-    notes_additional: meeting.notes_additional || '',
-    status: meeting.status || 'SCHEDULED',
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  function set(k, v) {
-    setForm((f) => ({ ...f, [k]: v }))
-  }
-
-  async function submit(e) {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
-    if (form.status === 'COMPLETED' && (!form.notes_outcome.trim() || !form.notes_summary.trim())) {
-      setError('Looks like we still need a meeting outcome and discussion summary before we can mark this complete.')
-      setSaving(false)
-      return
-    }
-    try {
-      const result = await apiFetch(`/api/v1/meetings/${meeting.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: form.status,
-          notes_outcome: form.notes_outcome || null,
-          notes_summary: form.notes_summary || null,
-          notes_next_meeting_required: form.notes_next_meeting_required,
-          notes_additional: form.notes_additional || null,
-        }),
-      })
-      onUpdated(result)
-    } catch (err) {
-      setError(err.message || 'Could not save')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const taStyle = { display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4, minHeight: 72, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }
-  const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
-
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Meeting notes</h2>
-        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
-          {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
-        </p>
-        {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
-        <form onSubmit={submit}>
-          <label style={labelStyle}>
-            Status
-            <select style={{ display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4 }} value={form.status} onChange={(e) => set('status', e.target.value)}>
-              <option value="SCHEDULED">Scheduled</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Meeting outcome {form.status === 'COMPLETED' ? '(required)' : ''}
-            <select
-              style={{ display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4 }}
-              value={form.notes_outcome}
-              onChange={(e) => set('notes_outcome', e.target.value)}
-            >
-              {MEETING_OUTCOME_OPTIONS.map((opt) => (
-                <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Discussion summary {form.status === 'COMPLETED' ? '(required)' : ''}
-            <textarea style={taStyle} placeholder="What was discussed, agreed, and decided in the meeting…" value={form.notes_summary} onChange={(e) => set('notes_summary', e.target.value)} />
-          </label>
-          <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input type="checkbox" checked={form.notes_next_meeting_required} onChange={(e) => set('notes_next_meeting_required', e.target.checked)} />
-            Follow-up meeting required
-          </label>
-          <label style={labelStyle}>
-            Additional notes
-            <textarea style={taStyle} placeholder="Any other notes for the record…" value={form.notes_additional} onChange={(e) => set('notes_additional', e.target.value)} />
-          </label>
-          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-            <button type="submit" disabled={saving} style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
-              {saving ? 'Saving…' : 'Save notes'}
-            </button>
-            <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '11px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <MeetingNotesSheet
+      open
+      meeting={meeting}
+      onClose={onClose}
+      onSaved={onUpdated}
+      isTherapistView={false}
+    />
   )
 }
 
 function TherapistNotesModal({ meeting, onClose, onUpdated }) {
-  const [discussion, setDiscussion] = useState(meeting.therapist_notes || '')
+  return (
+    <MeetingNotesSheet
+      open
+      meeting={meeting}
+      onClose={onClose}
+      onSaved={onUpdated}
+      isTherapistView
+    />
+  )
+}
+
+function CancelMeetingModal({ meeting, onClose, onCancelled }) {
+  const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(e) {
     e.preventDefault()
+    const trimmed = reason.trim()
+    if (trimmed.length < 3) {
+      setError('Please add a short reason so the team can understand the cancellation.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      const result = await apiFetch(`/api/v1/meetings/${meeting.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          therapist_notes: discussion.trim() || null,
-        }),
+      const result = await apiFetch(`/api/v1/meetings/${meeting.id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: trimmed }),
       })
-      onUpdated(result)
+      onCancelled(result)
     } catch (err) {
-      setError(err.message || 'Could not save your notes')
+      setError(err.message || 'Could not cancel meeting')
     } finally {
       setSaving(false)
     }
@@ -162,24 +126,26 @@ function TherapistNotesModal({ meeting, onClose, onUpdated }) {
   const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
       <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Your meeting notes</h2>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Cancel meeting</h2>
         <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
           {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
-        </p>
-        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 16px' }}>
-          These notes are only visible to you. Your case manager completes the meeting separately.
         </p>
         {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
         <form onSubmit={submit}>
           <label style={labelStyle}>
-            What was discussed
-            <textarea style={taStyle} placeholder="Brief summary of what you covered in the meeting…" value={discussion} onChange={(e) => setDiscussion(e.target.value)} />
+            Reason for cancellation
+            <textarea
+              style={taStyle}
+              placeholder="Share the reason so the team and family have context..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </label>
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-            <button type="submit" disabled={saving} style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
-              {saving ? 'Saving…' : 'Save notes'}
+            <button type="submit" disabled={saving} style={{ flex: 1, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
+              {saving ? 'Cancelling…' : 'Cancel meeting'}
             </button>
             <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '11px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
               Close
@@ -279,53 +245,106 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [pageView, setPageView] = useState(isParentPortal ? 'list' : 'calendar')
   const [meetings, setMeetings] = useState([])
   const [cases, setCases] = useState([])
-  const [cmUsers, setCmUsers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [showBook, setShowBook] = useState(false)
   const [bookPrefill, setBookPrefill] = useState({ date: null, time: null })
   const [notesTarget, setNotesTarget] = useState(null)
   const [detailMeeting, setDetailMeeting] = useState(null)
   const [rescheduleTarget, setRescheduleTarget] = useState(null)
+  const [cancelTarget, setCancelTarget] = useState(null)
   const [calendarRefresh, setCalendarRefresh] = useState(0)
   const [selectedCalendarEventId, setSelectedCalendarEventId] = useState(null)
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [typeFilter, setTypeFilter] = useState(searchParams.get('meeting_type') || '')
   const [caseFilter, setCaseFilter] = useState(searchParams.get('case_id') || '')
-  const [cmFilter, setCmFilter] = useState(searchParams.get('cm_id') || '')
+  const [staffCategory, setStaffCategory] = useState('')
+  const [peopleIds, setPeopleIds] = useState([])
   const [monthFilter, setMonthFilter] = useState(searchParams.get('month') || '')
   const [yearFilter, setYearFilter] = useState(searchParams.get('year') || String(new Date().getFullYear()))
   const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '')
   const [search, setSearch] = useState(searchInput)
   const [error, setError] = useState('')
+  const [availabilityDraft, setAvailabilityDraft] = useState(createEmptyAvailabilityDraft())
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState('')
+  const [googleConnection, setGoogleConnection] = useState(null)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleError, setGoogleError] = useState('')
+  const [newException, setNewException] = useState({
+    date: '',
+    type: 'CLOSED',
+    start_time: '',
+    end_time: '',
+    reason: '',
+  })
 
   const yearFilterOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
-    return Array.from({ length: 5 }, (_, idx) => {
-      const year = String(currentYear - 2 + idx)
-      return { value: year, label: year }
-    })
+    return [
+      { value: '', label: 'All years' },
+      ...Array.from({ length: 5 }, (_, idx) => {
+        const year = String(currentYear - 2 + idx)
+        return { value: year, label: year }
+      }),
+    ]
   }, [])
 
   const queueTab = searchParams.get('queue') === 'admin'
+  const listCountLabel = yearFilter ? `In current list (${yearFilter})` : 'In current list'
 
   useEffect(() => {
     const id = window.setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(id)
   }, [searchInput])
 
-  const buildQuery = useCallback(() => {
+  useEffect(() => {
+    if (!user?.id || isParentPortal) return
+    let cancelled = false
+    setAvailabilityLoading(true)
+    Promise.all([
+      apiFetch(`/api/v1/users/${user.id}/availability`),
+      apiFetch('/api/v1/calendar/connections/google'),
+    ])
+      .then(([availability, connection]) => {
+        if (cancelled) return
+        setAvailabilityDraft(normalizeAvailabilityDraft(availability))
+        setGoogleConnection(connection || null)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setAvailabilityError(err.message || 'Could not load availability settings')
+      })
+      .finally(() => {
+        if (!cancelled) setAvailabilityLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, isParentPortal])
+
+  const buildFilterParams = useCallback(() => {
     const p = new URLSearchParams()
     if (statusFilter) p.set('status', statusFilter)
     if (typeFilter && !queueTab) p.set('meeting_type', typeFilter)
     if (caseFilter) p.set('case_id', caseFilter)
-    if (cmFilter && isAdmin) p.set('case_manager_user_id', cmFilter)
+    if (isAdmin && peopleIds.length > 0) {
+      const participantRole = STAFF_CATEGORY_TO_PARTICIPANT_ROLE[staffCategory]
+      if (participantRole) p.set('participant_role', participantRole)
+      p.set('participant_user_ids', peopleIds.map(String).join(','))
+    }
     if (monthFilter) p.set('month', monthFilter)
     if (yearFilter) p.set('year', yearFilter)
     const term = String(search ?? '').trim()
     if (term) p.set('search', term)
-    const qs = p.toString()
+    return p
+  }, [statusFilter, typeFilter, caseFilter, staffCategory, peopleIds, monthFilter, yearFilter, search, queueTab, isAdmin])
+
+  const buildQuery = useCallback(() => {
+    const qs = buildFilterParams().toString()
     return qs ? `?${qs}` : ''
-  }, [statusFilter, typeFilter, caseFilter, cmFilter, monthFilter, yearFilter, search, queueTab, isAdmin])
+  }, [buildFilterParams])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -352,7 +371,13 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
   const loadBookableCases = useCallback(() => {
     const params = new URLSearchParams()
-    if (isAdmin && cmFilter) params.set('case_manager_user_id', cmFilter)
+    if (
+      isAdmin
+      && staffCategory === 'CASE_MANAGER'
+      && peopleIds.length === 1
+    ) {
+      params.set('case_manager_user_id', peopleIds[0])
+    }
     const qs = params.toString() ? `?${params}` : ''
     return apiFetch(`/api/v1/meetings/bookable-cases${qs}`)
       .then((data) => {
@@ -366,26 +391,34 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
           })),
         )
       })
-      .catch(() => setCases([]))
-  }, [isAdmin, cmFilter])
+      .catch((err) => {
+        setError(err.message || 'Could not load bookable cases')
+      })
+  }, [isAdmin, staffCategory, peopleIds])
 
   useEffect(() => {
     loadBookableCases()
   }, [loadBookableCases])
 
   useEffect(() => {
-    if (!isAdmin) return
-    apiFetch('/api/v1/admin/users')
-      .then((rows) => {
-        const list = Array.isArray(rows) ? rows : rows?.items || []
-        setCmUsers(list.filter((u) => u.roles?.includes('CASE_MANAGER')))
-      })
-      .catch(() => setCmUsers([]))
-  }, [isAdmin])
-
-  useEffect(() => {
     load()
   }, [load])
+
+  async function handleExport(format) {
+    const params = buildFilterParams()
+    params.set('format', format)
+    const ext = format === 'excel' ? 'xlsx' : 'csv'
+    const stamp = yearFilter || 'all'
+    setExporting(true)
+    setError('')
+    try {
+      await apiDownload(`/api/v1/meetings/export?${params.toString()}`, `meetings_export_${stamp}.${ext}`)
+    } catch (err) {
+      setError(err.message || 'Could not export meetings')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const displayedMeetings = useMemo(() => {
     const active = meetings.filter((m) => m.status !== 'RESCHEDULED')
@@ -434,6 +467,14 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     refreshAll()
   }
 
+  function handleCancelled(m) {
+    const cancelledId = cancelTarget?.id
+    setCancelTarget(null)
+    setDetailMeeting(null)
+    setMeetings((prev) => prev.map((x) => (x.id === m.id || x.id === cancelledId ? m : x)))
+    refreshAll()
+  }
+
   async function handleCalendarSlotClick(event) {
     if (event.event_type !== 'cm_meeting') return
     setSelectedCalendarEventId(event.id)
@@ -445,8 +486,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       return
     }
     try {
-      const rows = await apiFetch('/api/v1/meetings?status=SCHEDULED')
-      const found = (Array.isArray(rows) ? rows : []).find((item) => item.id === meetingId)
+      const found = await apiFetch(`/api/v1/meetings/${meetingId}`)
       if (found) setDetailMeeting(found)
     } catch {
       setError('Could not open that meeting')
@@ -459,14 +499,107 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   }
 
   async function handleCancel(meeting) {
-    if (!window.confirm('Cancel this meeting?')) return
+    setCancelTarget(meeting)
+  }
+
+  function updateRule(weekday, field, value) {
+    setAvailabilityDraft((draft) => {
+      const rules = [...draft.rules]
+      const idx = rules.findIndex((row) => Number(row.weekday) === Number(weekday))
+      const nextRow = idx >= 0 ? { ...rules[idx], [field]: value } : {
+        weekday,
+        start_time: '10:00',
+        end_time: '19:00',
+        slot_granularity_minutes: 30,
+      }
+      nextRow.weekday = weekday
+      if (idx >= 0) {
+        rules[idx] = nextRow
+      } else {
+        rules.push(nextRow)
+      }
+      return { ...draft, rules }
+    })
+  }
+
+  function removeRule(weekday) {
+    setAvailabilityDraft((draft) => ({
+      ...draft,
+      rules: draft.rules.filter((row) => Number(row.weekday) !== Number(weekday)),
+    }))
+  }
+
+  function addException() {
+    if (!newException.date) {
+      setAvailabilityError('Pick a date for the exception.')
+      return
+    }
+    setAvailabilityDraft((draft) => ({
+      ...draft,
+      exceptions: [
+        ...draft.exceptions,
+        {
+          date: newException.date,
+          type: newException.type,
+          start_time: newException.type === 'CUSTOM' ? (newException.start_time || null) : null,
+          end_time: newException.type === 'CUSTOM' ? (newException.end_time || null) : null,
+          reason: newException.reason.trim() || null,
+        },
+      ],
+    }))
+    setNewException({
+      date: '',
+      type: 'CLOSED',
+      start_time: '',
+      end_time: '',
+      reason: '',
+    })
+  }
+
+  async function saveAvailability() {
+    if (!user?.id) return
+    setAvailabilitySaving(true)
+    setAvailabilityError('')
     try {
-      await apiFetch(`/api/v1/meetings/${meeting.id}`, { method: 'DELETE' })
-      setMeetings((prev) => prev.map((x) => (x.id === meeting.id ? { ...x, status: 'CANCELLED' } : x)))
-      if (detailMeeting?.id === meeting.id) setDetailMeeting(null)
-      refreshAll()
-    } catch (e) {
-      setError(e.message || 'Could not cancel')
+      const result = await apiFetch(`/api/v1/users/${user.id}/availability`, {
+        method: 'PUT',
+        body: JSON.stringify(availabilityDraft),
+      })
+      setAvailabilityDraft(normalizeAvailabilityDraft(result))
+    } catch (err) {
+      setAvailabilityError(err.message || 'Could not save availability settings')
+    } finally {
+      setAvailabilitySaving(false)
+    }
+  }
+
+  async function connectGoogleCalendar() {
+    setGoogleError('')
+    try {
+      setGoogleLoading(true)
+      const result = await apiFetch('/api/v1/calendar/connections/google/authorize', { method: 'POST' })
+      if (result?.authorization_url) {
+        window.open(result.authorization_url, '_blank', 'noopener,noreferrer')
+      } else {
+        throw new Error('No Google authorization URL returned')
+      }
+    } catch (err) {
+      setGoogleError(err.message || 'Could not start Google connection')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
+
+  async function disconnectGoogleCalendar() {
+    setGoogleError('')
+    try {
+      setGoogleLoading(true)
+      await apiFetch('/api/v1/calendar/connections/google', { method: 'DELETE' })
+      setGoogleConnection(null)
+    } catch (err) {
+      setGoogleError(err.message || 'Could not disconnect Google Calendar')
+    } finally {
+      setGoogleLoading(false)
     }
   }
 
@@ -505,6 +638,189 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
       {!isParentPortal ? (
+        <section className="card" style={{ marginBottom: 20, padding: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+            <div>
+              <p className="admin-muted" style={{ margin: 0, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>My availability</p>
+              <h3 style={{ margin: '4px 0 0' }}>Weekday rules, exceptions, and Google sync</h3>
+            </div>
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={saveAvailability} disabled={availabilitySaving || availabilityLoading}>
+              {availabilitySaving ? 'Saving…' : 'Save availability'}
+            </button>
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: '#64748b' }}>
+            Insighte owns meetings; Google edits are ignored. Use this panel to keep your shared booking window current.
+          </p>
+          {availabilityError ? <p className="admin-alert admin-alert--error">{availabilityError}</p> : null}
+          {googleError ? <p className="admin-alert admin-alert--error">{googleError}</p> : null}
+
+          <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
+            {WEEKDAY_LABELS.map((label, weekday) => {
+              const rule = availabilityDraft.rules.find((row) => Number(row.weekday) === weekday)
+              const active = Boolean(rule)
+              const row = rule || { weekday, start_time: '10:00', end_time: '19:00', slot_granularity_minutes: 30 }
+              return (
+                <div key={label} style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: 10, background: '#fff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#0f172a' }}>
+                      <input type="checkbox" checked={active} onChange={(e) => (e.target.checked ? updateRule(weekday, 'weekday', weekday) : removeRule(weekday))} />
+                      {label}
+                    </label>
+                    <span className="admin-muted" style={{ fontSize: '0.75rem' }}>{active ? 'Open' : 'Off'}</span>
+                  </div>
+                  {active ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+                      <input
+                        type="time"
+                        className="admin-input"
+                        value={row.start_time}
+                        onChange={(e) => updateRule(weekday, 'start_time', e.target.value)}
+                      />
+                      <input
+                        type="time"
+                        className="admin-input"
+                        value={row.end_time}
+                        onChange={(e) => updateRule(weekday, 'end_time', e.target.value)}
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        className="admin-input"
+                        value={row.slot_granularity_minutes || 30}
+                        onChange={(e) => updateRule(weekday, 'slot_granularity_minutes', Number(e.target.value) || 30)}
+                      />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                        <input
+                          type="date"
+                          className="admin-input"
+                          value={row.effective_from || ''}
+                          onChange={(e) => updateRule(weekday, 'effective_from', e.target.value || null)}
+                        />
+                        <input
+                          type="date"
+                          className="admin-input"
+                          value={row.effective_to || ''}
+                          onChange={(e) => updateRule(weekday, 'effective_to', e.target.value || null)}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
+            <label className="admin-label">
+              Min notice (minutes)
+              <input
+                type="number"
+                min="0"
+                className="admin-input"
+                value={availabilityDraft.booking_policy.min_notice_minutes}
+                onChange={(e) => setAvailabilityDraft((draft) => ({
+                  ...draft,
+                  booking_policy: { ...draft.booking_policy, min_notice_minutes: Number(e.target.value) || 0 },
+                }))}
+              />
+            </label>
+            <label className="admin-label">
+              Max days ahead
+              <input
+                type="number"
+                min="0"
+                className="admin-input"
+                value={availabilityDraft.booking_policy.max_days_ahead}
+                onChange={(e) => setAvailabilityDraft((draft) => ({
+                  ...draft,
+                  booking_policy: { ...draft.booking_policy, max_days_ahead: Number(e.target.value) || 0 },
+                }))}
+              />
+            </label>
+            <label className="admin-label">
+              Buffer (minutes)
+              <input
+                type="number"
+                min="0"
+                className="admin-input"
+                value={availabilityDraft.booking_policy.buffer_minutes}
+                onChange={(e) => setAvailabilityDraft((draft) => ({
+                  ...draft,
+                  booking_policy: { ...draft.booking_policy, buffer_minutes: Number(e.target.value) || 0 },
+                }))}
+              />
+            </label>
+            <label className="admin-label">
+              Allowed durations
+              <input
+                type="text"
+                className="admin-input"
+                value={availabilityDraft.booking_policy.allowed_durations.join(', ')}
+                onChange={(e) => setAvailabilityDraft((draft) => ({
+                  ...draft,
+                  booking_policy: {
+                    ...draft.booking_policy,
+                    allowed_durations: e.target.value.split(',').map((value) => Number(value.trim())).filter(Boolean),
+                  },
+                }))}
+              />
+            </label>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+              <strong>Exceptions</strong>
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={addException}>Add exception</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8, marginBottom: 10 }}>
+              <input type="date" className="admin-input" value={newException.date} onChange={(e) => setNewException((draft) => ({ ...draft, date: e.target.value }))} />
+              <select className="admin-input" value={newException.type} onChange={(e) => setNewException((draft) => ({ ...draft, type: e.target.value }))}>
+                <option value="CLOSED">Closed</option>
+                <option value="CUSTOM">Custom window</option>
+              </select>
+              <input type="time" className="admin-input" value={newException.start_time} onChange={(e) => setNewException((draft) => ({ ...draft, start_time: e.target.value }))} />
+              <input type="time" className="admin-input" value={newException.end_time} onChange={(e) => setNewException((draft) => ({ ...draft, end_time: e.target.value }))} />
+              <input type="text" className="admin-input" placeholder="Reason" value={newException.reason} onChange={(e) => setNewException((draft) => ({ ...draft, reason: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {availabilityDraft.exceptions.length > 0 ? availabilityDraft.exceptions.map((item, index) => (
+                <span key={`${item.date}-${index}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', borderRadius: 999, padding: '5px 10px', fontSize: '0.8rem', color: '#334155', background: '#f8fafc' }}>
+                  {item.date} · {item.type}{item.reason ? ` · ${item.reason}` : ''}
+                  <button
+                    type="button"
+                    onClick={() => setAvailabilityDraft((draft) => ({ ...draft, exceptions: draft.exceptions.filter((_, idx) => idx !== index) }))}
+                    style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', padding: 0 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              )) : <span className="admin-muted">No exceptions yet.</span>}
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <strong>Google Calendar</strong>
+              <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                {googleConnection?.is_connected ? `Connected to ${googleConnection.google_account_email || 'Google'}` : 'Not connected yet.'}
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {googleConnection?.is_connected ? (
+                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={disconnectGoogleCalendar} disabled={googleLoading}>
+                  Disconnect
+                </button>
+              ) : (
+                <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={connectGoogleCalendar} disabled={googleLoading}>
+                  Connect Google
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {!isParentPortal ? (
         <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Meetings view">
           {[
             { id: 'calendar', label: 'Calendar' },
@@ -535,6 +851,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
           <TherapistCalendar
             apiPrefix="/api/v1/meetings"
             mode={calendarMode}
+            calendarFeed="unified"
             refreshKey={calendarRefresh}
             selectedSlotId={selectedCalendarEventId}
             onSlotClick={handleCalendarSlotClick}
@@ -558,9 +875,30 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             ) : null}
             <div className="admin-reports__kpi">
               <div className="admin-reports__kpi-value">{kpis.total}</div>
-              <div className="admin-reports__kpi-label">In current list</div>
+              <div className="admin-reports__kpi-label">{listCountLabel}</div>
             </div>
           </div>
+
+          {!isParentPortal ? (
+            <div className="admin-reports__toolbar" style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                disabled={exporting}
+                onClick={() => handleExport('csv')}
+              >
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                disabled={exporting}
+                onClick={() => handleExport('excel')}
+              >
+                {exporting ? 'Exporting…' : 'Export Excel'}
+              </button>
+            </div>
+          ) : null}
 
           {queueTab ? (
             <p className="admin-alert" style={{ marginBottom: 12 }}>
@@ -579,11 +917,21 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
               statusFilter && statusFilter !== 'ALL' ? statusFilter : null,
               typeFilter && typeFilter !== 'ALL' ? typeFilter : null,
               caseFilter ? `Case ${caseFilter}` : null,
+              staffCategory || null,
+              peopleIds.length ? `${peopleIds.length} people` : null,
+              yearFilter || null,
             ].filter(Boolean)}
-            activeCount={[statusFilter, typeFilter, caseFilter, cmFilter, monthFilter].filter((v) => v && v !== 'ALL' && v !== '').length}
+            activeCount={[
+              statusFilter,
+              typeFilter,
+              caseFilter,
+              staffCategory,
+              peopleIds.length ? 'people' : '',
+              monthFilter,
+              yearFilter,
+            ].filter((v) => v && v !== 'ALL' && v !== '').length}
           >
             <div className="admin-meetings-filters">
-              <AdminSearchInput value={searchInput} onChange={setSearchInput} placeholder="Child, case code, or meeting title…" className="admin-meetings-filters__search" />
               <FilterSelect label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={STATUS_FILTER_OPTIONS} />
               <FilterSelect label="Meeting type" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} options={TYPE_FILTER_OPTIONS} disabled={queueTab} />
               {!isParentPortal ? (
@@ -598,18 +946,16 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
                 />
               ) : null}
               {isAdmin ? (
-                <FilterSelect
-                  label="Case manager"
-                  value={cmFilter}
-                  onChange={(e) => setCmFilter(e.target.value)}
-                  options={[
-                    { value: '', label: 'All case managers' },
-                    ...cmUsers.map((u) => ({ value: String(u.id), label: u.full_name })),
-                  ]}
+                <StaffCategoryPeopleFilter
+                  category={staffCategory}
+                  onCategoryChange={setStaffCategory}
+                  peopleIds={peopleIds}
+                  onPeopleChange={setPeopleIds}
+                  className="admin-meetings-filters__staff"
                 />
               ) : null}
               <FilterSelect label="Month" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} options={MONTH_FILTER_OPTIONS} />
-              <FilterSelect label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={yearFilterOptions} disabled={!monthFilter} />
+              <FilterSelect label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={yearFilterOptions} />
             </div>
           </AdminCollapsibleFilters>
 
@@ -676,6 +1022,14 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
           meeting={rescheduleTarget}
           onClose={() => setRescheduleTarget(null)}
           onRescheduled={handleRescheduled}
+        />
+      ) : null}
+
+      {cancelTarget ? (
+        <CancelMeetingModal
+          meeting={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onCancelled={handleCancelled}
         />
       ) : null}
 

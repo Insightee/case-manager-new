@@ -138,6 +138,13 @@
   margin: 0 0 10px;
 }
 
+.cs-audit__table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .cs-audit__table {
   width: 100%;
   border-collapse: collapse;

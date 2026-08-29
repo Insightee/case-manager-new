@@ -5,8 +5,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.core.database import SessionLocal
 from app.main import app
+from app.models.case import BillingType, Case, CaseStatus, CompensationMode
+from app.models.child import Child
 
 client = TestClient(app)
 
@@ -68,13 +72,35 @@ def test_allot_shadow_requires_day_type():
     assert ok.json()["case"]["day_type"] == "HALF_DAY"
 
 
+def _create_legacy_shadow_case_without_day_type() -> int:
+    """Legacy row: shadow case created before day_type was required."""
+    db = SessionLocal()
+    try:
+        child = db.scalars(select(Child).limit(1)).first()
+        assert child is not None
+        legacy = Case(
+            case_code=f"LEGACY-DT-{uuid.uuid4().hex[:8]}",
+            child_id=child.id,
+            service_type="Shadow Support",
+            product_module="shadow_support",
+            status=CaseStatus.ACTIVE,
+            billing_type=BillingType.PER_SESSION,
+            compensation_mode=CompensationMode.PERCENTAGE,
+            client_rate_per_session_inr=1200,
+            pay_share_amount_inr=720,
+            day_type=None,
+        )
+        db.add(legacy)
+        db.commit()
+        db.refresh(legacy)
+        return legacy.id
+    finally:
+        db.close()
+
+
 def test_update_day_type_first_set_no_reason():
     admin_headers = _login("superadmin@demo.com")
-    cases = client.get("/api/v1/cases?product_module=shadow_support&page_size=50", headers=admin_headers)
-    assert cases.status_code == 200
-    case = next((c for c in cases.json()["items"] if not c.get("day_type")), None)
-    assert case is not None, "Expected a legacy shadow case without day_type"
-    case_id = case["id"]
+    case_id = _create_legacy_shadow_case_without_day_type()
 
     res = client.patch(
         f"/api/v1/cases/{case_id}/day-type",

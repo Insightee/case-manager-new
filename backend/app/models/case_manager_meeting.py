@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import uuid
 from datetime import date, datetime, time
 from typing import Optional, List
 
@@ -46,6 +47,7 @@ class CaseManagerMeeting(Base):
     __tablename__ = "case_manager_meetings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     case_manager_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     case_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cases.id"), nullable=True, index=True)
     parent_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
@@ -74,6 +76,10 @@ class CaseManagerMeeting(Base):
     platform: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     rescheduled_from_id: Mapped[Optional[int]] = mapped_column(ForeignKey("case_manager_meetings.id"), nullable=True)
     reschedule_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancel_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancelled_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Meeting Notes refactoring
     notes_outcome: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # RESOLVED, FOLLOW_UP_REQUIRED, ESCALATED, NO_ACTION_REQUIRED
@@ -103,6 +109,7 @@ class CaseManagerMeeting(Base):
     parent_user = relationship("User", foreign_keys=[parent_user_id], lazy="select")
     therapist_user = relationship("User", foreign_keys=[therapist_user_id], lazy="select")
     mentor_user = relationship("User", foreign_keys=[mentor_user_id], lazy="select")
+    cancelled_by_user = relationship("User", foreign_keys=[cancelled_by_user_id], lazy="select")
 
     # Rescheduled hierarchy
     rescheduled_from = relationship("CaseManagerMeeting", remote_side="CaseManagerMeeting.id", foreign_keys=[rescheduled_from_id])
@@ -117,3 +124,4 @@ class CaseManagerMeeting(Base):
 
     # Actions list
     actions = relationship("MeetingAction", back_populates="meeting", cascade="all, delete-orphan")
+    documents = relationship("CaseDocument", back_populates="meeting")

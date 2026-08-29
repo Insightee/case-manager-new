@@ -51,14 +51,14 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-900/40 p-4 backdrop-blur-[2px] sm:items-center"
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="gen-inv-title"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-t-2xl border border-[#E2E8F0] bg-white shadow-2xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
@@ -127,7 +127,7 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
             <p className="text-sm text-slate-500">No billable sessions for {selected?.label}.</p>
           )}
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <div className="flex flex-col gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
@@ -137,7 +137,7 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
             </button>
             <button
               type="button"
-              disabled={loading || !previewSummary?.cases?.length}
+              disabled={loading || !previewSummary?.cases?.length || !(previewSummary?.net_amount_inr > 0 || previewSummary?.subtotal_inr > 0)}
               onClick={handleContinue}
               className="min-h-[44px] rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >

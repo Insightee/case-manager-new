@@ -4,6 +4,12 @@ export { AdminPanel } from './AdminPanel.jsx'
 export { AdminEmptyState } from './AdminEmptyState.jsx'
 export { AdminToolbar, AdminSearchInput } from './AdminToolbar.jsx'
 export { FilterSelect, FilterDateRange } from './FilterSelect.jsx'
+export { MultiSelect } from './MultiSelect.jsx'
+export {
+  StaffCategoryPeopleFilter,
+  STAFF_CATEGORY_OPTIONS,
+  STAFF_CATEGORY_TO_PARTICIPANT_ROLE,
+} from './StaffCategoryPeopleFilter.jsx'
 export { AdminFilterGrid } from './AdminFilterGrid.jsx'
 export { StatusBadge } from './StatusBadge.jsx'
 export { ConfidenceBadge } from './ConfidenceBadge.jsx'

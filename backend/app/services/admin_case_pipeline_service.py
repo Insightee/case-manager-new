@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case as sa_case, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.services.admin_scope_service import apply_case_scope
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case, CaseStatus
+from app.models.child import Child
 from app.models.case_therapist_transition import (
     CaseTherapistTransition,
     CaseTherapistTransitionStatus,
@@ -25,6 +26,60 @@ from app.services.assignment_service import (
     resolve_primary_case_manager_user_id,
     sync_case_manager_from_therapist,
 )
+
+def pending_therapist_assignment_clause():
+    """Cases waiting for a therapist: new allotment or ACTIVE without an active assignment."""
+    no_active_assignment = ~exists(
+        select(1).where(
+            CaseAssignment.case_id == Case.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+    )
+    return or_(
+        Case.status == CaseStatus.PENDING_ALLOTMENT,
+        and_(Case.status == CaseStatus.ACTIVE, no_active_assignment),
+    )
+
+
+def count_pending_therapist_assignments(db: Session, user: User) -> int:
+    stmt = select(func.count()).select_from(Case).where(pending_therapist_assignment_clause())
+    stmt = apply_case_scope(stmt, user)
+    return int(db.scalar(stmt) or 0)
+
+
+def list_pending_therapist_assignment_queue(db: Session, user: User, *, limit: int = 6) -> list[dict]:
+    kind_order = sa_case((Case.status == CaseStatus.PENDING_ALLOTMENT, 0), else_=1)
+    stmt = (
+        select(
+            Case.id,
+            Case.case_code,
+            Case.service_type,
+            Case.status,
+            Child.first_name,
+            Child.last_name,
+        )
+        .join(Child, Case.child_id == Child.id)
+        .where(pending_therapist_assignment_clause())
+    )
+    stmt = apply_case_scope(stmt, user).order_by(kind_order, Case.created_at.desc()).limit(limit)
+    rows = db.execute(stmt).all()
+    items: list[dict] = []
+    for row in rows:
+        status_val = row.status.value if hasattr(row.status, "value") else str(row.status)
+        items.append(
+            {
+                "id": row.id,
+                "case_code": row.case_code,
+                "child_name": f"{row.first_name} {row.last_name}".strip(),
+                "service_type": row.service_type,
+                "status": status_val,
+                "allotment_kind": "pending_allotment"
+                if status_val == CaseStatus.PENDING_ALLOTMENT.value
+                else "needs_therapist",
+            }
+        )
+    return items
+
 
 PIPELINE_COLUMNS = [
     ("pending_allotment", "Pending allotment", "slate"),

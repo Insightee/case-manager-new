@@ -4,6 +4,7 @@ import logging
 import re
 import smtplib
 import ssl
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr
@@ -65,18 +66,40 @@ class SmtpEmailProvider:
         body_html: str | None,
         from_header: str,
         envelope_from: str,
+        attachments: list[dict[str, object]] | None = None,
         client_reference: str | None = None,
     ) -> SendResult:
         try:
-            msg = MIMEMultipart("alternative")
+            msg = MIMEMultipart("mixed")
             msg["Subject"] = subject
             msg["From"] = from_header
             msg["To"] = ", ".join(to)
             if client_reference:
                 msg["X-TM-CLIENT-REF"] = client_reference
-            msg.attach(MIMEText(body_text, "plain", "utf-8"))
+            body = MIMEMultipart("alternative")
+            body.attach(MIMEText(body_text, "plain", "utf-8"))
             if body_html:
-                msg.attach(MIMEText(body_html, "html", "utf-8"))
+                body.attach(MIMEText(body_html, "html", "utf-8"))
+            msg.attach(body)
+            for attachment in attachments or []:
+                content = attachment.get("content", "")
+                if isinstance(content, str):
+                    content_bytes = content.encode("utf-8")
+                else:
+                    content_bytes = bytes(content)
+                mime = str(attachment.get("content_type") or "application/octet-stream")
+                maintype, _, subtype = mime.partition("/")
+                if maintype == "text":
+                    part = MIMEText(content_bytes.decode("utf-8"), _subtype=subtype or "plain", _charset="utf-8")
+                else:
+                    part = MIMEApplication(content_bytes, _subtype=subtype or "octet-stream")
+                filename = str(attachment.get("filename") or "attachment")
+                part.add_header("Content-Disposition", "attachment", filename=filename)
+                params = attachment.get("params") or {}
+                if isinstance(params, dict):
+                    for key, value in params.items():
+                        part.set_param(str(key), str(value))
+                msg.attach(part)
 
             with smtp_connect() as server:
                 server.sendmail(envelope_from, to, msg.as_string())

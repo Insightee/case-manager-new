@@ -6,6 +6,7 @@ import { useTherapistFrequentActions } from '../hooks/useTherapistFrequentAction
 import { useTherapistHome } from '../hooks/useTherapistHome.js'
 import { QueryState } from '../components/shared/QueryState.jsx'
 import { TherapistTodaySchedule } from '../components/therapist/TherapistTodaySchedule.jsx'
+import { UpcomingMeetingsPanel } from '../components/shared/UpcomingMeetingsPanel.jsx'
 import { formatDisplayDate, formatDisplayDateTime } from '../lib/datetime.js'
 import { THERAPIST_ACTIONS } from '../lib/therapistActions.js'
 import { TherapistTicketsPage } from '../components/therapist/TherapistTicketsPage.jsx'
@@ -206,6 +207,14 @@ export function TherapistDashboardPage() {
               </ul>
             </section>
           ) : null}
+
+          <UpcomingMeetingsPanel
+            title="Upcoming meetings"
+            subtitle="Next 7 days"
+            href="/therapist/meetings"
+            variant="therapist"
+            className="therapist-home-panel"
+          />
 
           {schedule.length > 0 ? (
             <section className="therapist-home-panel therapist-home-panel--schedule" aria-labelledby="today-schedule-title">

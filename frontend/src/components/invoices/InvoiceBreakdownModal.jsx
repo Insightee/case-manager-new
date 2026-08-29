@@ -100,42 +100,50 @@ export function InvoiceBreakdownModal({
 
   const sessionCount = displayData?.sessions_count ?? displayData?.total_sessions ?? 0
   const attendanceGist = formatModalHeaderSummary(displayData?.attendance_summary)
-  const hasCases = (displayData?.cases || []).some(
+  const hasSessionLines = (displayData?.cases || []).some(
     (c) =>
       (c.session_lines?.length || 0) +
         (c.pending_approval_lines?.length || c.pending_late_lines?.length || 0) +
         (c.child_absence_lines?.length || 0) >
       0,
   )
+  const hasCaseTotals = (displayData?.cases || []).some((c) => (c.therapist_share_inr ?? 0) > 0)
+  const hasCases = hasSessionLines || hasCaseTotals
+  const snapshotIncomplete = Boolean(displayData?.snapshot_incomplete || displayData?.from_stored_header)
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-900/40 p-4 backdrop-blur-[2px] sm:items-center"
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-2xl"
+        className="flex max-h-[96dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-[#E2E8F0] bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#E2E8F0] px-4 py-4 sm:px-5">
+          <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-slate-900">{title || 'Invoice breakdown'}</h2>
             {displayData ? (
-              <p className="text-sm text-slate-500">
+              <p className="mt-1 text-sm leading-snug text-slate-500">
                 {displayData.month} · {formatInr(displayData.net_amount_inr ?? displayData.amount_inr)}
                 {attendanceGist ? ` · ${attendanceGist}` : ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'}`}
                 {refreshing ? ' · Updating…' : null}
               </p>
             ) : null}
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {loading ? <p className="text-sm text-slate-500">Loading…</p> : null}
           {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
           {amendable && displayData ? (
@@ -146,6 +154,13 @@ export function InvoiceBreakdownModal({
           ) : null}
           {!loading && displayData ? (
             <>
+              {!hasSessionLines && hasCaseTotals ? (
+                <p className="mb-4 text-sm text-amber-800">
+                  {snapshotIncomplete
+                    ? 'Session line detail is not stored for this payout — case totals below match the approved statement.'
+                    : 'Case totals are shown below; individual session lines are not on file for this invoice.'}
+                </p>
+              ) : null}
               {!hasCases ? (
                 <p className="mb-4 text-sm text-amber-800">
                   No session lines found for this invoice. Add approved logs for the month or use Generate Invoice to
@@ -177,7 +192,7 @@ export function InvoiceBreakdownModal({
         </div>
 
         {amendable && displayData ? (
-          <footer className="flex gap-2 border-t border-[#E2E8F0] px-5 py-4">
+          <footer className="flex shrink-0 gap-2 border-t border-[#E2E8F0] px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
             <button
               type="button"
               onClick={onClose}
@@ -192,6 +207,16 @@ export function InvoiceBreakdownModal({
               className="min-h-[44px] flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save for review'}
+            </button>
+          </footer>
+        ) : displayData && !loading ? (
+          <footer className="shrink-0 border-t border-[#E2E8F0] px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-[44px] w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Done
             </button>
           </footer>
         ) : null}

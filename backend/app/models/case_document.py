@@ -65,6 +65,34 @@ class CaseDocumentVisibility(str, enum.Enum):
     INTERNAL_ONLY = "INTERNAL_ONLY"
     CLIENT_VISIBLE_AFTER_APPROVAL = "CLIENT_VISIBLE_AFTER_APPROVAL"
     CLIENT_VISIBLE = "CLIENT_VISIBLE"
+    INTERNAL = "INTERNAL"
+    CARE_TEAM = "CARE_TEAM"
+    CLIENT = "CLIENT"
+
+
+_VISIBILITY_NORMALIZE = {
+    CaseDocumentVisibility.INTERNAL_ONLY.value: CaseDocumentVisibility.INTERNAL.value,
+    CaseDocumentVisibility.CARE_TEAM.value: CaseDocumentVisibility.CARE_TEAM.value,
+    CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value: CaseDocumentVisibility.CARE_TEAM.value,
+    CaseDocumentVisibility.CLIENT_VISIBLE.value: CaseDocumentVisibility.CLIENT.value,
+    CaseDocumentVisibility.CLIENT.value: CaseDocumentVisibility.CLIENT.value,
+    CaseDocumentVisibility.INTERNAL.value: CaseDocumentVisibility.INTERNAL.value,
+}
+
+
+def normalize_case_document_visibility(visibility: str | None) -> str | None:
+    if visibility is None:
+        return None
+    return _VISIBILITY_NORMALIZE.get(visibility, visibility)
+
+
+def visibility_rank(visibility: str | None) -> int:
+    normalized = normalize_case_document_visibility(visibility)
+    if normalized == CaseDocumentVisibility.CLIENT.value:
+        return 2
+    if normalized == CaseDocumentVisibility.CARE_TEAM.value:
+        return 1
+    return 0
 
 
 class CaseDocumentSourceType(str, enum.Enum):
@@ -105,6 +133,7 @@ class CaseDocument(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), nullable=False, index=True)
+    meeting_id: Mapped[Optional[int]] = mapped_column(ForeignKey("case_manager_meetings.id"), nullable=True, index=True)
     child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -143,6 +172,7 @@ class CaseDocument(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    meeting = relationship("CaseManagerMeeting", back_populates="documents", lazy="select")
 
 
 class CaseDocumentVersion(Base):

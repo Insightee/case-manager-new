@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+from datetime import timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+
+from app.core.database import SessionLocal
+from app.core.timezone import now_ist
+from app.main import app
+from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus
+from app.models.notification import Notification
+from app.seed.demo_seed import run as seed_run
+from app.services.cm_meeting_service import meeting_participant_user_ids, send_due_meeting_reminders
+
+client = TestClient(app)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_db():
+    seed_run()
+
+
+def _login(email: str) -> str:
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": "demo123"})
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+
+def _headers(email: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {_login(email)}"}
+
+
+def _bookable_case_id(email: str = "superadmin@demo.com") -> int:
+    response = client.get("/api/v1/meetings/bookable-cases", headers=_headers(email))
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert rows, "expected at least one bookable case"
+    return int(rows[0]["id"])
+
+
+def _future_payload(minutes_ahead: int) -> dict[str, str]:
+    target = now_ist() + timedelta(minutes=minutes_ahead)
+    return {
+        "scheduled_date": target.date().isoformat(),
+        "scheduled_time": target.time().replace(microsecond=0).isoformat(timespec="seconds"),
+        "duration_minutes": 30,
+        "meeting_type": "PARENT_MEETING",
+    }
+
+
+def _reminder_notification_count(db, meeting_id: int) -> int:
+    return int(
+        db.scalar(
+            select(func.count(Notification.id)).where(
+                Notification.entity_type == "cm_meeting",
+                Notification.entity_id == meeting_id,
+                Notification.body.like(f"%meeting_reminder:{meeting_id}:%"),
+            )
+        )
+        or 0
+    )
+
+
+def _reminder_notifications(db, meeting_id: int) -> list[Notification]:
+    return list(
+        db.scalars(
+            select(Notification).where(
+                Notification.entity_type == "cm_meeting",
+                Notification.entity_id == meeting_id,
+                Notification.body.like(f"%meeting_reminder:{meeting_id}:%"),
+            )
+        ).all()
+    )
+
+
+def _meeting(meeting_id: int) -> CaseManagerMeeting:
+    db = SessionLocal()
+    try:
+        meeting = db.get(CaseManagerMeeting, meeting_id)
+        assert meeting is not None
+        return meeting
+    finally:
+        db.close()
+
+
+def test_meeting_62_minutes_out_gets_one_reminder_per_participant():
+    case_id = _bookable_case_id()
+    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json={
+        "case_id": case_id,
+        **_future_payload(62),
+    })
+    assert create.status_code == 201, create.text
+    meeting_id = create.json()["id"]
+
+    db = SessionLocal()
+    try:
+        meeting = db.get(CaseManagerMeeting, meeting_id)
+        assert meeting is not None
+        participants = meeting_participant_user_ids(meeting)
+        stats = send_due_meeting_reminders(db, now_ist())
+        db.commit()
+        db.refresh(meeting)
+        second = send_due_meeting_reminders(db, now_ist())
+        db.commit()
+
+        reminders = _reminder_notifications(db, meeting_id)
+        assert stats["sent"] == 1
+        assert second["sent"] == 0
+        assert len(reminders) == len(participants)
+        assert meeting.reminder_sent_at is not None
+        assert all(note.body.startswith("[meeting_reminder:") for note in reminders)
+    finally:
+        db.close()
+
+
+def test_cancelled_meeting_gets_no_reminder():
+    case_id = _bookable_case_id()
+    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json={
+        "case_id": case_id,
+        **_future_payload(182),
+    })
+    assert create.status_code == 201, create.text
+    meeting_id = create.json()["id"]
+
+    cancelled = client.post(
+        f"/api/v1/meetings/{meeting_id}/cancel",
+        headers=_headers("superadmin@demo.com"),
+        json={"reason": "Not needed"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == MeetingStatus.CANCELLED.value
+
+    db = SessionLocal()
+    try:
+        stats = send_due_meeting_reminders(db, now_ist())
+        db.commit()
+        assert stats["sent"] == 0
+        assert _reminder_notification_count(db, meeting_id) == 0
+    finally:
+        db.close()
+
+
+def test_meeting_booked_30_minutes_ahead_sends_reminder_at_booking():
+    case_id = _bookable_case_id()
+    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json={
+        "case_id": case_id,
+        **_future_payload(30),
+    })
+    assert create.status_code == 201, create.text
+    meeting_id = create.json()["id"]
+
+    db = SessionLocal()
+    try:
+        meeting = db.get(CaseManagerMeeting, meeting_id)
+        assert meeting is not None
+        participants = meeting_participant_user_ids(meeting)
+        reminders = _reminder_notifications(db, meeting_id)
+        assert len(reminders) == len(participants)
+        assert meeting.reminder_sent_at is not None
+    finally:
+        db.close()

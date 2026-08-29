@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.permissions import RoleName, user_has_permission, case_scope_check
 from app.models.slot import BookingSource
 from app.models.user import User
+from app.services import availability_service
 from app.services import appointment_booking_service as appt_booking
 from app.services import appointment_notification_service as appt_notify
 from app.services import case_service, slot_calendar_service as cal
@@ -70,7 +71,6 @@ def get_booking_slots(
         raise HTTPException(status_code=403, detail="Access denied")
 
     from app.services import parent_service
-    from app.api.v1.meetings import check_conflicts, meeting_availability_slots_grid, timedelta
 
     parent_uid = parent_service.primary_parent_user_id_for_child(db, case.child_id) if case.child_id else None
     
@@ -88,45 +88,14 @@ def get_booking_slots(
     if parent_uid:
         attendees.append(parent_uid)
 
-    slots_grid = meeting_availability_slots_grid()
-
-    results = []
-    has_available = False
-    duration_minutes = 30
-
-    for slot_time in slots_grid:
-        conflicted, reason = check_conflicts(db, date, slot_time, duration_minutes, attendees)
-        results.append({
-            "time": slot_time.strftime("%H:%M"),
-            "available": not conflicted,
-            "reason": reason
-        })
-        if not conflicted:
-            has_available = True
-
-    alternate_suggestions = []
-    if not has_available:
-        for offset in range(1, 8):
-            alt_date = date + timedelta(days=offset)
-            alt_avail_slots = []
-            for slot_time in slots_grid:
-                conflicted, _ = check_conflicts(db, alt_date, slot_time, duration_minutes, attendees)
-                if not conflicted:
-                    alt_avail_slots.append(slot_time.strftime("%H:%M"))
-            if alt_avail_slots:
-                alternate_suggestions.append({
-                    "date": alt_date.isoformat(),
-                    "slots": alt_avail_slots
-                })
-                if len(alternate_suggestions) >= 3:
-                    break
-
-    return {
-        "date": date.isoformat(),
-        "duration_minutes": duration_minutes,
-        "slots": results,
-        "alternate_suggestions": alternate_suggestions
-    }
+    return availability_service.free_slots(
+        db,
+        attendees,
+        date,
+        date,
+        30,
+        user,
+    )
 
 
 

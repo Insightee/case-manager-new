@@ -322,6 +322,7 @@ def test_mcp_layer_has_no_sqlalchemy_session_usage():
 
 
 def test_mcp_tools_registered():
+    pytest.importorskip("mcp")
     from app.mcp.server import build_mcp_server
     import asyncio
 
@@ -353,6 +354,7 @@ def test_mcp_invalid_inputs_safe_error():
 
 def test_mcp_http_initialize_and_tools(client):
     """Streamable HTTP MCP must initialize when session manager lifespan is wired."""
+    pytest.importorskip("mcp")
     init = client.post(
         "/mcp/",
         headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},

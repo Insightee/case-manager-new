@@ -87,19 +87,19 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
 
   return (
     <div
-      className="fixed inset-0 z-[95] flex justify-end bg-slate-900/40 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[95] flex items-end justify-center bg-slate-900/40 backdrop-blur-[2px] sm:justify-end"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full max-w-2xl flex-col border-l border-[#E2E8F0] bg-white shadow-2xl"
+        className="flex h-[96dvh] w-full max-w-none flex-col overflow-hidden rounded-t-2xl border border-[#E2E8F0] bg-white shadow-2xl sm:h-full sm:max-w-2xl sm:rounded-none sm:border-l"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#E2E8F0] px-4 py-4 sm:px-5">
+          <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-slate-900">Invoice preview — {preview.month_label || month}</h2>
-            <p className="text-sm text-slate-500">
+            <p className="mt-1 text-sm leading-snug text-slate-500">
               {formatInr(preview.net_amount_inr)}
               {attendanceGist ? ` · ${attendanceGist}` : ` · ${preview.total_sessions ?? 0} approved`}
               {pendingCount > 0
@@ -108,12 +108,17 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
               {refreshing ? ' · Updating…' : null}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
           <StatementSummary data={preview} cutover={false} />
           <div className="mt-6">
@@ -142,7 +147,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
           </label>
         </div>
 
-        <footer className="flex gap-2 border-t border-[#E2E8F0] px-5 py-4">
+        <footer className="flex shrink-0 gap-2 border-t border-[#E2E8F0] px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
           <button
             type="button"
             onClick={onClose}
