@@ -2366,16 +2366,8 @@ def admin_delete_case_by_code(
     try:
         commit_or_http(db)
     except HTTPException as exc:
-        # Surface actionable text for this super-admin maintenance path.
-        if "staff members" in str(exc.detail).lower() or "constraint" in str(exc.detail).lower():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Delete blocked by a remaining foreign key. "
-                    "Redeploy case_delete_service FK coverage, then retry."
-                ),
-            ) from exc
-        raise
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc.detail)) from exc
     return result
 
 

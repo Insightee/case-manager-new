@@ -123,6 +123,13 @@ WHERE source_daily_log_id IN (SELECT id FROM logs)
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
 sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target)),
 logs AS (SELECT id FROM daily_logs WHERE session_id IN (SELECT id FROM sess))
+UPDATE daily_logs
+SET transition_id = NULL, transition_day_id = NULL
+WHERE id IN (SELECT id FROM logs);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
+sess AS (SELECT id FROM sessions WHERE case_id IN (SELECT id FROM target)),
+logs AS (SELECT id FROM daily_logs WHERE session_id IN (SELECT id FROM sess))
 DELETE FROM session_goal_entries WHERE daily_log_id IN (SELECT id FROM logs);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code),
