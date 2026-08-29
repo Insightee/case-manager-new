@@ -28,6 +28,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) | Pre-release verification |
 | [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md) | **Finance cutover** — staged flag enablement (Loops C–E) |
 | [FINANCE_SNAPSHOT_PROD_CUTOVER.md](./FINANCE_SNAPSHOT_PROD_CUTOVER.md) | **Stage 1 snapshot on insighte.org** — read-only prod enablement |
+| [finance/outgoing_calendar_day_clamp.md](./finance/outgoing_calendar_day_clamp.md) | Outgoing Shadow/B2B calendar-day clamp — shared client/therapist days, freeze/replay, post-merge arrears |
 | [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md) | R2 object storage for production uploads |
 | [EMAIL_DNS.md](./EMAIL_DNS.md) | ZeptoMail, SMTP, DNS records |
 | [STAGING_SMOKE.md](./STAGING_SMOKE.md) | Post-import session log smoke test |

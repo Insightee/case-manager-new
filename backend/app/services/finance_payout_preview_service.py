@@ -115,6 +115,11 @@ def calendar_days_from_start_day(start_day: int) -> int:
 
 
 def calendar_days_outgoing(*, last_log: date, segment_start_day: int) -> int:
+    """Inclusive pay-month days through ``last_log``'s calendar day (capped at 30).
+
+    ``last_log`` is a *date whose .day is the earning boundary in the pay month*,
+    not a cross-month timestamp. Callers must clamp out-of-month dates first.
+    """
     last_day = pay_month_day(last_log)
     if segment_start_day <= 1:
         return last_day
@@ -140,6 +145,41 @@ def segment_start_day(
     return start_day
 
 
+def clamp_pay_month_bound_end(
+    *,
+    bound_end: date,
+    last_log: date | None,
+    month_start: date,
+    month_end: date,
+) -> date | None:
+    """Non-expansive earning end for ``calendar_days_outgoing``.
+
+    Outgoing Shadow/B2B already stops at last approved-log scheduled date.
+    This clamp only prevents an out-of-month date's ``.day`` from being read as
+    a day-of-the-pay-month (e.g. 3 July → 3 days in June).
+
+    Returns ``None`` when there is no in-month evidence (caller must pay 0).
+    Does not invent days beyond ``min(last_log, month_end)``.
+    """
+    in_month_log = _in_month_approved_log(last_log, month_start, month_end)
+    if bound_end < month_start:
+        return None
+    if bound_end > month_end:
+        if in_month_log is None:
+            return None
+        return min(in_month_log, month_end)
+    return bound_end
+
+
+def _in_month_approved_log(
+    last_log: date | None, month_start: date, month_end: date
+) -> date | None:
+    """In-month approved-log scheduled_date, or None if missing / wrong month."""
+    if last_log is None or last_log < month_start or last_log > month_end:
+        return None
+    return last_log
+
+
 def calendar_days_for_segment(
     *,
     is_incoming_replacement: bool,
@@ -157,6 +197,11 @@ def calendar_days_for_segment(
     - Start→mid / mid→mid with a known end: ``end_day - start_day + 1``
     - Mid→end (incoming, no end): from first/start through day 30
     - Full / mid-start ongoing: from segment start through day 30
+
+    ``last_log`` / ``first_log`` are in-month ``sessions.scheduled_date`` of an
+    approved non-transition daily log. Ongoing Shadow/B2B does **not** require a
+    log on every payable day; outgoing segments already use last approved-log
+    date as the earning boundary. ``seg_start`` is never adjusted here.
     """
     seg_start = segment_start_day(
         assignment_start=assignment_start,
@@ -171,14 +216,15 @@ def calendar_days_for_segment(
     if bound_end is None and is_outgoing_replacement:
         bound_end = last_log
     if bound_end is not None:
-        # A segment end outside the billing month must never drive in-month day counts.
-        if bound_end > month_end:
-            if last_log is None:
-                return 0
-            bound_end = last_log
-        elif bound_end < month_start:
+        effective_end = clamp_pay_month_bound_end(
+            bound_end=bound_end,
+            last_log=last_log,
+            month_start=month_start,
+            month_end=month_end,
+        )
+        if effective_end is None:
             return 0
-        return calendar_days_outgoing(last_log=bound_end, segment_start_day=seg_start)
+        return calendar_days_outgoing(last_log=effective_end, segment_start_day=seg_start)
 
     if is_incoming_replacement and first_log is not None:
         return calendar_days_from_start_day(seg_start)
@@ -209,7 +255,12 @@ def _resolve_segment_end(
     month_start: date,
     month_end: date,
 ) -> date | None:
-    """Official end of a bounded segment (replacement exit, assignment end, or case close)."""
+    """Official end of a bounded segment (replacement exit, assignment end, or case close).
+
+    Outgoing replacement: last approved non-transition log ``scheduled_date``
+    (all-time, then in-month). That date is the earning boundary; it is **not**
+    assignment.end_date. ``calendar_days_for_segment`` clamps it into the pay month.
+    """
     if is_outgoing_replacement:
         return last_approved_ever or last_log
 
@@ -290,6 +341,13 @@ def predicted_client_amount_inr(
 
 @dataclass
 class TherapistCaseSegment:
+    """Therapist × case log window inside one billing month.
+
+    ``first_log`` / ``last_log`` are MIN/MAX ``sessions.scheduled_date`` in this
+    month joined to an approved daily log with ``transition_id IS NULL``.
+    Not completed-clock, scheduled-without-log, or attendance.
+    """
+
     therapist_user_id: int
     first_log: date | None
     last_log: date | None
@@ -446,6 +504,7 @@ def _is_outgoing_replacement(
 def _therapist_segments_for_case(
     db: Session, case_id: int, start: date, end: date
 ) -> list[TherapistCaseSegment]:
+    # In-month first/last log: approved non-transition session scheduled_date only.
     log_rows = db.execute(
         select(
             TherapySession.therapist_user_id,
@@ -575,7 +634,10 @@ def _first_approved_normal_log_for_therapist(
 def _last_approved_log_for_therapist(
     db: Session, case_id: int, therapist_user_id: int
 ) -> date | None:
-    """Latest approved log date for this therapist on the case (all time)."""
+    """Latest approved non-transition log ``sessions.scheduled_date`` (all time).
+
+    Same evidence type as in-month ``last_log``, not completed-clock or attendance.
+    """
     return db.scalar(
         select(func.max(TherapySession.scheduled_date))
         .join(DailyLog, DailyLog.session_id == TherapySession.id)
@@ -900,7 +962,11 @@ def therapist_case_gross_inr(db: Session, case: Case, ym: str) -> float:
 
 
 def client_case_gross_inr(db: Session, case: Case, ym: str) -> float:
-    """Family charge for the case-month: same days/sessions as payout, client allotment rates."""
+    """Family charge for the case-month: same days/sessions as payout, client allotment rates.
+
+    Shadow/B2B uses ``calendar_days`` from ``build_cycle_segments``. Changing that
+    day count moves receivables and payables together; Finance must sign both.
+    """
     segments = build_cycle_segments(db, case, ym)
     _ms, month_end = month_bounds(ym)
     if not segments:
@@ -1160,3 +1226,302 @@ def apply_therapist_total_column(rows: list[dict[str, Any]]) -> list[dict[str, A
             new_row["Therapist Total"] = ""
         out.append(new_row)
     return out
+
+
+# Demo seed populates May–July 2026. Those months are not a production merge gate.
+DEMO_CALENDAR_SEED_MONTHS = frozenset({"2026-05", "2026-06", "2026-07"})
+
+OUTGOING_CLAMP_CLASS_OUT_OF_MONTH = "out_of_month_end"
+OUTGOING_CLAMP_CLASS_PRE_MONTH = "pre_month_closed"
+OUTGOING_CLAMP_CLASS_CONTROL = "control"
+OUTGOING_CLAMP_CLASS_UNBOUNDED = "unbounded_outgoing"
+
+AFFECTED_OUTGOING_CLAMP_CLASSES = frozenset(
+    {
+        OUTGOING_CLAMP_CLASS_OUT_OF_MONTH,
+        OUTGOING_CLAMP_CLASS_PRE_MONTH,
+    }
+)
+
+_PAYOUT_CLAMP_PII_COLUMNS = frozenset(
+    {
+        "Client Name",
+        "Parent Name",
+        "Therapist Name",
+        "Therapist Total",
+    }
+)
+
+PAYOUT_CLAMP_MUTABLE_COLUMNS = frozenset(
+    {
+        "calendar_days",
+        "therapist_gross_inr",
+        "client_amount_inr",
+        "Calendar Days",
+        "Predicted Subtotal",
+        "Predicted Total",
+        "Leave deduction",
+    }
+)
+
+CLIENT_GROSS_CLAMP_MUTABLE_COLUMNS = frozenset(
+    {
+        "client_gross_inr",
+        "calendar_days",
+    }
+)
+
+
+def is_demo_calendar_seed_month(ym: str) -> bool:
+    return ym in DEMO_CALENDAR_SEED_MONTHS
+
+
+def classify_outgoing_bound_end(
+    bound_end: date | None, month_start: date, month_end: date
+) -> str:
+    if bound_end is None:
+        return OUTGOING_CLAMP_CLASS_UNBOUNDED
+    if bound_end < month_start:
+        return OUTGOING_CLAMP_CLASS_PRE_MONTH
+    if bound_end > month_end:
+        return OUTGOING_CLAMP_CLASS_OUT_OF_MONTH
+    return OUTGOING_CLAMP_CLASS_CONTROL
+
+
+def classify_outgoing_calendar_day_segments(
+    db: Session,
+    ym: str,
+    *,
+    user: User | None = None,
+) -> list[dict[str, Any]]:
+    """ID-only audit of Shadow/B2B outgoing segments (no child/parent/therapist names)."""
+    start, end = month_bounds(ym)
+    rows: list[dict[str, Any]] = []
+    for case in scoped_cases(db, user, active_only=False):
+        if not uses_calendar_day_pay(case):
+            continue
+        for segment in build_cycle_segments(db, case, ym):
+            if not segment.is_outgoing_replacement:
+                continue
+            bound = segment.case_end_date
+            klass = classify_outgoing_bound_end(bound, start, end)
+            unclamped_days = (
+                calendar_days_outgoing(last_log=bound, segment_start_day=1)
+                if bound is not None
+                else None
+            )
+            therapist = db.get(User, segment.therapist_user_id)
+            rows.append(
+                {
+                    "billing_month": ym,
+                    "is_demo_seed_month": is_demo_calendar_seed_month(ym),
+                    "case_id": case.id,
+                    "case_code": case.case_code,
+                    "therapist_user_id": segment.therapist_user_id,
+                    "therapist_id": export_therapist_id(therapist),
+                    "segment_start": (
+                        segment.case_start_date.isoformat()
+                        if segment.case_start_date
+                        else None
+                    ),
+                    "segment_end": bound.isoformat() if bound else None,
+                    "in_month_last_log": (
+                        segment.last_log.isoformat() if segment.last_log else None
+                    ),
+                    "calendar_days": segment.calendar_days,
+                    "unclamped_pay_month_day": unclamped_days,
+                    "class": klass,
+                }
+            )
+    rows.sort(
+        key=lambda r: (
+            r["case_id"],
+            r["therapist_user_id"],
+            r["segment_start"] or "",
+        )
+    )
+    return rows
+
+
+def freeze_outgoing_clamp_scope(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Affected outgoing segments: out-of-month end or closed before the pay month."""
+    return [r for r in rows if r.get("class") in AFFECTED_OUTGOING_CLAMP_CLASSES]
+
+
+def freeze_payout_identities(
+    audit_rows: list[dict[str, Any]],
+) -> set[tuple[str, str, str, str]]:
+    return {payout_clamp_row_identity(r) for r in freeze_outgoing_clamp_scope(audit_rows)}
+
+
+def normalize_payout_row_for_clamp_diff(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop PII and derived-position columns before Excel-preview replay compare."""
+    canonical = normalize_payout_preview_row(row)
+    return {k: v for k, v in canonical.items() if k not in _PAYOUT_CLAMP_PII_COLUMNS}
+
+
+def payout_clamp_row_identity(row: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(row.get("case_id") or row.get("caseId") or ""),
+        str(row.get("therapist_user_id") or row.get("Therapist ID") or ""),
+        str(row.get("segment_start") or row.get("Case Start Date") or ""),
+        str(row.get("segment_end") or row.get("Case End Date") or ""),
+    )
+
+
+def snapshot_calendar_day_money(
+    db: Session,
+    ym: str,
+    *,
+    user: User | None = None,
+) -> dict[str, Any]:
+    """Payout + client-gross snapshot for clamp replay (IDs and money, no PII names)."""
+    _month_start, month_end = month_bounds(ym)
+    payout_rows: list[dict[str, Any]] = []
+    for case in scoped_cases(db, user, active_only=True):
+        billing_type = getattr(case.billing_type, "value", case.billing_type)
+        for segment in build_cycle_segments(db, case, ym):
+            payout_rows.append(
+                {
+                    "case_id": case.id,
+                    "case_code": case.case_code,
+                    "therapist_user_id": segment.therapist_user_id,
+                    "segment_start": (
+                        segment.case_start_date.isoformat()
+                        if segment.case_start_date
+                        else ""
+                    ),
+                    "segment_end": (
+                        segment.case_end_date.isoformat()
+                        if segment.case_end_date
+                        else ""
+                    ),
+                    "calendar_days": segment.calendar_days,
+                    "approved_sessions": segment.approved_sessions,
+                    "therapist_gross_inr": segment.therapist_gross(
+                        case, db=db, as_of=month_end
+                    ),
+                    "client_amount_inr": segment.client_amount(
+                        case, db=db, as_of=month_end
+                    ),
+                    "billing_type": str(billing_type or ""),
+                    "uses_calendar_day_pay": uses_calendar_day_pay(case),
+                }
+            )
+    payout_rows.sort(key=payout_clamp_row_identity)
+    client_rows: list[dict[str, Any]] = []
+    for case in scoped_cases(db, user, active_only=True):
+        segments = build_cycle_segments(db, case, ym)
+        billing_type = getattr(case.billing_type, "value", case.billing_type)
+        client_rows.append(
+            {
+                "case_id": case.id,
+                "case_code": case.case_code,
+                "product_module": case.product_module or "",
+                "billing_type": str(billing_type or ""),
+                "uses_calendar_day_pay": uses_calendar_day_pay(case),
+                "client_gross_inr": client_case_gross_inr(db, case, ym),
+                "calendar_days": sum(s.calendar_days for s in segments),
+                "approved_sessions": sum(s.approved_sessions for s in segments),
+                "client_rate_per_session_inr": case.client_rate_per_session_inr,
+                "package_amount_inr": case.package_amount_inr,
+                "client_monthly_rate_inr": case.client_monthly_rate_inr,
+            }
+        )
+    client_rows.sort(key=lambda r: (r["case_id"], r["case_code"] or ""))
+    return {
+        "billing_month": ym,
+        "is_demo_seed_month": is_demo_calendar_seed_month(ym),
+        "payout_rows": payout_rows,
+        "client_rows": client_rows,
+    }
+
+
+def _values_differ(left: Any, right: Any) -> bool:
+    if isinstance(left, float) or isinstance(right, float):
+        try:
+            return round(float(left or 0), 2) != round(float(right or 0), 2)
+        except (TypeError, ValueError):
+            return left != right
+    return left != right
+
+
+def diff_calendar_day_clamp_snapshots(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    *,
+    frozen_identities: set[tuple[str, str, str, str]],
+) -> dict[str, Any]:
+    """Bounded replay gate: only frozen rows may change mutable money columns."""
+    unexpected_payout: list[dict[str, Any]] = []
+    payout_before = {payout_clamp_row_identity(r): r for r in before.get("payout_rows", [])}
+    payout_after = {payout_clamp_row_identity(r): r for r in after.get("payout_rows", [])}
+    if set(payout_before) != set(payout_after):
+        unexpected_payout.append(
+            {
+                "reason": "payout_row_set_changed",
+                "added": sorted(set(payout_after) - set(payout_before)),
+                "removed": sorted(set(payout_before) - set(payout_after)),
+            }
+        )
+    for key in sorted(set(payout_before) & set(payout_after)):
+        left, right = payout_before[key], payout_after[key]
+        changed = [
+            col
+            for col in set(left) | set(right)
+            if _values_differ(left.get(col), right.get(col))
+        ]
+        if not changed:
+            continue
+        unexpected_cols = [c for c in changed if c not in PAYOUT_CLAMP_MUTABLE_COLUMNS]
+        if unexpected_cols or key not in frozen_identities:
+            unexpected_payout.append(
+                {
+                    "identity": key,
+                    "changed": changed,
+                    "unexpected_columns": unexpected_cols,
+                    "in_frozen_scope": key in frozen_identities,
+                }
+            )
+
+    unexpected_client: list[dict[str, Any]] = []
+    client_before = {int(r["case_id"]): r for r in before.get("client_rows", [])}
+    client_after = {int(r["case_id"]): r for r in after.get("client_rows", [])}
+    if set(client_before) != set(client_after):
+        unexpected_client.append(
+            {
+                "reason": "client_row_set_changed",
+                "added": sorted(set(client_after) - set(client_before)),
+                "removed": sorted(set(client_before) - set(client_after)),
+            }
+        )
+    frozen_case_ids = {
+        int(case_id) for case_id, *_rest in frozen_identities if str(case_id).isdigit()
+    }
+    for case_id in sorted(set(client_before) & set(client_after)):
+        left, right = client_before[case_id], client_after[case_id]
+        changed = [
+            col
+            for col in set(left) | set(right)
+            if _values_differ(left.get(col), right.get(col))
+        ]
+        if not changed:
+            continue
+        calendar_day = bool(left.get("uses_calendar_day_pay"))
+        allowed = CLIENT_GROSS_CLAMP_MUTABLE_COLUMNS if calendar_day else frozenset()
+        unexpected_cols = [c for c in changed if c not in allowed]
+        if unexpected_cols or (calendar_day and case_id not in frozen_case_ids):
+            unexpected_client.append(
+                {
+                    "case_id": case_id,
+                    "changed": changed,
+                    "unexpected_columns": unexpected_cols,
+                    "in_frozen_scope": case_id in frozen_case_ids,
+                }
+            )
+
+    return {
+        "ok": not unexpected_payout and not unexpected_client,
+        "unexpected_payout": unexpected_payout,
+        "unexpected_client": unexpected_client,
+    }
