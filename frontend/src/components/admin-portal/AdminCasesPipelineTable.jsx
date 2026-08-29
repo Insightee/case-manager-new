@@ -6,11 +6,13 @@ import { isFinanceDeskUser } from '../../lib/financeDesk.js'
 import {
   CASE_STATE_OPTIONS,
   OPENED_DATE_PRESETS,
+  OPENED_MONTH_OPTIONS,
   activateCaseAllotment,
   buildPipelineActions,
   countActivePipelineFilters,
   defaultCaseManagerFilterId,
   defaultPipelineFilters,
+  deriveOpenedYearOptions,
   derivePipelineFilterOptions,
   filterPipelineRows,
   filterPipelineRowsForQueueCounts,
@@ -169,6 +171,17 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
     [programmeOptions],
   )
 
+  const yearOptions = useMemo(() => deriveOpenedYearOptions(allRows), [allRows])
+
+  const statusOptions = useMemo(
+    () =>
+      QUEUE_TABS.map((tab) => {
+        const n = tab.id === 'all' ? counts.all : counts[tab.id] ?? 0
+        return { value: tab.id, label: `${tab.label} (${n})` }
+      }),
+    [counts],
+  )
+
   function patchFilters(patch) {
     setFilters((prev) => ({ ...prev, ...patch }))
     setSelectedIds(new Set())
@@ -262,23 +275,36 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
 
   return (
     <div className="admin-cases-pipeline">
-      <div className="admin-cases-pipeline__tabs" role="tablist" aria-label="Work queues">
-        {QUEUE_TABS.map((tab) => {
-          const n = tab.id === 'all' ? counts.all : counts[tab.id] ?? 0
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={filters.queue === tab.id}
-              className={`admin-cases-pipeline__tab ${filters.queue === tab.id ? 'is-active' : ''}`}
-              onClick={() => patchFilters({ queue: tab.id })}
-            >
-              {tab.label}
-              <span className="admin-cases-pipeline__tab-count">{n}</span>
-            </button>
-          )
-        })}
+      <div className="admin-cases-pipeline__statusbar" role="group" aria-label="Case status and period filters">
+        <FilterSelect
+          label="Case status"
+          value={filters.queue}
+          onChange={(e) => patchFilters({ queue: e.target.value })}
+          options={statusOptions}
+          className="admin-cases-pipeline__statusbar-field"
+        />
+        <FilterSelect
+          label="Month"
+          value={filters.openedMonth}
+          onChange={(e) => patchFilters({ openedMonth: e.target.value })}
+          options={OPENED_MONTH_OPTIONS}
+          className="admin-cases-pipeline__statusbar-field"
+        />
+        <FilterSelect
+          label="Year"
+          value={filters.openedYear}
+          onChange={(e) => patchFilters({ openedYear: e.target.value })}
+          options={yearOptions}
+          className="admin-cases-pipeline__statusbar-field"
+        />
+        <FilterSelect
+          label="Sort"
+          ariaLabel="Sort cases"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          options={SORT_OPTIONS}
+          className="admin-cases-pipeline__statusbar-field admin-desktop-only"
+        />
       </div>
 
       <div className="admin-cases-pipeline__filter-head">
@@ -289,7 +315,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
             aria-expanded={filtersOpen}
             onClick={() => setFiltersOpen((v) => !v)}
           >
-            {filtersOpen ? 'Hide filters' : 'Show filters'}
+            {filtersOpen ? 'Hide filters' : 'More filters'}
             {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
           </button>
           {activeFilterCount > 0 ? (
@@ -298,14 +324,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
             </button>
           ) : null}
         </div>
-        <FilterSelect
-          id="case-pipeline-sort-desktop"
-          ariaLabel="Sort cases"
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          options={SORT_OPTIONS}
-          className="admin-cases-pipeline__sort admin-cases-pipeline__sort--inline admin-desktop-only"
-        />
         <span className="admin-cases-pipeline__result-count">
           {rows.length} case{rows.length === 1 ? '' : 's'}
           {scopedRows.length !== rows.length || filters.queue !== 'all'
@@ -346,12 +364,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
         role="region"
         aria-label="Case filters"
       >
-          <FilterSelect
-            label="Queue"
-            value={filters.queue}
-            onChange={(e) => patchFilters({ queue: e.target.value })}
-            options={QUEUE_TABS.map((tab) => ({ value: tab.id, label: tab.label }))}
-          />
           <FilterSelect
             label="Case state"
             value={filters.caseState}
@@ -508,17 +520,27 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           desktop={
         <div className="admin-table-wrap admin-cases-pipeline__table-wrap">
           <table className="admin-table admin-cases-pipeline__table">
+            <colgroup>
+              {canAssign && bulkEligible ? <col className="col-select" /> : null}
+              <col className="col-case" />
+              <col className="col-parent" />
+              <col className="col-child" />
+              <col className="col-therapist" />
+              <col className="col-programme" />
+              <col className="col-stage" />
+              <col className="col-action" />
+              <col className="col-actions" />
+            </colgroup>
             <thead>
               <tr>
-                {canAssign && bulkEligible ? <th style={{ width: 36 }} aria-label="Select" /> : null}
+                {canAssign && bulkEligible ? <th aria-label="Select" /> : null}
                 <th>Case</th>
                 <th>Parent</th>
                 <th>Child</th>
+                <th>Therapist</th>
                 <th>Programme</th>
-                <th>Case manager</th>
                 <th>Stage</th>
                 <th>Pending action</th>
-                <th>Therapist</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -550,22 +572,49 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                       </td>
                     ) : null}
                     <td>
-                      <span className="admin-table__primary">{row.case_code}</span>
+                      <span className="admin-table__primary admin-cases-pipeline__truncate" title={row.case_code}>
+                        {row.case_code}
+                      </span>
                       <span className="admin-table__meta admin-cases-pipeline__case-meta">
                         {row.day_type ? <CaseDayTypeBadge dayType={row.day_type} /> : null}
                         {row.in_transition ? <span className="admin-badge admin-badge--info">In transition</span> : null}
                         <span>{row.status?.replaceAll('_', ' ')}</span>
                       </span>
                     </td>
-                    <td>{row.parent_name || '—'}</td>
-                    <td>{row.child_name || '—'}</td>
                     <td>
-                      <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
+                      <span className="admin-cases-pipeline__truncate" title={row.parent_name || undefined}>
+                        {row.parent_name || '—'}
+                      </span>
                     </td>
                     <td>
-                      {row.case_manager_name || (
-                        <span className="admin-muted">Unassigned</span>
-                      )}
+                      <span className="admin-cases-pipeline__truncate" title={row.child_name || undefined}>
+                        {row.child_name || '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className="admin-cases-pipeline__truncate"
+                        title={row.therapist_name || undefined}
+                      >
+                        {row.therapist_name || <span className="admin-muted">Unassigned</span>}
+                      </span>
+                      {row.assignment_end_date ? (
+                        <span className="admin-table__meta">ends {row.assignment_end_date}</span>
+                      ) : null}
+                      <span
+                        className="admin-table__meta admin-cases-pipeline__truncate"
+                        title={row.case_manager_name ? `CM: ${row.case_manager_name}` : undefined}
+                      >
+                        CM: {row.case_manager_name || 'Unassigned'}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className="admin-chip admin-cases-pipeline__truncate"
+                        title={moduleLabel(row.product_module) || undefined}
+                      >
+                        {moduleLabel(row.product_module) || '—'}
+                      </span>
                     </td>
                     <td>
                       <span
@@ -581,12 +630,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                         <span className="admin-muted">—</span>
                       )}
                       <PipelineFlags row={row} />
-                    </td>
-                    <td>
-                      {row.therapist_name || '—'}
-                      {row.assignment_end_date ? (
-                        <span className="admin-table__meta">ends {row.assignment_end_date}</span>
-                      ) : null}
                     </td>
                     <td>
                       <div className="admin-btn-group admin-cases-pipeline__actions">
@@ -643,12 +686,11 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                   canWrite: rowCanWrite,
                   detailsOnly: financeDesk,
                 })
-                const primary = actions[0]
                 return (
                   <li key={row.id}>
                     <AdminTaskCard
                       title={row.case_code}
-                      meta={`${[row.parent_name, row.child_name].filter(Boolean).join(' · ') || '—'} · ${row.next_action || row.pipeline_label}`}
+                      meta={`${[row.parent_name, row.child_name].filter(Boolean).join(' · ') || '—'} · ${row.therapist_name || 'No therapist'}`}
                       badges={
                         <span className={`admin-badge admin-badge--${pipelineStatusBadgeVariant(row.pipeline_tone)}`}>
                           {row.pipeline_label}
@@ -684,12 +726,11 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                         </div>
                       }
                     >
+                      <p className="admin-muted admin-cases-pipeline__mobile-detail">
+                        {moduleLabel(row.product_module) || '—'}
+                        {row.next_action ? ` · ${row.next_action}` : ''}
+                      </p>
                       <PipelineFlags row={row} />
-                      {!primary ? null : (
-                        <p className="admin-muted" style={{ margin: '8px 0 0', fontSize: '0.75rem' }}>
-                          {row.product_module} · {row.therapist_name || 'No therapist'}
-                        </p>
-                      )}
                     </AdminTaskCard>
                   </li>
                 )

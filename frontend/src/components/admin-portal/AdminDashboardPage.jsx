@@ -14,6 +14,11 @@ import {
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
 import './admin-dashboard.css'
 
+const ALLOTMENT_KIND_LABELS = {
+  pending_allotment: 'New case',
+  needs_therapist: 'Needs therapist',
+}
+
 const DASHBOARD_COPY = {
   module_admin: {
     eyebrow: 'Programme operations',
@@ -147,7 +152,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
             subtitle="Cases waiting for therapist assignment"
             actions={
               canNavigate ? (
-                <Link to="/admin/cases?status=PENDING_ALLOTMENT" className="admin-btn admin-btn--ghost admin-btn--sm">
+                <Link to="/admin/cases?queue=allotment" className="admin-btn admin-btn--ghost admin-btn--sm">
                   View all
                 </Link>
               ) : null
@@ -163,6 +168,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
                       <p className="admin-queue__title">{c.child_name}</p>
                       <p className="admin-queue__meta">
                         {c.case_code} · {c.service_type}
+                        {c.allotment_kind ? ` · ${ALLOTMENT_KIND_LABELS[c.allotment_kind] || c.allotment_kind}` : ''}
                       </p>
                     </div>
                     <div className="admin-btn-group">

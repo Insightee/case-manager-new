@@ -1323,3 +1323,52 @@ def test_admin_missing_monthly_reports():
     res = client.get("/api/v1/admin/reports/missing-monthly?month=January%209900", headers=headers)
     assert res.status_code == 200, res.text
     assert isinstance(res.json(), list)
+
+
+def test_dashboard_pending_allotment_includes_active_without_therapist():
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case, CaseStatus
+
+    admin_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    pipeline = client.get("/api/v1/admin/cases/pipeline", headers=admin_headers)
+    assert pipeline.status_code == 200
+    needs_col = next((c for c in pipeline.json()["columns"] if c["id"] == "needs_therapist"), None)
+    case_id = needs_col["cases"][0]["id"] if needs_col and needs_col["cases"] else None
+    restore_assignment_ids: list[int] = []
+
+    if case_id is None:
+        with SessionLocal() as db:
+            case = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE)).first()
+            assert case is not None
+            case_id = case.id
+            for assignment in db.scalars(
+                select(CaseAssignment).where(
+                    CaseAssignment.case_id == case.id,
+                    CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                )
+            ).all():
+                restore_assignment_ids.append(assignment.id)
+                assignment.status = CaseAssignmentStatus.ENDED
+            db.commit()
+
+    try:
+        dash = client.get("/api/v1/admin/dashboard/summary", headers=admin_headers)
+        assert dash.status_code == 200, dash.text
+        body = dash.json()
+        queue_ids = {row["id"] for row in body["pending_allotment_queue"]}
+        assert case_id in queue_ids
+        matched = next(row for row in body["pending_allotment_queue"] if row["id"] == case_id)
+        assert matched["allotment_kind"] == "needs_therapist"
+        assert matched["status"] == "ACTIVE"
+        assert body["pending_allotment"] >= body["status_breakdown"]["PENDING_ALLOTMENT"] + 1
+    finally:
+        if restore_assignment_ids:
+            with SessionLocal() as db:
+                for assignment_id in restore_assignment_ids:
+                    assignment = db.get(CaseAssignment, assignment_id)
+                    if assignment:
+                        assignment.status = CaseAssignmentStatus.ACTIVE
+                db.commit()

@@ -10,46 +10,27 @@
   padding: 2px 8px;
 }
 
-.admin-cases-pipeline__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
+/* Primary status + period filter bar (replaces the old pill tabs) */
+.admin-cases-pipeline__statusbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  margin-bottom: 12px;
 }
 
-.admin-cases-pipeline__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1.5px solid var(--line, #e2e8f0);
-  background: #fff;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #475569;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+@media (min-width: 640px) {
+  .admin-cases-pipeline__statusbar {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+  }
 }
 
-.admin-cases-pipeline__tab.is-active {
-  border-color: #6366f1;
-  background: #eef2ff;
-  color: #4338ca;
+.admin-cases-pipeline__statusbar-field {
+  min-width: 0;
 }
 
-.admin-cases-pipeline__tab-count {
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: rgba(99, 102, 241, 0.12);
-  color: #4338ca;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.admin-cases-pipeline__tab:not(.is-active) .admin-cases-pipeline__tab-count {
-  background: #f1f5f9;
-  color: #64748b;
+.admin-cases-pipeline__statusbar-field .admin-filter-select__input {
+  min-height: 44px;
 }
 
 .admin-cases-pipeline__filter-head {
@@ -200,6 +181,59 @@
   background: #f8fafc;
 }
 
+/* Fixed layout so columns keep consistent widths instead of stretching to content */
+.admin-cases-pipeline__table {
+  table-layout: fixed;
+  min-width: 880px;
+}
+
+.admin-cases-pipeline__table th,
+.admin-cases-pipeline__table td {
+  vertical-align: top;
+}
+
+.admin-cases-pipeline__table .col-select {
+  width: 36px;
+}
+.admin-cases-pipeline__table .col-case {
+  width: 132px;
+}
+.admin-cases-pipeline__table .col-parent {
+  width: 13%;
+}
+.admin-cases-pipeline__table .col-child {
+  width: 13%;
+}
+.admin-cases-pipeline__table .col-therapist {
+  width: 16%;
+}
+.admin-cases-pipeline__table .col-programme {
+  width: 116px;
+}
+.admin-cases-pipeline__table .col-stage {
+  width: 128px;
+}
+.admin-cases-pipeline__table .col-action {
+  width: 17%;
+}
+.admin-cases-pipeline__table .col-actions {
+  width: 168px;
+}
+
+/* Single-line, ellipsis-truncated cell content (full value on hover via title) */
+.admin-cases-pipeline__truncate {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-chip.admin-cases-pipeline__truncate {
+  display: inline-block;
+  vertical-align: top;
+}
+
 .admin-cases-pipeline__action-cell {
   min-width: 140px;
   max-width: 280px;
@@ -242,39 +276,36 @@
   overflow-x: auto;
   overflow-y: visible;
   margin-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-cases-pipeline__mobile-detail {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 @media (min-width: 901px) {
   .admin-cases-pipeline__filter-head {
     margin-bottom: 12px;
     display: grid;
-    grid-template-columns: auto auto minmax(9.5rem, 11rem) 1fr;
-    align-items: end;
+    grid-template-columns: 1fr auto;
+    align-items: center;
     gap: 8px 14px;
   }
 
   .admin-cases-pipeline__filter-head-main {
-    grid-column: 1 / 3;
+    grid-column: 1;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
   }
 
-  .admin-cases-pipeline__sort--inline {
-    grid-column: 3;
-  }
-
   .admin-cases-pipeline__filter-head .admin-cases-pipeline__result-count {
-    grid-column: 4;
+    grid-column: 2;
     margin-left: 0;
     justify-self: end;
     align-self: center;
-  }
-
-  .admin-cases-pipeline__table th:last-child,
-  .admin-cases-pipeline__table td:last-child {
-    min-width: 200px;
-    width: 18%;
   }
 
   .admin-cases-pipeline__hint {
@@ -282,22 +313,3 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .admin-cases-pipeline__table th:nth-child(5),
-  .admin-cases-pipeline__table td:nth-child(5) {
-    display: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .admin-cases-pipeline__tabs {
-    display: none;
-  }
-}
-
-@media (max-width: 960px) {
-  .admin-cases-pipeline__table th:nth-child(4),
-  .admin-cases-pipeline__table td:nth-child(4) {
-    display: none;
-  }
-}

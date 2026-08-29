@@ -710,14 +710,6 @@ def dashboard_summary(
         stmt = apply_case_scope(stmt, user)
         return db.scalar(stmt) or 0
 
-    pending_stmt = (
-        select(Case.id, Case.case_code, Case.service_type, Case.status, Child.first_name, Child.last_name)
-        .join(Child, Case.child_id == Child.id)
-        .where(Case.status == CaseStatus.PENDING_ALLOTMENT)
-    )
-    pending_stmt = apply_case_scope(pending_stmt, user).order_by(Case.created_at.desc()).limit(6)
-    pending_rows = db.execute(pending_stmt).all()
-
     report_stmt = (
         select(
             MonthlyReport.id,
@@ -810,13 +802,16 @@ def dashboard_summary(
 
     total_cases_stmt = apply_case_scope(select(func.count()).select_from(Case), user)
 
+    from app.services import admin_case_pipeline_service as pipeline_svc
     from app.services import admin_workbench_service as wb_svc
 
     ops_counts = wb_svc.build_ops_counts(db, user)
+    pending_allotment_count = pipeline_svc.count_pending_therapist_assignments(db, user)
+    pending_allotment_queue = pipeline_svc.list_pending_therapist_assignment_queue(db, user, limit=6)
 
     return {
         "open_cases": _count_case_status(CaseStatus.ACTIVE),
-        "pending_allotment": _count_case_status(CaseStatus.PENDING_ALLOTMENT),
+        "pending_allotment": pending_allotment_count,
         "suspended_cases": _count_case_status(CaseStatus.SUSPENDED),
         "closed_cases": _count_case_status(CaseStatus.CLOSED),
         "total_cases": db.scalar(total_cases_stmt) or 0,
@@ -836,16 +831,7 @@ def dashboard_summary(
             "SUSPENDED": _count_case_status(CaseStatus.SUSPENDED),
             "CLOSED": _count_case_status(CaseStatus.CLOSED),
         },
-        "pending_allotment_queue": [
-            {
-                "id": row.id,
-                "case_code": row.case_code,
-                "child_name": f"{row.first_name} {row.last_name}".strip(),
-                "service_type": row.service_type,
-                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
-            }
-            for row in pending_rows
-        ],
+        "pending_allotment_queue": pending_allotment_queue,
         "reports_queue": [
             {
                 "id": row.id,
