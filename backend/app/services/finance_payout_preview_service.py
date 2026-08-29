@@ -45,8 +45,16 @@ def uses_calendar_day_pay(case: Case) -> bool:
     return is_shadow_case(case) or is_b2b_case(case)
 
 
-def therapist_share_inr(case: Case) -> float:
-    """Monthly or per-session therapist share configured on the case (INR lumpsum)."""
+def therapist_share_inr(case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+    """Monthly or per-session therapist share configured on the case (INR lumpsum).
+
+    When db + as_of are provided, resolve from billing rate history so a future hike
+    on the case does not rewrite past month payouts.
+    """
+    if db is not None and as_of is not None:
+        from app.services import billing_rate_history_service
+
+        return billing_rate_history_service.resolve_therapist_pay_as_of(db, case, as_of)
     return resolve_therapist_pay(case)
 
 
@@ -883,21 +891,25 @@ def payout_preview_row(
     pending_absence: int = 0,
     leave_taken: int | None = None,
     parent_info: dict[str, Any] | None = None,
+    db: Session | None = None,
 ) -> dict[str, Any]:
-    share = therapist_share_inr(case)
+    _month_start, month_end = month_bounds(ym)
+    share = therapist_share_inr(case, db=db, as_of=month_end)
     lumpsum = client_lumpsum_inr(case)
-    per_sess = per_session_share_inr(case)
+    per_sess = per_unit_from_share(case, share)
     unpaid = int(leave.get("unpaid", 0))
-    subtotal = predicted_subtotal_inr(
+    subtotal = predicted_amount_inr(
         case,
+        share=share,
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid if uses_calendar_day_pay(case) else 0,
     )
     leave_deduction = 0.0
     if uses_calendar_day_pay(case) and unpaid > 0:
-        gross_before = predicted_subtotal_inr(
+        gross_before = predicted_amount_inr(
             case,
+            share=share,
             approved_sessions=approved_sessions,
             calendar_days=calendar_days,
             unpaid_leaves=0,
@@ -1020,6 +1032,7 @@ def payout_preview_rows(
                     pending_absence=pending_absence,
                     leave_taken=leave_taken,
                     parent_info=parents.get(case.child_id) if case.child_id else None,
+                    db=db,
                 )
             )
 

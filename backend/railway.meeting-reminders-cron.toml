@@ -1,0 +1,16 @@
+# Railway cron service for 1-hour meeting reminders.
+#
+# Dashboard setup:
+#   1. New service → name: meeting-reminders (or meeting-reminders-cron)
+#   2. Root Directory: backend
+#   3. Settings → Config file: railway.meeting-reminders-cron.toml
+#   4. Variables: DATABASE_URL=${{Postgres.DATABASE_URL}}
+#   5. Deploy — cronSchedule below runs every 10 minutes (UTC)
+
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "python scripts/meeting_reminders.py"
+cronSchedule = "*/10 * * * *"
+restartPolicyType = "ON_FAILURE"

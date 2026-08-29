@@ -44,6 +44,8 @@ from app.api.v1 import (
     session_absence,
     memos,
     clinical_reports,
+    calendar,
+    users,
 )
 from app.core.feature_flags import require_billing, require_clinical_reports_engine
 
@@ -109,6 +111,8 @@ api_router.include_router(files.router)
 api_router.include_router(case_documents.router)
 api_router.include_router(case_documents.documents_router)
 api_router.include_router(memos.router)
+api_router.include_router(calendar.router)
+api_router.include_router(users.router)
 api_router.include_router(
     clinical_reports.router,
     dependencies=[Depends(require_clinical_reports_engine)],

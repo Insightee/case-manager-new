@@ -25,7 +25,36 @@ ACTION_LABELS: dict[str, str] = {
     "reject_session_log": "Rejected session log",
     "client_status_change": "Client status changed",
     "update_day_type": "Day type changed",
+    "update_billing": "Updated billing",
+    "billing_rate_change": "Billing amount change",
 }
+
+
+def _billing_audit_detail(old_value: Any, new_value: Any) -> str | None:
+    if not isinstance(old_value, dict):
+        old_value = {}
+    proposed = new_value.get("proposed_billing") if isinstance(new_value, dict) else None
+    if not isinstance(proposed, dict):
+        proposed = new_value if isinstance(new_value, dict) else {}
+    from app.core.billing_validation import client_amount_inr, resolve_therapist_pay
+
+    parts: list[str] = []
+    old_client = client_amount_inr(old_value)
+    new_client = client_amount_inr(proposed)
+    if round(float(old_client or 0), 2) != round(float(new_client or 0), 2):
+        eff = proposed.get("client_billing_effective_from") or "—"
+        parts.append(f"Client billing ₹{float(old_client or 0):.0f} → ₹{float(new_client or 0):.0f} (from {eff})")
+    old_pay = resolve_therapist_pay(old_value)
+    new_pay = resolve_therapist_pay(proposed)
+    if round(float(old_pay or 0), 2) != round(float(new_pay or 0), 2):
+        eff = proposed.get("therapist_remuneration_effective_from") or "—"
+        parts.append(
+            f"Therapist remuneration ₹{float(old_pay or 0):.0f} → ₹{float(new_pay or 0):.0f} (from {eff})"
+        )
+    notes = proposed.get("billing_notes")
+    if notes and notes != old_value.get("billing_notes"):
+        parts.append(f"Billing notes updated")
+    return "; ".join(parts) if parts else None
 
 
 def humanize_action(action: str) -> str:
@@ -40,7 +69,7 @@ def _entity_label(entity_type: str, action: str) -> str:
     return f"{humanize_action(action)} {et}"
 
 
-def _serialize_audit_item(ev: AuditEvent) -> dict[str, Any]:
+def _serialize_audit_item(ev: AuditEvent, *, for_therapist: bool = False) -> dict[str, Any]:
     actor = ev.actor if ev.actor_user_id else None
     old_value = _parse_json(ev.old_value)
     new_value = _parse_json(ev.new_value)
@@ -52,6 +81,16 @@ def _serialize_audit_item(ev: AuditEvent) -> dict[str, Any]:
         action_label = "Day type changed"
         if isinstance(new_value, dict):
             detail = audit_detail_for_change(new_value)
+    elif ev.action in ("update_billing", "request_low_margin_billing_approval", "approve_low_margin_billing"):
+        action_label = (
+            "Billing update requested (awaiting approval)"
+            if ev.action == "request_low_margin_billing_approval"
+            else ("Billing update approved" if ev.action == "approve_low_margin_billing" else "Updated billing")
+        )
+        detail = _billing_audit_detail(old_value, new_value)
+        if for_therapist and detail and "Billing notes" in detail:
+            # Therapists: amount changes only
+            detail = "; ".join(p for p in detail.split("; ") if "notes" not in p.lower())
     item = {
         "id": ev.id,
         "actor_user_id": ev.actor_user_id,
@@ -62,8 +101,8 @@ def _serialize_audit_item(ev: AuditEvent) -> dict[str, Any]:
         "entity_type": ev.entity_type,
         "entity_id": ev.entity_id,
         "case_id": ev.case_id,
-        "old_value": old_value,
-        "new_value": new_value,
+        "old_value": None if for_therapist else old_value,
+        "new_value": None if for_therapist else new_value,
         "created_at": ev.created_at.isoformat() if ev.created_at else None,
     }
     if detail:
@@ -126,17 +165,62 @@ def case_timeline(db: Session, user: User, case_id: int, *, limit: int = 40) -> 
     if not case or not case_scope_check(db, user, case):
         raise PermissionError("Case access denied")
 
+    from app.core.permissions import RoleName, has_any_role, has_role
     from app.models.assignment import CaseAssignment
-    from app.services import client_status_service
+    from app.services import billing_rate_history_service, client_status_service
+
+    is_admin_viewer = has_any_role(
+        user,
+        RoleName.SUPER_ADMIN,
+        RoleName.ADMIN,
+        RoleName.MODULE_ADMIN,
+        RoleName.CASE_MANAGER,
+        RoleName.FINANCE,
+        RoleName.HR,
+    )
+    for_therapist = has_role(user, RoleName.THERAPIST) and not is_admin_viewer
 
     events: list[dict] = []
 
-    audit = list_audit_events(db, user, case_id=case_id, limit=limit)
-    for item in audit.get("items", []):
-        events.append({**item, "source": "audit"})
-
-    for item in client_status_service.status_timeline_events(db, case_id, limit=limit):
+    # Case already scope-checked above — load audit without re-requiring admin list perms
+    # so therapists can see amount-change rows on their assigned cases.
+    audit_stmt = (
+        select(AuditEvent)
+        .options(joinedload(AuditEvent.actor))
+        .where(AuditEvent.case_id == case_id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(min(limit, 100))
+    )
+    audit_rows = list(db.scalars(audit_stmt).all())
+    for ev in audit_rows:
+        item = _serialize_audit_item(ev, for_therapist=for_therapist)
+        action = item.get("action") or ""
+        if for_therapist:
+            if action not in (
+                "update_billing",
+                "request_low_margin_billing_approval",
+                "approve_low_margin_billing",
+            ):
+                continue
+            if not item.get("detail"):
+                continue
+            item = {**item, "old_value": None, "new_value": None, "source": "audit"}
+        else:
+            item = {**item, "source": "audit"}
         events.append(item)
+
+    if not for_therapist:
+        for item in client_status_service.status_timeline_events(db, case_id, limit=limit):
+            events.append(item)
+
+    for item in billing_rate_history_service.timeline_events_for_case(
+        db, case_id, for_therapist=for_therapist, limit=limit
+    ):
+        events.append(item)
+
+    if for_therapist:
+        events.sort(key=lambda e: e.get("created_at") or "", reverse=True)
+        return events[:limit]
 
     from app.models.assignment import CaseAssignmentStatus
     from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionStatus

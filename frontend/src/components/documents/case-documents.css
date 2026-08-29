@@ -98,6 +98,99 @@
   color: #065f46;
 }
 
+.case-docs__meeting-section {
+  border: 1px solid #dbe7dd;
+  border-radius: 16px;
+  background: #f8fcf9;
+  padding: 14px;
+}
+
+.case-docs__meeting-section-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #214232;
+}
+
+.case-docs__meeting-section-body {
+  display: grid;
+  gap: 10px;
+}
+
+.case-docs__meeting-group {
+  border-radius: 14px;
+  border: 1px solid #d9eadf;
+  background: #fff;
+  padding: 12px;
+}
+
+.case-docs__meeting-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.case-docs__meeting-group-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #244032;
+}
+
+.case-docs__meeting-group-meta {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.case-docs__meeting-link {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #2f8f55;
+  text-decoration: none;
+}
+
+.case-docs__meeting-link:hover {
+  text-decoration: underline;
+}
+
+.case-docs__meeting-doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.case-docs__meeting-doc-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #eef5ef;
+}
+
+.case-docs__meeting-doc-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.case-docs__meeting-doc-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.case-docs__meeting-doc-meta {
+  margin: 3px 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
 .case-docs__banner {
   padding: 10px 12px;
   border-radius: 8px;

@@ -20,6 +20,7 @@ from app.schemas.case_document import (
     CaseDocumentDetail,
     CaseDocumentListItem,
     CaseDocumentPatch,
+    CaseDocumentVisibilityUpdate,
     ParentFeedbackPayload,
     WorkflowPayload,
 )
@@ -146,6 +147,31 @@ def patch_document(
     detail = doc_svc.patch_document(db, user, doc, **payload.model_dump(exclude_unset=True))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="case_document", entity_id=doc.id, case_id=doc.case_id, **meta)
+    db.commit()
+    return detail
+
+
+@documents_router.post("/{document_id}/visibility", response_model=CaseDocumentDetail)
+def update_document_visibility(
+    document_id: int,
+    payload: CaseDocumentVisibilityUpdate,
+    request: Request,
+    user: User = Depends(require_permission("case_document.publish")),
+    db: Session = Depends(get_db),
+):
+    doc = _load_doc(db, document_id)
+    detail = doc_svc.set_visibility(db, user, doc, target_visibility=payload.to, reason=payload.reason)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="update_visibility",
+        entity_type="case_document",
+        entity_id=doc.id,
+        case_id=doc.case_id,
+        new_value=json.dumps({"to": payload.to, "reason": payload.reason, "visibility": doc.visibility}),
+        **meta,
+    )
     db.commit()
     return detail
 

@@ -250,6 +250,188 @@
     box-shadow: inset 0 0 0 1px #0d9488;
   }
 
+  /* Overview panel */
+  .admin-case-overview {
+    display: grid;
+    gap: 12px;
+  }
+
+  .admin-case-overview__panel {
+    padding: 14px 16px;
+  }
+
+  .admin-case-overview__panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .admin-case-overview__panel-head--split {
+    align-items: center;
+  }
+
+  .admin-case-overview__eyebrow {
+    margin: 0 0 4px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #0d9488;
+  }
+
+  .admin-case-overview__title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .admin-case-overview__contacts {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1fr;
+  }
+
+  .admin-case-overview__contact-card,
+  .admin-case-overview__readonly,
+  .admin-case-overview__zoho {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #f8fafc;
+    padding: 12px;
+  }
+
+  .admin-case-overview__contact-label {
+    margin: 0 0 6px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  .admin-case-overview__contact-name {
+    margin: 0 0 4px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .admin-case-overview__contact-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    font-size: 0.8125rem;
+    color: #475569;
+  }
+
+  .admin-case-overview__contact-link {
+    color: #0d9488;
+    text-decoration: none;
+    word-break: break-word;
+  }
+
+  .admin-case-overview__readonly-text {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: #334155;
+  }
+
+  .admin-case-overview__meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .admin-case-overview__meta-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    min-height: 68px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .admin-case-overview__meta-label {
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+  }
+
+  .admin-case-overview__meta-value {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.3;
+  }
+
+  .admin-case-overview__notes-form {
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-case-overview__meeting-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-case-overview__meeting-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 12px;
+    background: #fff;
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-case-overview__meeting-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .admin-case-overview__meeting-head strong {
+    font-size: 0.875rem;
+    line-height: 1.3;
+    color: #0f172a;
+  }
+
+  .admin-case-overview__meeting-meta,
+  .admin-case-overview__meeting-text {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: #475569;
+  }
+
+  .admin-case-overview__meeting-label {
+    font-weight: 700;
+    color: #334155;
+  }
+
+  .admin-case-overview__meeting-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 44px;
+    color: #0d9488;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
   /* CM meetings section */
   .admin-case-cm-meetings__cards {
     list-style: none;
@@ -498,5 +680,19 @@
 
   .admin-case-detail-stat__value {
     font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-case-overview__panel {
+    padding: 12px;
+  }
+
+  .admin-case-overview__meta {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-case-overview__meeting-head {
+    flex-direction: column;
   }
 }

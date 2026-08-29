@@ -238,6 +238,34 @@ def case_manager_contact(db: Session, case: Case) -> tuple[Optional[str], Option
     return cm.full_name, cm.email
 
 
+def _user_contact(db: Session, user_id: int | None) -> dict[str, Optional[str]] | None:
+    if not user_id:
+        return None
+    user = db.get(User, user_id)
+    if not user:
+        return None
+    return {
+        "name": user.full_name,
+        "phone": user.phone,
+        "email": user.email,
+    }
+
+
+def _active_assignment_contact(db: Session, case_id: int) -> dict[str, Optional[str]] | None:
+    assignment = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+        .limit(1)
+    ).first()
+    if not assignment:
+        return None
+    return _user_contact(db, assignment.therapist_user_id)
+
+
 def case_to_read(
     case: Case,
     db: Session | None = None,
@@ -248,11 +276,20 @@ def case_to_read(
     service_addr = case_service_address_read(case)
     cm_name, cm_email = (None, None)
     therapist_name = None
+    parent_contact = None
+    therapist_contact = None
     access_as_mentor = False
     if db is not None:
         cm_name, cm_email = case_manager_contact(db, case)
         if resolve_therapist:
             therapist_name = _active_therapist_names(db, [case.id]).get(case.id)
+        if case.child_id:
+            # Local import avoids a circular dependency with parent_service -> case_service.
+            from app.services import parent_service
+
+            parent_user_id = parent_service.primary_parent_user_id_for_child(db, case.child_id)
+            parent_contact = _user_contact(db, parent_user_id)
+        therapist_contact = _active_assignment_contact(db, case.id)
         if viewer is not None:
             from app.services.mentor_scope_service import is_mentor_only_on_case
 
@@ -278,6 +315,8 @@ def case_to_read(
         "case_manager_name": cm_name,
         "case_manager_email": cm_email,
         "access_as_mentor": access_as_mentor,
+        "parent_contact": parent_contact,
+        "therapist_contact": therapist_contact,
         "notes": case.notes,
         "region": case.region,
         "operational_stage": case.operational_stage,

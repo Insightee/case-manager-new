@@ -32,7 +32,9 @@ class DocumentComment(Base):
     case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
     author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     author_role: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # "parent", "therapist", "case_manager", "admin"
-    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="parent_team", server_default="parent_team")  # "parent_team", "internal_only"
+    visibility: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="internal_only", server_default="internal_only"
+    )  # "parent_team", "internal_only"
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="open", server_default="open")  # "open", "acknowledged", "resolved"
     comment_type: Mapped[str] = mapped_column(String(32), nullable=False, default=CommentType.GENERAL.value)
     body: Mapped[str] = mapped_column(Text, nullable=False)

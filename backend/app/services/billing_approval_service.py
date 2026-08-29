@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.billing_validation import (
     apply_billing_payload,
     case_billing_dict,
-    needs_low_share_review,
+    is_margin_gated_product,
+    needs_low_insighte_margin_review,
     resolve_therapist_pay,
 )
 from app.core.config import settings
@@ -79,10 +80,16 @@ def is_designated_approver(db: Session, user: User) -> bool:
 
 
 def requires_approval(billing: dict) -> bool:
-    if projected_profit_inr(billing) < Decimal(str(settings.billing_minimum_profit_inr)):
-        return True
-    # Homecare therapist share under 20% of client amount → review queue.
-    return needs_low_share_review(billing)
+    """Product-scoped margin gates.
+
+    Homecare / counselling: Insighte margin below 30% → super-admin review.
+    Absolute ₹5k profit floor does **not** apply to those products.
+
+    Shadow (and other modules): keep the absolute ₹5k minimum-profit floor.
+    """
+    if is_margin_gated_product(billing):
+        return needs_low_insighte_margin_review(billing)
+    return projected_profit_inr(billing) < Decimal(str(settings.billing_minimum_profit_inr))
 
 
 def stamp_read(payload: dict, row: BillingApprovalRequest | None) -> dict:
@@ -103,10 +110,20 @@ def apply_or_request(
 ) -> BillingApprovalRequest | None:
     if not proposed or not any(value is not None for value in proposed.values()):
         return None
+    from app.services import billing_rate_history_service
+
+    previous = case_billing_dict(case)
     merged = validate_proposed_billing(case, proposed)
     if requires_approval(merged) and not is_designated_approver(db, requester):
         return request_approval(db, case=case, proposed=proposed, requester=requester)
     apply_billing_payload(case, proposed, requester.id)
+    billing_rate_history_service.record_rate_change(
+        db,
+        case=case,
+        previous=previous,
+        proposed=proposed,
+        changed_by_user_id=requester.id,
+    )
     return None
 
 
@@ -192,8 +209,18 @@ def approve(db: Session, row: BillingApprovalRequest, approver: User) -> Case:
     if not case:
         raise ValueError("Case not found.")
 
+    from app.services import billing_rate_history_service
+
     now = datetime.now(timezone.utc)
+    previous = case_billing_dict(case)
     apply_billing_payload(case, row.proposed_billing, approver.id)
+    billing_rate_history_service.record_rate_change(
+        db,
+        case=case,
+        previous=previous,
+        proposed=row.proposed_billing or {},
+        changed_by_user_id=approver.id,
+    )
     row.status = BillingApprovalStatus.APPROVED
     row.reviewed_by_user_id = approver.id
     row.reviewed_at = now

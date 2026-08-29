@@ -10,6 +10,8 @@ from app.models.case_document import (
     CaseDocumentStatus,
     CaseDocumentVisibility,
     CaseDocumentWorkflowEvent,
+    normalize_case_document_visibility,
+    visibility_rank,
     normalize_case_document_status,
     statuses_awaiting_cm_review,
 )
@@ -37,6 +39,30 @@ def _record(
             comment=comment,
         )
     )
+
+
+def _current_version(doc: CaseDocument):
+    return next((v for v in doc.versions if v.id == doc.current_version_id), None)
+
+
+def _storage_visibility_value(target_visibility: str | None) -> str | None:
+    normalized = normalize_case_document_visibility(target_visibility)
+    if normalized == CaseDocumentVisibility.INTERNAL.value:
+        return CaseDocumentVisibility.INTERNAL_ONLY.value
+    if normalized == CaseDocumentVisibility.CARE_TEAM.value:
+        return CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value
+    if normalized == CaseDocumentVisibility.CLIENT.value:
+        return CaseDocumentVisibility.CLIENT_VISIBLE.value
+    return target_visibility
+
+
+def _validate_visibility_change(doc: CaseDocument, target_visibility: str | None) -> None:
+    if target_visibility is None:
+        return
+    current_version = _current_version(doc)
+    if current_version and current_version.source_type == "EXTERNAL_LINK":
+        if visibility_rank(target_visibility) > visibility_rank(CaseDocumentVisibility.INTERNAL.value):
+            raise ValueError("External links cannot be shared beyond internal-only")
 
 
 def submit(db: Session, user: User, doc: CaseDocument, comment: str | None = None) -> CaseDocument:
@@ -71,7 +97,13 @@ def approve(
     old = doc.status
     doc.status = CaseDocumentStatus.APPROVED.value
     doc.reviewer_user_id = user.id
-    doc.visibility = visibility or CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value
+    target_visibility = visibility or (
+        CaseDocumentVisibility.INTERNAL_ONLY.value
+        if (_current_version(doc) and _current_version(doc).source_type == "EXTERNAL_LINK")
+        else CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value
+    )
+    _validate_visibility_change(doc, target_visibility)
+    doc.visibility = _storage_visibility_value(target_visibility) or doc.visibility
     _record(db, doc, action="approve", actor_user_id=user.id, from_status=old, to_status=doc.status, comment=comment)
     db.flush()
     return doc
@@ -109,6 +141,7 @@ def publish_client(db: Session, user: User, doc: CaseDocument, comment: str | No
         raise PermissionError("Cannot publish to client")
     if doc.status != CaseDocumentStatus.APPROVED.value:
         raise ValueError("Document must be approved first")
+    _validate_visibility_change(doc, CaseDocumentVisibility.CLIENT.value)
     old = doc.status
     doc.status = CaseDocumentStatus.CLIENT_REVIEW.value
     doc.visibility = CaseDocumentVisibility.CLIENT_VISIBLE.value

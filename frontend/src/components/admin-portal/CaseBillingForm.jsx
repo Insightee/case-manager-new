@@ -14,6 +14,8 @@ const EMPTY = {
   pay_share_amount_inr: '',
   therapist_fixed_pay_inr: '',
   billing_notes: '',
+  client_billing_effective_from: '',
+  therapist_remuneration_effective_from: '',
 }
 
 function resolvedTherapistPay(item) {
@@ -59,6 +61,8 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
       pay_share_amount_inr: lump,
       therapist_fixed_pay_inr: lump,
       billing_notes: caseItem.billing_notes || '',
+      client_billing_effective_from: '',
+      therapist_remuneration_effective_from: '',
     })
   }, [caseItem, blankSlate])
 
@@ -111,6 +115,8 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
         therapist_fixed_pay_inr: lump,
         pay_share_amount_inr: lump,
         billing_notes: form.billing_notes || null,
+        client_billing_effective_from: form.client_billing_effective_from || null,
+        therapist_remuneration_effective_from: form.therapist_remuneration_effective_from || null,
       }
       await onSave(payload)
     } catch (err) {
@@ -249,11 +255,40 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
           />
           <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
             Flat amount paid to the therapist. Must not exceed the client billing amount.
-            {caseItem.product_module === 'homecare'
-              ? ' Homecare therapist pay is typically 30–40% of the client amount; under 20% is flagged for review.'
-              : ''}
+            {caseItem.product_module === 'homecare' || caseItem.product_module === 'counselling'
+              ? ' Homecare/counselling: Insighte margin under 30% needs super-admin review (₹5k floor does not apply).'
+              : caseItem.product_module === 'shadow_support' || String(caseItem.product_module || '').includes('shadow')
+                ? ' Shadow: absolute profit under ₹5,000 needs super-admin review.'
+                : ''}
           </span>
         </label>
+      ) : null}
+
+      {form.billing_type ? (
+        <>
+          <label>
+            Client billing effective from
+            <input
+              type="date"
+              value={form.client_billing_effective_from}
+              onChange={(e) => setField('client_billing_effective_from', e.target.value)}
+            />
+            <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+              From which date the revised client charge applies for invoices.
+            </span>
+          </label>
+          <label>
+            Therapist remuneration effective from
+            <input
+              type="date"
+              value={form.therapist_remuneration_effective_from}
+              onChange={(e) => setField('therapist_remuneration_effective_from', e.target.value)}
+            />
+            <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+              Payout uses this date for service periods — not the live case amount alone.
+            </span>
+          </label>
+        </>
       ) : null}
 
       <label>

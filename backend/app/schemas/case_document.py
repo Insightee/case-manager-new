@@ -24,6 +24,7 @@ class CaseDocumentVersionRead(BaseModel):
 class CaseDocumentListItem(BaseModel):
     id: int
     case_id: int
+    meeting_id: Optional[int] = None
     child_id: int
     category: str
     title: str
@@ -37,6 +38,11 @@ class CaseDocumentListItem(BaseModel):
     allowed_actions: list[str] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    meeting_series_id: Optional[str] = None
+    meeting_scheduled_date: Optional[date] = None
+    meeting_scheduled_time: Optional[str] = None
+    meeting_title: Optional[str] = None
+    meeting_status: Optional[str] = None
 
 
 class CaseDocumentDetail(CaseDocumentListItem):
@@ -81,6 +87,11 @@ class CaseDocumentCommentRead(BaseModel):
 class WorkflowPayload(BaseModel):
     comment: Optional[str] = None
     visibility: Optional[str] = None
+
+
+class CaseDocumentVisibilityUpdate(BaseModel):
+    to: str
+    reason: str
 
 
 class ParentFeedbackPayload(BaseModel):
