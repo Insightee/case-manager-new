@@ -448,9 +448,30 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
     }
   }
 
+  async function downloadDurationOutliers() {
+    const p = new URLSearchParams()
+    if (filters.dateFrom) p.set('date_from', filters.dateFrom)
+    if (filters.dateTo) p.set('date_to', filters.dateTo)
+    if (filters.therapistId) p.set('therapist_id', filters.therapistId)
+    if (filters.productModule) p.set('product_module', filters.productModule)
+    if (filters.caseId) p.set('case_id', filters.caseId)
+    const qs = p.toString()
+    const from = filters.dateFrom || 'export'
+    const to = filters.dateTo || 'export'
+    try {
+      await apiDownload(
+        `/api/v1/admin/session-logs/duration-outliers/export/xlsx${qs ? `?${qs}` : ''}`,
+        `session_duration_outliers_${from}_${to}.xlsx`,
+      )
+    } catch (err) {
+      window.alert(err.message || 'Export failed')
+    }
+  }
+
   return (
     <>
       <div className="sessions-dash__export-bar">
+        <p className="sessions-dash__duration-note">Duration values are in minutes.</p>
         <input
           type="search"
           className="sessions-dash__filter-input sessions-dash__filter-input--grow"
@@ -459,12 +480,17 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
           placeholder="Filter rows…"
           aria-label="Filter sessions"
         />
-        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('xlsx')}>
-          Excel
-        </button>
-        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('pdf')}>
-          PDF
-        </button>
+        <div className="sessions-dash__export-actions">
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('xlsx')}>
+            Excel
+          </button>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={downloadDurationOutliers}>
+            Outliers
+          </button>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('pdf')}>
+            PDF
+          </button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -478,6 +504,7 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
             <thead>
               <tr>
                 <th>When</th>
+                <th>Duration (min)</th>
                 <th>Case / client</th>
                 <th>Therapist</th>
                 <th>Programme</th>
@@ -500,11 +527,13 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                       <span className="admin-table__primary">{formatDisplayDate(s.scheduled_date)}</span>
                       <span className="admin-table__meta">
                         {row.timeRange}
-                        {row.durationLabel ? ` · ${row.durationLabel}` : ''}
                       </span>
                       {row.isLate ? (
                         <span className="admin-badge admin-badge--warning sessions-dash__pill">Late</span>
                       ) : null}
+                    </td>
+                    <td className="sessions-dash__duration-mins">
+                      {s.duration_mins != null ? s.duration_mins : '—'}
                     </td>
                     <td>
                       {s.case_id ? (
@@ -573,7 +602,7 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                 const row = sessionRowModel(s)
                 const isHighlight = highlightSessionId && String(s.id) === String(highlightSessionId)
                 const titleParts = [formatDisplayDate(s.scheduled_date), row.timeRange]
-                if (row.durationLabel) titleParts.push(row.durationLabel)
+                if (s.duration_mins != null) titleParts.push(`${s.duration_mins} min`)
                 return (
                   <li key={s.id} ref={isHighlight ? highlightRef : null}>
                     <AdminTaskCard
@@ -598,10 +627,10 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                               <span className="sessions-dash__card-fact-label">Location</span>
                               <span>{row.modeLabel || '—'}</span>
                             </span>
-                            {row.durationLabel ? (
+                            {s.duration_mins != null ? (
                               <span className="sessions-dash__card-fact">
-                                <span className="sessions-dash__card-fact-label">Duration</span>
-                                <span>{row.durationLabel}</span>
+                                <span className="sessions-dash__card-fact-label">Duration (min)</span>
+                                <span>{s.duration_mins}</span>
                               </span>
                             ) : null}
                           </span>

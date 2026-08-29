@@ -753,10 +753,46 @@
 
 .sessions-dash__export-bar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.sessions-dash__duration-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.sessions-dash__export-bar .sessions-dash__filter-input--grow {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sessions-dash__export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 100%;
+}
+
+@media (min-width: 640px) {
+  .sessions-dash__duration-note {
+    flex: 1 1 auto;
+    margin-right: auto;
+  }
+
+  .sessions-dash__export-actions {
+    flex: 0 0 auto;
+  }
+}
+
+.sessions-dash__duration-mins {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ── Flag drawer ────────────────────────────────────────────────────────── */

@@ -1372,3 +1372,17 @@ def test_dashboard_pending_allotment_includes_active_without_therapist():
                     if assignment:
                         assignment.status = CaseAssignmentStatus.ACTIVE
                 db.commit()
+
+
+def test_admin_duration_outlier_export_xlsx():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.get(
+        "/api/v1/admin/session-logs/duration-outliers/export/xlsx",
+        params={"month": "2026-08"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert "spreadsheetml" in res.headers.get("content-type", "")
+    wb = openpyxl.load_workbook(BytesIO(res.content))
+    assert wb.active.title == "Duration outliers"
