@@ -114,7 +114,7 @@ def test_invoice_breakdown_from_preview_net_matches_subtotal():
             pytest.skip("No in-review invoice in seed")
         breakdown = billing.invoice_breakdown(db, invoice.id)
         if not breakdown.get("from_preview"):
-            pytest.skip("Invoice has persisted lines — different reconciliation path")
+            pytest.skip("Invoice has persisted lines — covered by test_invoice_breakdown_stored")
         assert breakdown["subtotal_inr"] - breakdown["leave_deduction_inr"] == pytest.approx(
             breakdown["net_amount_inr"], rel=0.01
         )

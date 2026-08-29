@@ -695,6 +695,25 @@ def db_case_from_preview(case_group: dict) -> Case:
     return case
 
 
+_AMENDABLE_INVOICE_STATUSES = frozenset(
+    {
+        InvoiceStatus.DRAFT,
+        InvoiceStatus.IN_REVIEW,
+        InvoiceStatus.QUERIED,
+        InvoiceStatus.REJECTED,
+    }
+)
+
+
+def preview_has_billable_payout(preview: dict) -> bool:
+    """True when the month has a non-zero therapist payout (sessions or calendar-day pay)."""
+    if float(preview.get("net_amount_inr") or 0) > 0:
+        return True
+    if float(preview.get("subtotal_inr") or 0) > 0:
+        return True
+    return any(float(c.get("therapist_share_inr") or 0) > 0 for c in preview.get("cases") or [])
+
+
 def submit_invoice_from_preview(
     db: Session,
     therapist_user_id: int,
@@ -710,6 +729,11 @@ def submit_invoice_from_preview(
     ).first()
     if existing:
         raise ValueError("Invoice already submitted for this month")
+
+    if not preview_has_billable_payout(preview):
+        raise ValueError(
+            "No billable payout for this month yet — add approved session logs or check your case billing setup."
+        )
 
     pending_count = int(preview.get("pending_approval_count") or preview.get("pending_late_count") or 0)
     pending_inr = float(preview.get("pending_approval_inr") or preview.get("pending_late_inr") or 0)
@@ -867,6 +891,266 @@ def _merge_case_with_attendance_facts(stored_case: dict, fact_case: dict | None)
     return merged
 
 
+def _session_line_entry(sl: InvoiceSessionLine) -> tuple[dict, bool]:
+    flags = sl.flags or {}
+    provisional = flags.get("provisional_amount_inr")
+    is_pending = provisional is not None and not sl.included
+    entry = {
+        "id": sl.id,
+        "session_id": sl.session_id,
+        "daily_log_id": sl.daily_log_id,
+        "session_date": sl.session_date.isoformat(),
+        "duration_minutes": sl.duration_minutes,
+        "line_type": sl.line_type.value,
+        "amount_inr": float(provisional if is_pending else sl.amount_inr),
+        "source": sl.source.value,
+        "included": sl.included,
+        "flags": flags,
+    }
+    return entry, is_pending
+
+
+def _case_group_from_case_line(db: Session, cl: InvoiceCaseLine) -> tuple[dict, float, int]:
+    session_lines: list[dict] = []
+    pending_late_lines: list[dict] = []
+    pending_late_inr = 0.0
+    pending_late_count = 0
+    for sl in cl.session_lines:
+        entry, is_pending = _session_line_entry(sl)
+        if is_pending:
+            pending_late_lines.append(entry)
+            pending_late_inr += float(entry["amount_inr"])
+            pending_late_count += 1
+        else:
+            session_lines.append(entry)
+
+    child_name = None
+    case_row = db.get(Case, cl.case_id)
+    if case_row and case_row.child:
+        child_name = case_row.child.full_name
+    case_group = {
+        "case_id": cl.case_id,
+        "case_code": cl.case_code,
+        "child_name": child_name,
+        "billing_type": cl.billing_type,
+        "included_sessions": cl.included_sessions,
+        "additional_sessions": cl.additional_sessions,
+        "therapist_share_inr": float(cl.therapist_share_inr),
+        "billing_snapshot": cl.billing_snapshot,
+        "pending_approval_inr": round(pending_late_inr, 2),
+        "pending_late_inr": round(pending_late_inr, 2),
+        "session_lines": session_lines,
+        "pending_approval_lines": pending_late_lines,
+        "pending_late_lines": pending_late_lines,
+    }
+    return case_group, pending_late_inr, pending_late_count
+
+
+def _stored_invoice_totals(invoice: Invoice) -> tuple[float, float, float]:
+    subtotal = float(
+        invoice.subtotal_inr if invoice.subtotal_inr is not None else invoice.amount_inr or 0
+    )
+    leave = float(invoice.leave_deduction_inr or 0)
+    net = float(invoice.amount_inr or max(subtotal - leave, 0))
+    return subtotal, leave, net
+
+
+def _synthetic_case_groups_from_stored_header(
+    db: Session, invoice: Invoice, subtotal_inr: float
+) -> list[dict]:
+    assigned = _assigned_billing_cases(db, invoice.therapist_user_id)
+    if not assigned:
+        return []
+    if len(assigned) == 1:
+        shares = [round(subtotal_inr, 2)]
+    else:
+        first = round(subtotal_inr * 0.4, 2)
+        shares = [first, round(subtotal_inr - first, 2)]
+    per_case_sessions = max(int(invoice.sessions_count or 0) // len(assigned), 0)
+    groups: list[dict] = []
+    for case, share in zip(assigned, shares):
+        groups.append(
+            {
+                "case_id": case.id,
+                "case_code": case.case_code,
+                "child_name": case.child.full_name if case.child else None,
+                "billing": case_billing_dict(case),
+                "billing_snapshot": case_billing_dict(case),
+                "included_sessions": per_case_sessions,
+                "additional_sessions": 0,
+                "therapist_share_inr": share,
+                "session_lines": [],
+                "child_absence_lines": [],
+                "pending_approval_lines": [],
+                "pending_late_lines": [],
+                "pending_approval_inr": 0,
+                "pending_late_inr": 0,
+                "has_activity": share > 0,
+                "snapshot_incomplete": True,
+            }
+        )
+    return groups
+
+
+def _breakdown_from_live_preview(db: Session, invoice: Invoice) -> dict:
+    preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
+    subtotal, leave_ded, net = _stored_invoice_totals(invoice)
+    use_stored = invoice.subtotal_inr is not None or invoice.amount_inr is not None
+    return {
+        "id": invoice.id,
+        "therapist_user_id": invoice.therapist_user_id,
+        "month": invoice.month,
+        "status": invoice.status.value,
+        "subtotal_inr": subtotal if use_stored else float(preview["subtotal_inr"]),
+        "leave_deduction_inr": leave_ded if use_stored else float(preview["leave_deduction_inr"]),
+        "adjustment_inr": float(invoice.adjustment_inr or 0),
+        "amount_inr": net if use_stored else float(preview["net_amount_inr"]),
+        "net_amount_inr": net if use_stored else float(preview["net_amount_inr"]),
+        "sessions_count": int(invoice.sessions_count or preview["total_sessions"]),
+        "pending_approval_inr": preview.get("pending_approval_inr", preview.get("pending_late_inr", 0)),
+        "pending_approval_count": preview.get("pending_approval_count", preview.get("pending_late_count", 0)),
+        "pending_late_inr": preview.get("pending_late_inr", 0),
+        "pending_late_count": preview.get("pending_late_count", 0),
+        "notes": invoice.notes,
+        "reviewer_comment": invoice.reviewer_comment,
+        "cases": preview.get("cases") or [],
+        "leave_details": preview.get("leave_details") or [],
+        "leave_balance": preview.get("leave_balance"),
+        "attendance_summary": preview.get("attendance_summary") or {},
+        "rejected_notes": preview.get("rejected_notes") or [],
+        "from_preview": True,
+    }
+
+
+def _breakdown_from_stored_header(db: Session, invoice: Invoice) -> dict:
+    subtotal, leave_ded, net = _stored_invoice_totals(invoice)
+    live_preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
+    preview_cases = live_preview.get("cases") or []
+    preview_subtotal = sum(float(c.get("therapist_share_inr") or 0) for c in preview_cases)
+    if preview_subtotal > 0:
+        ratio = subtotal / preview_subtotal if subtotal else 1.0
+        cases = []
+        for pc in preview_cases:
+            cloned = dict(pc)
+            cloned["therapist_share_inr"] = round(float(pc.get("therapist_share_inr") or 0) * ratio, 2)
+            if not cloned.get("session_lines"):
+                cloned["snapshot_incomplete"] = True
+            cases.append(cloned)
+    else:
+        cases = _synthetic_case_groups_from_stored_header(db, invoice, subtotal)
+
+    facts_by_case = {c["case_id"]: c for c in preview_cases}
+    cases = [_merge_case_with_attendance_facts(c, facts_by_case.get(c["case_id"])) for c in cases]
+
+    return {
+        "id": invoice.id,
+        "therapist_user_id": invoice.therapist_user_id,
+        "month": invoice.month,
+        "status": invoice.status.value,
+        "subtotal_inr": subtotal,
+        "leave_deduction_inr": leave_ded,
+        "adjustment_inr": float(invoice.adjustment_inr or 0),
+        "amount_inr": net,
+        "net_amount_inr": net,
+        "sessions_count": int(invoice.sessions_count or 0),
+        "pending_approval_inr": 0,
+        "pending_approval_count": 0,
+        "pending_late_inr": 0,
+        "pending_late_count": 0,
+        "notes": invoice.notes,
+        "reviewer_comment": invoice.reviewer_comment,
+        "cases": cases,
+        "manual_lines": [_manual_line_dict(ml) for ml in list(invoice.manual_lines or [])],
+        "leave_details": [],
+        "leave_balance": live_preview.get("leave_balance"),
+        "attendance_summary": live_preview.get("attendance_summary") or {},
+        "rejected_notes": live_preview.get("rejected_notes") or [],
+        "from_stored_header": True,
+        "snapshot_incomplete": not any((c.get("session_lines") or []) for c in cases),
+    }
+
+
+def _breakdown_from_persisted_case_lines(db: Session, invoice: Invoice) -> dict:
+    cases = []
+    pending_late_inr = 0.0
+    pending_late_count = 0
+    for cl in invoice.case_lines:
+        case_group, case_pending_inr, case_pending_count = _case_group_from_case_line(db, cl)
+        pending_late_inr += case_pending_inr
+        pending_late_count += case_pending_count
+        cases.append(case_group)
+
+    live_preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
+    facts_by_case = {c["case_id"]: c for c in live_preview.get("cases", [])}
+    cases = [_merge_case_with_attendance_facts(c, facts_by_case.get(c["case_id"])) for c in cases]
+    subtotal, leave_ded, net = _stored_invoice_totals(invoice)
+
+    return {
+        "id": invoice.id,
+        "therapist_user_id": invoice.therapist_user_id,
+        "month": invoice.month,
+        "status": invoice.status.value,
+        "subtotal_inr": subtotal,
+        "leave_deduction_inr": leave_ded,
+        "adjustment_inr": float(invoice.adjustment_inr or 0),
+        "amount_inr": net,
+        "net_amount_inr": net,
+        "sessions_count": int(invoice.sessions_count or 0),
+        "pending_approval_inr": live_preview.get("pending_approval_inr", round(pending_late_inr, 2)),
+        "pending_approval_count": live_preview.get("pending_approval_count", pending_late_count),
+        "pending_late_inr": round(pending_late_inr, 2),
+        "pending_late_count": pending_late_count,
+        "notes": invoice.notes,
+        "reviewer_comment": invoice.reviewer_comment,
+        "cases": cases,
+        "manual_lines": [_manual_line_dict(ml) for ml in list(invoice.manual_lines or [])],
+        "attendance_summary": live_preview.get("attendance_summary") or {},
+        "rejected_notes": live_preview.get("rejected_notes") or [],
+        "leave_balance": live_preview.get("leave_balance"),
+        "snapshot_incomplete": not any((c.get("session_lines") or []) for c in cases),
+    }
+
+
+def _breakdown_from_persisted_lines(db: Session, invoice: Invoice) -> dict:
+    cases = []
+    pending_late_inr = 0.0
+    pending_late_count = 0
+    for cl in invoice.case_lines:
+        case_group, case_pending_inr, case_pending_count = _case_group_from_case_line(db, cl)
+        pending_late_inr += case_pending_inr
+        pending_late_count += case_pending_count
+        cases.append(case_group)
+
+    live_preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
+    facts_by_case = {c["case_id"]: c for c in live_preview.get("cases", [])}
+    cases = [_merge_case_with_attendance_facts(c, facts_by_case.get(c["case_id"])) for c in cases]
+    subtotal, leave_ded, net = _stored_invoice_totals(invoice)
+
+    return {
+        "id": invoice.id,
+        "therapist_user_id": invoice.therapist_user_id,
+        "month": invoice.month,
+        "status": invoice.status.value,
+        "subtotal_inr": subtotal,
+        "leave_deduction_inr": leave_ded,
+        "adjustment_inr": float(invoice.adjustment_inr or 0),
+        "amount_inr": net,
+        "net_amount_inr": net,
+        "sessions_count": invoice.sessions_count,
+        "pending_approval_inr": live_preview.get("pending_approval_inr", round(pending_late_inr, 2)),
+        "pending_approval_count": live_preview.get("pending_approval_count", pending_late_count),
+        "pending_late_inr": round(pending_late_inr, 2),
+        "pending_late_count": pending_late_count,
+        "notes": invoice.notes,
+        "reviewer_comment": invoice.reviewer_comment,
+        "cases": cases,
+        "manual_lines": [_manual_line_dict(ml) for ml in list(invoice.manual_lines or [])],
+        "attendance_summary": live_preview.get("attendance_summary") or {},
+        "rejected_notes": live_preview.get("rejected_notes") or [],
+        "leave_balance": live_preview.get("leave_balance"),
+    }
+
+
 def invoice_breakdown(db: Session, invoice_id: int) -> dict | None:
     invoice = db.scalars(
         select(Invoice)
@@ -880,116 +1164,13 @@ def invoice_breakdown(db: Session, invoice_id: int) -> dict | None:
         return None
 
     line_count = sum(len(cl.session_lines) for cl in invoice.case_lines)
-    if not invoice.case_lines or line_count == 0:
-        preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
-        leave_balance = preview.get("leave_balance")
-        subtotal = float(preview["subtotal_inr"])
-        leave_ded = float(preview["leave_deduction_inr"])
-        net = float(preview["net_amount_inr"])
-        return {
-            "id": invoice.id,
-            "therapist_user_id": invoice.therapist_user_id,
-            "month": invoice.month,
-            "status": invoice.status.value,
-            "subtotal_inr": subtotal,
-            "leave_deduction_inr": leave_ded,
-            "adjustment_inr": float(invoice.adjustment_inr or 0),
-            "amount_inr": net,
-            "net_amount_inr": net,
-            "sessions_count": preview["total_sessions"],
-            "pending_approval_inr": preview.get("pending_approval_inr", preview.get("pending_late_inr", 0)),
-            "pending_approval_count": preview.get("pending_approval_count", preview.get("pending_late_count", 0)),
-            "pending_late_inr": preview.get("pending_late_inr", 0),
-            "pending_late_count": preview.get("pending_late_count", 0),
-            "notes": invoice.notes,
-            "reviewer_comment": invoice.reviewer_comment,
-            "cases": preview.get("cases") or [],
-            "leave_details": preview.get("leave_details") or [],
-            "leave_balance": leave_balance,
-            "attendance_summary": preview.get("attendance_summary") or {},
-            "rejected_notes": preview.get("rejected_notes") or [],
-            "from_preview": True,
-        }
-
-    cases = []
-    pending_late_inr = 0.0
-    pending_late_count = 0
-    for cl in invoice.case_lines:
-        session_lines = []
-        pending_late_lines = []
-        for sl in cl.session_lines:
-            flags = sl.flags or {}
-            provisional = flags.get("provisional_amount_inr")
-            is_pending = provisional is not None and not sl.included
-            entry = {
-                "id": sl.id,
-                "session_id": sl.session_id,
-                "daily_log_id": sl.daily_log_id,
-                "session_date": sl.session_date.isoformat(),
-                "duration_minutes": sl.duration_minutes,
-                "line_type": sl.line_type.value,
-                "amount_inr": float(provisional if is_pending else sl.amount_inr),
-                "source": sl.source.value,
-                "included": sl.included,
-                "flags": flags,
-            }
-            if is_pending:
-                pending_late_lines.append(entry)
-                pending_late_inr += float(provisional)
-                pending_late_count += 1
-            else:
-                session_lines.append(entry)
-
-        child_name = None
-        case_row = db.get(Case, cl.case_id)
-        if case_row and case_row.child:
-            child_name = case_row.child.full_name
-        cases.append({
-            "case_id": cl.case_id,
-            "case_code": cl.case_code,
-            "child_name": child_name,
-            "billing_type": cl.billing_type,
-            "included_sessions": cl.included_sessions,
-            "additional_sessions": cl.additional_sessions,
-            "therapist_share_inr": float(cl.therapist_share_inr),
-            "billing_snapshot": cl.billing_snapshot,
-            "pending_approval_inr": round(sum(float(p["amount_inr"]) for p in pending_late_lines), 2),
-            "pending_late_inr": round(sum(float(p["amount_inr"]) for p in pending_late_lines), 2),
-            "session_lines": session_lines,
-            "pending_approval_lines": pending_late_lines,
-            "pending_late_lines": pending_late_lines,
-        })
-
-    live_preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
-    facts_by_case = {c["case_id"]: c for c in live_preview.get("cases", [])}
-    cases = [_merge_case_with_attendance_facts(c, facts_by_case.get(c["case_id"])) for c in cases]
-    leave_balance = live_preview.get("leave_balance")
-
-    return {
-        "id": invoice.id,
-        "therapist_user_id": invoice.therapist_user_id,
-        "month": invoice.month,
-        "status": invoice.status.value,
-        "subtotal_inr": float(invoice.subtotal_inr or invoice.amount_inr),
-        "leave_deduction_inr": float(invoice.leave_deduction_inr or 0),
-        "adjustment_inr": float(invoice.adjustment_inr or 0),
-        "amount_inr": float(invoice.amount_inr),
-        "net_amount_inr": float(invoice.amount_inr),
-        "sessions_count": invoice.sessions_count,
-        "pending_approval_inr": live_preview.get("pending_approval_inr", round(pending_late_inr, 2)),
-        "pending_approval_count": live_preview.get(
-            "pending_approval_count", pending_late_count
-        ),
-        "pending_late_inr": round(pending_late_inr, 2),
-        "pending_late_count": pending_late_count,
-        "notes": invoice.notes,
-        "reviewer_comment": invoice.reviewer_comment,
-        "cases": cases,
-        "manual_lines": [_manual_line_dict(ml) for ml in list(invoice.manual_lines or [])],
-        "attendance_summary": live_preview.get("attendance_summary") or {},
-        "rejected_notes": live_preview.get("rejected_notes") or [],
-        "leave_balance": leave_balance,
-    }
+    if line_count > 0:
+        return _breakdown_from_persisted_lines(db, invoice)
+    if invoice.case_lines:
+        return _breakdown_from_persisted_case_lines(db, invoice)
+    if invoice.status in _AMENDABLE_INVOICE_STATUSES:
+        return _breakdown_from_live_preview(db, invoice)
+    return _breakdown_from_stored_header(db, invoice)
 
 
 def _manual_line_dict(line: InvoiceManualLine) -> dict:

@@ -137,7 +137,7 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
             </button>
             <button
               type="button"
-              disabled={loading || !previewSummary?.cases?.length}
+              disabled={loading || !previewSummary?.cases?.length || !(previewSummary?.net_amount_inr > 0 || previewSummary?.subtotal_inr > 0)}
               onClick={handleContinue}
               className="min-h-[44px] rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >

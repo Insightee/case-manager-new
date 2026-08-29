@@ -100,13 +100,16 @@ export function InvoiceBreakdownModal({
 
   const sessionCount = displayData?.sessions_count ?? displayData?.total_sessions ?? 0
   const attendanceGist = formatModalHeaderSummary(displayData?.attendance_summary)
-  const hasCases = (displayData?.cases || []).some(
+  const hasSessionLines = (displayData?.cases || []).some(
     (c) =>
       (c.session_lines?.length || 0) +
         (c.pending_approval_lines?.length || c.pending_late_lines?.length || 0) +
         (c.child_absence_lines?.length || 0) >
       0,
   )
+  const hasCaseTotals = (displayData?.cases || []).some((c) => (c.therapist_share_inr ?? 0) > 0)
+  const hasCases = hasSessionLines || hasCaseTotals
+  const snapshotIncomplete = Boolean(displayData?.snapshot_incomplete || displayData?.from_stored_header)
 
   return (
     <div
@@ -146,6 +149,13 @@ export function InvoiceBreakdownModal({
           ) : null}
           {!loading && displayData ? (
             <>
+              {!hasSessionLines && hasCaseTotals ? (
+                <p className="mb-4 text-sm text-amber-800">
+                  {snapshotIncomplete
+                    ? 'Session line detail is not stored for this payout — case totals below match the approved statement.'
+                    : 'Case totals are shown below; individual session lines are not on file for this invoice.'}
+                </p>
+              ) : null}
               {!hasCases ? (
                 <p className="mb-4 text-sm text-amber-800">
                   No session lines found for this invoice. Add approved logs for the month or use Generate Invoice to
