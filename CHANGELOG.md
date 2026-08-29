@@ -15,6 +15,7 @@
 
 ### Changed
 - Finance snapshot enabled on insighte.org: Railway `ENABLE_BILLING=true` (read-only tower routes); Vercel Production `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` + `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true`. Ledger writes remain off. Runbook: `docs/FINANCE_SNAPSHOT_PROD_CUTOVER.md`, script: `scripts/enable_finance_snapshot_prod.py`.
+- Finance therapist payout preview Excel/CSV columns aligned to lumpsum billing: **Billing Type**, **Client Amount (INR)** (was package-only `Lumpsum Amount`), **Therapist Pay (INR)**, **Therapist Unit Pay (INR)** — no share/% headers. Closed snapshots remap legacy headers on read.
 - Finance Reports UI uses a card catalog (all 10 report types) with clearer empty states instead of a single dropdown.
 - Therapist compensation is lumpsum-only (`FIXED_LUMP`): UI and writers no longer offer percentage; `resolve_therapist_pay` reads `therapist_fixed_pay_inr` with fallback to legacy `pay_share_amount_inr`. Existing PERCENTAGE rows are copy-migrated (amounts already INR — not re-multiplied).
 - Finance **Margin by case** report includes `marginPct` and flags rows where Insighte margin is under 30% (`LOW_MARGIN_BELOW_30`); UI highlights those rows.
