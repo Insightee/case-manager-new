@@ -7,6 +7,7 @@ import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseBillingActionsCard } from './CaseBillingActionsCard.jsx'
 import { BillingApprovalPanel } from './BillingApprovalPanel.jsx'
+import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { PortalTabBar, StatusBadge } from './ui/index.js'
 import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
 import { AdminCaseIncidentsPanel } from './AdminCaseIncidentsPanel.jsx'
@@ -28,6 +29,8 @@ import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 import { CaseOverviewPanel } from './CaseOverviewPanel.jsx'
 import './admin-case-detail-mobile.css'
 
+const BILLING_TAB_PERMS = ['case.update', 'case.billing.update', 'invoice.approve', 'admin.override']
+
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'activity', label: 'Activity' },
@@ -38,7 +41,7 @@ const TABS = [
   { id: 'observation', label: 'Observation' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'Meetings' },
-  { id: 'billing', label: 'Billing', perms: ['case.billing.update', 'invoice.approve', 'admin.override'] },
+  { id: 'billing', label: 'Billing', perms: BILLING_TAB_PERMS },
   { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
 
@@ -62,7 +65,7 @@ export function AdminCaseDetailPage() {
   const accessAsMentor = Boolean(caseRow?.access_as_mentor)
   const canSeeBilling =
     !accessAsMentor &&
-    (can('case.billing.update') || can('invoice.approve') || can('admin.override'))
+    (can('case.update') || can('case.billing.update') || can('invoice.approve') || can('admin.override'))
   const visibleTabs = TABS.filter(
     (t) =>
       (!financeDesk || FINANCE_TAB_IDS.has(t.id)) &&
@@ -140,6 +143,11 @@ export function AdminCaseDetailPage() {
     } else {
       setBillingMsg('Billing saved.')
     }
+  }
+
+  async function saveServiceAddress(payload) {
+    const updated = await apiFetch(`/api/v1/cases/${caseId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+    setCaseRow(updated)
   }
 
   const activeAssignment = assignments.find((a) => a.status === 'ACTIVE') || null
