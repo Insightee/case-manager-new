@@ -8,6 +8,8 @@ import {
   lineStatusTag,
   partitionCaseLines,
   formatTherapistHeaderSummary,
+  showNextMonthSessionCount,
+  nextMonthSessionCount,
 } from '../../lib/therapistInvoiceCopy.js'
 import {
   billingSummary,
@@ -39,18 +41,10 @@ function StatusChip({ tag, tone = 'amber' }) {
 
 function SessionLineTags({ line }) {
   const tag = lineStatusTag(line)
-  const tone =
-    tag === 'Pending approval'
-      ? 'amber'
-      : tag === 'Still paid' || tag === 'Paid leave — no deduction'
-        ? 'green'
-        : tag === 'Deducted from pay'
-          ? 'rose'
-          : 'slate'
   return (
-    <div className="mt-1 flex flex-wrap gap-1">
-      <span className="text-xs text-slate-500">{line.ui_label || lineTypeLabel(line.line_type)}</span>
-      <StatusChip tag={tag} tone={tone} />
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      <span className="text-xs text-slate-600">{line.ui_label || lineTypeLabel(line.line_type)}</span>
+      {tag ? <StatusChip tag={tag} tone="amber" /> : null}
     </div>
   )
 }
@@ -101,9 +95,6 @@ function LineCard({ line, editable, pending, onToggle, onRemove }) {
           <p className="text-base font-bold tabular-nums text-slate-900">{formatInr(amount)}</p>
           {pending ? (
             <p className="text-[10px] font-medium text-amber-800">Not in this month’s pay yet</p>
-          ) : null}
-          {line.counts_toward_monthly && !pending ? (
-            <p className="text-[10px] font-medium text-emerald-800">Included in monthly share</p>
           ) : null}
         </div>
       </div>
@@ -260,11 +251,6 @@ function CaseBreakdown({
         {attendanceStrip ? (
           <p className="mt-1 text-xs font-medium text-slate-600">{attendanceStrip}</p>
         ) : null}
-        {homecare ? (
-          <p className="mt-1 text-xs text-slate-500">
-            Homecare pay is based on sessions done. Leave and child away are shown as cancelled — not billed.
-          </p>
-        ) : null}
         <p className="mt-2 text-sm font-bold text-indigo-900">
           Case total: {formatInr(caseGroup.therapist_share_inr)}
           {displayIncluded ? (
@@ -326,27 +312,24 @@ function CaseBreakdown({
           <AddLateSessionForm caseId={caseGroup.case_id} month={month} onAdded={onRefresh} />
         ) : null}
 
-        {homecare && editable ? (
+        {showNextMonthSessionCount(caseGroup) && editable ? (
           <NextMonthSessionPlanEditor
             plan={caseGroup.next_month_session_plan}
             onChange={(plan) => onNextMonthPlanChange?.(caseGroup.case_id, plan)}
           />
         ) : null}
 
-        {homecare && !editable && caseGroup.next_month_session_plan?.sessions?.length ? (
+        {showNextMonthSessionCount(caseGroup) &&
+        !editable &&
+        nextMonthSessionCount(caseGroup.next_month_session_plan) > 0 ? (
           <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3">
-            <p className="text-xs font-semibold uppercase text-sky-800">Next month session plan</p>
-            <ul className="mt-2 space-y-1 text-sm text-slate-700">
-              {caseGroup.next_month_session_plan.sessions.map((s, i) => (
-                <li key={`${s.date}-${i}`}>
-                  {formatDisplayDate(s.date)}
-                  {s.start_time ? ` · ${s.start_time}` : ''}
-                  {s.end_time ? `–${s.end_time}` : ''}
-                  {s.note ? ` · ${s.note}` : ''}
-                </li>
-              ))}
-            </ul>
-            {caseGroup.next_month_session_plan.notes ? (
+            <p className="text-xs font-semibold uppercase text-sky-800">Next month sessions</p>
+            <p className="mt-1 text-sm text-slate-800">
+              {nextMonthSessionCount(caseGroup.next_month_session_plan)} session
+              {nextMonthSessionCount(caseGroup.next_month_session_plan) === 1 ? '' : 's'} planned
+              <span className="text-slate-500"> (not billed this month)</span>
+            </p>
+            {caseGroup.next_month_session_plan?.notes ? (
               <p className="mt-2 text-xs text-slate-600">{caseGroup.next_month_session_plan.notes}</p>
             ) : null}
           </div>
@@ -394,7 +377,7 @@ export function InvoiceBreakdownView({
               </>
             )}
           </p>
-          <p className="mt-1 text-xs text-slate-500">Credits reset each January. Homecare leave does not use credits.</p>
+          <p className="mt-1 text-xs text-slate-500">Credits reset each January.</p>
         </div>
       ) : null}
 

@@ -18,9 +18,9 @@ export function formatModalHeaderSummary(attendanceSummary) {
   const billableAbsence = attendanceSummary.billable_absence ?? 0
   if (approved > 0) parts.push(`${approved} in this pay`)
   if (pending > 0) parts.push(`${pending} waiting on review`)
-  if (billableAbsence > 0) parts.push(`${billableAbsence} child away (still paid)`)
+  if (billableAbsence > 0) parts.push(`${billableAbsence} session cancelled`)
   if (attendanceSummary.leave_taken != null && attendanceSummary.leave_taken > 0) {
-    parts.push(`${attendanceSummary.leave_taken} cancelled for leave`)
+    parts.push(`${attendanceSummary.leave_taken} session cancelled`)
   } else {
     const paid = attendanceSummary.paid_leaves ?? 0
     const unpaid = attendanceSummary.unpaid_leaves ?? 0

@@ -95,7 +95,7 @@ def test_zero_leave_taken_omitted_from_summary():
     db = SessionLocal()
     try:
         therapist, _case = _therapist_and_case(db)
-        facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym="2026-07")
+        facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym="2026-03")
         assert facts["attendance_summary"].get("leave_taken") is None
         assert facts["attendance_summary"].get("paid_leaves") is None
         assert facts["attendance_summary"].get("unpaid_leaves") is None
@@ -336,11 +336,11 @@ def test_child_absence_not_payable_rejected_notes():
         info_lines = [
             l
             for l in case_facts["child_absence_lines"]
-            if l.get("breakdown_bucket") == "info" or (l.get("status_tag") or "").lower().find("not billed") >= 0
+            if l.get("breakdown_bucket") == "info"
         ]
-        # Non-payable child away stays on the breakdown as cancelled/not billed — not as rejected_notes spam.
+        # Non-payable child away stays on the breakdown as Session cancelled — not as rejected_notes spam.
         assert info_lines or any(
-            "not billed" in (l.get("ui_label") or "").lower() for l in case_facts["child_absence_lines"]
+            "cancelled" in (l.get("ui_label") or "").lower() for l in case_facts["child_absence_lines"]
         )
         assert not any(
             n["type"] == "child_absence" and n.get("status") != "REJECTED"
@@ -471,7 +471,7 @@ def test_homecare_child_absence_never_billed_even_if_rule_payable():
         assert lines
         assert lines[0]["included"] is False
         assert lines[0]["breakdown_bucket"] == "info"
-        assert "not billed" in lines[0]["ui_label"].lower()
+        assert lines[0]["ui_label"] == "Session cancelled"
         assert float(lines[0].get("amount_inr") or 0) == 0
 
         req = db.scalars(

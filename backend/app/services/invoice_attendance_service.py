@@ -59,13 +59,8 @@ def _month_date_range(year: int, month: int) -> tuple[date, date]:
 
 
 def _child_absence_ui_label(*, payable: bool, consumes_slot: bool, is_shadow: bool = False) -> str:
-    if not payable:
-        return labels.child_away_label(is_shadow=is_shadow, pending=False)
-    if is_shadow:
-        return labels.child_away_label(is_shadow=True, pending=False)
-    if consumes_slot:
-        return "Child away — counts toward package"
-    return "Child away — additional pay"
+    del payable, consumes_slot
+    return labels.child_away_label(is_shadow=is_shadow, pending=False)
 
 
 def _pending_reason_tag(*, late: bool) -> str:
@@ -271,52 +266,26 @@ def build_child_absence_line(
     package_index: int | None = None,
     db: Session | None = None,
 ) -> dict[str, Any]:
+    del package_index
     payable, consumes = _child_absence_policy(rule)
     as_of = session.scheduled_date
     shadow = is_shadow_case(case) or payout_cycle.uses_calendar_day_pay(case)
-    # Homecare: pay is actual sessions only — child away is always cancelled / not billed.
+    # Therapist invoice: child away is always Session cancelled @ ₹0 (homecare + shadow).
+    # Homecare also never consumes package slots for pay.
     if is_homecare_case(case) and not shadow:
         payable = False
         consumes = False
-    day_rate = _day_rate_inr(case, db=db, as_of=as_of)
-
-    if req.status == SessionAbsenceStatus.APPROVED and payable:
-        if case.billing_type == BillingType.PER_SESSION:
-            line_type = SessionLineType.PER_SESSION
-        elif consumes and package_index is not None:
-            line_type = _line_type_for_package_index(case, package_index)
-        else:
-            line_type = SessionLineType.ADDITIONAL
-        amount = _child_absence_amount(case, line_type, db=db, as_of=as_of)
-        ui_label = _child_absence_ui_label(payable=True, consumes_slot=consumes, is_shadow=shadow)
-        return {
-            "session_id": session.id,
-            "absence_request_id": req.id,
-            "session_date": session.scheduled_date.isoformat(),
-            "line_type": line_type.value,
-            "ui_label": ui_label,
-            "amount_inr": amount,
-            "display_amount_inr": amount,
-            "included": True,
-            "affects_net": True,
-            "breakdown_bucket": labels.BUCKET_IN_PAY,
-            "status_tag": labels.STILL_PAID_TAG if shadow else None,
-            "consumes_package_slot": consumes,
-            "approval_status": req.status.value,
-            "reason": req.reason,
-            "line_kind": "CHILD_AWAY",
-        }
+    del payable
 
     if req.status == SessionAbsenceStatus.PENDING_APPROVAL:
-        amount = day_rate if shadow else _child_absence_amount(case, SessionLineType.INCLUDED, db=db, as_of=as_of)
         return {
             "session_id": session.id,
             "absence_request_id": req.id,
             "session_date": session.scheduled_date.isoformat(),
             "line_type": SessionLineType.INCLUDED.value,
             "ui_label": labels.child_away_label(is_shadow=shadow, pending=True),
-            "amount_inr": amount,
-            "display_amount_inr": amount,
+            "amount_inr": 0.0,
+            "display_amount_inr": 0.0,
             "included": False,
             "affects_net": False,
             "breakdown_bucket": labels.BUCKET_PENDING,
@@ -329,40 +298,20 @@ def build_child_absence_line(
             "flags": {"pending_approval": True, "pending_reason": labels.PENDING_TAG},
         }
 
-    # Approved non-payable, or other terminal states.
-    # Shadow: still paid via monthly share — show day rate for clarity, do not add to net.
-    # Homecare: session cancelled — not billed.
-    if shadow:
-        return {
-            "session_id": session.id,
-            "absence_request_id": req.id,
-            "session_date": session.scheduled_date.isoformat(),
-            "line_type": SessionLineType.INCLUDED.value,
-            "ui_label": labels.child_away_label(is_shadow=True, pending=False),
-            "amount_inr": 0.0,
-            "display_amount_inr": day_rate,
-            "included": False,
-            "affects_net": False,
-            "counts_toward_monthly": True,
-            "breakdown_bucket": labels.BUCKET_IN_PAY,
-            "status_tag": labels.STILL_PAID_TAG,
-            "consumes_package_slot": False,
-            "approval_status": req.status.value,
-            "reason": req.reason,
-            "line_kind": "CHILD_AWAY",
-        }
+    # Approved (payable or not) and other terminal states — cancelled @ ₹0 on the statement.
     return {
         "session_id": session.id,
         "absence_request_id": req.id,
         "session_date": session.scheduled_date.isoformat(),
         "line_type": SessionLineType.INCLUDED.value,
-        "ui_label": labels.child_away_label(is_shadow=False, pending=False),
+        "ui_label": labels.child_away_label(is_shadow=shadow, pending=False),
         "amount_inr": 0.0,
         "display_amount_inr": 0.0,
         "included": False,
         "affects_net": False,
+        "counts_toward_monthly": bool(shadow),
         "breakdown_bucket": labels.BUCKET_INFO,
-        "status_tag": labels.NOT_BILLED_TAG,
+        "status_tag": None,
         "consumes_package_slot": False,
         "approval_status": req.status.value,
         "reason": req.reason,
@@ -460,7 +409,7 @@ def build_leave_lines_for_case(
                             "included": False,
                             "affects_net": False,
                             "breakdown_bucket": labels.BUCKET_INFO,
-                            "status_tag": labels.NOT_BILLED_TAG,
+                            "status_tag": None,
                             "line_kind": "LEAVE_CANCELLED",
                             "flags": {"homecare_leave": True, "leave_pending_elsewhere": True},
                         }
@@ -472,9 +421,9 @@ def build_leave_lines_for_case(
                         "session_date": d.isoformat(),
                         "duration_minutes": 0,
                         "line_type": SessionLineType.INCLUDED.value,
-                        "ui_label": labels.leave_label(is_shadow=shadow, paid=False, pending=True),
+                        "ui_label": labels.leave_label(is_shadow=True, paid=False, pending=True),
                         "amount_inr": 0.0,
-                        "display_amount_inr": day_rate if shadow else 0.0,
+                        "display_amount_inr": 0.0,
                         "included": False,
                         "affects_net": False,
                         "breakdown_bucket": labels.BUCKET_PENDING,
@@ -496,7 +445,6 @@ def build_leave_lines_for_case(
 
         # Distribute paid/unpaid across overlapping dates proportionally.
         paid_left = round(paid_days * (len(dates) / total)) if total else 0
-        unpaid_left = len(dates) - paid_left
         if not shadow:
             for d in dates:
                 lines.append(
@@ -511,7 +459,7 @@ def build_leave_lines_for_case(
                         "included": False,
                         "affects_net": False,
                         "breakdown_bucket": labels.BUCKET_INFO,
-                        "status_tag": labels.NOT_BILLED_TAG,
+                        "status_tag": None,
                         "line_kind": "LEAVE_CANCELLED",
                         "flags": {"homecare_leave": True},
                     }
@@ -529,12 +477,12 @@ def build_leave_lines_for_case(
                         "line_type": SessionLineType.INCLUDED.value,
                         "ui_label": labels.leave_label(is_shadow=True, paid=True),
                         "amount_inr": 0.0,
-                        "display_amount_inr": day_rate,
+                        "display_amount_inr": 0.0,
                         "included": False,
                         "affects_net": False,
                         "counts_toward_monthly": True,
                         "breakdown_bucket": labels.BUCKET_IN_PAY,
-                        "status_tag": labels.STILL_PAID_TAG,
+                        "status_tag": None,
                         "line_kind": "PAID_LEAVE",
                         "flags": {"paid_leave": True},
                     }
@@ -552,13 +500,11 @@ def build_leave_lines_for_case(
                         "included": False,
                         "affects_net": True,
                         "breakdown_bucket": labels.BUCKET_IN_PAY,
-                        "status_tag": labels.DEDUCTED_TAG,
+                        "status_tag": None,
                         "line_kind": "UNPAID_LEAVE",
                         "flags": {"unpaid_leave": True},
                     }
                 )
-            if not is_paid:
-                unpaid_left = max(unpaid_left - 1, 0)
     return lines
 
 

@@ -12,6 +12,18 @@ export function isHomecareCaseGroup(caseGroup) {
   return mod.includes('homecare')
 }
 
+export function isCounsellingCaseGroup(caseGroup) {
+  const mod = String(
+    caseGroup?.product_module ||
+      caseGroup?.billing?.product_module ||
+      caseGroup?.billing_snapshot?.product_module ||
+      caseGroup?.service_type ||
+      caseGroup?.billing?.service_type ||
+      '',
+  ).toLowerCase()
+  return mod.includes('counsel')
+}
+
 export function isShadowCaseGroup(caseGroup) {
   const mod = String(
     caseGroup?.product_module ||
@@ -23,15 +35,37 @@ export function isShadowCaseGroup(caseGroup) {
   return caseGroup?.billing_profile === 'calendar_day'
 }
 
+/** Homecare package/per-session except counselling — next-month session count UI. */
+export function showNextMonthSessionCount(caseGroup) {
+  if (!isHomecareCaseGroup(caseGroup) || isCounsellingCaseGroup(caseGroup)) return false
+  const bt = String(
+    caseGroup?.billing?.billing_type ||
+      caseGroup?.billing_snapshot?.billing_type ||
+      caseGroup?.billing_type ||
+      '',
+  ).toUpperCase()
+  return bt === 'PACKAGE' || bt === 'PER_SESSION' || !bt
+}
+
+export function nextMonthSessionCount(plan) {
+  if (!plan || typeof plan !== 'object') return 0
+  if (plan.session_count != null) return Math.max(0, Number(plan.session_count) || 0)
+  if (Array.isArray(plan.sessions)) return plan.sessions.length
+  return 0
+}
+
 export function lineDisplayAmount(line) {
   if (line?.display_amount_inr != null) return Number(line.display_amount_inr)
   return Number(line?.amount_inr || 0)
 }
 
+/** Only Pending chips — no Still paid / Not billed / Deducted tags. */
 export function lineStatusTag(line) {
-  if (line?.status_tag) return line.status_tag
-  if (line?.flags?.pending_approval || line?.breakdown_bucket === 'pending') return 'Pending approval'
-  if (line?.flags?.pending_reason) return line.flags.pending_reason
+  if (line?.breakdown_bucket === 'pending' || line?.flags?.pending_approval) {
+    return line?.status_tag === 'Pending' || line?.status_tag === 'Pending approval'
+      ? 'Pending'
+      : line?.status_tag || 'Pending'
+  }
   return null
 }
 
@@ -64,7 +98,7 @@ export function partitionCaseLines(caseGroup) {
       line.included === false &&
       (line.line_kind === 'CHILD_AWAY' ||
         line.line_kind === 'LEAVE_CANCELLED' ||
-        String(line.ui_label || '').includes('not billed'))
+        String(line.ui_label || '').toLowerCase().includes('cancelled'))
     ) {
       info.push(line)
       return
@@ -110,7 +144,7 @@ export function formatTherapistHeaderSummary(data) {
   const unpaid = summary.unpaid_leaves ?? 0
   if (paid > 0 || unpaid > 0) {
     const leaveBits = []
-    if (paid > 0) leaveBits.push(`${paid} paid leave (no deduction)`)
+    if (paid > 0) leaveBits.push(`${paid} paid leave`)
     if (unpaid > 0) leaveBits.push(`${unpaid} unpaid (−${formatInr(data.leave_deduction_inr)})`)
     parts.push(leaveBits.join(' · '))
   }

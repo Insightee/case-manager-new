@@ -81,18 +81,34 @@ def _is_homecare(case_group: dict) -> bool:
     return "homecare" in mod
 
 
+def _module_label(case_group: dict) -> str:
+    mod = str(
+        case_group.get("productModule")
+        or case_group.get("product_module")
+        or (case_group.get("billing") or {}).get("product_module")
+        or (case_group.get("billing_snapshot") or {}).get("product_module")
+        or ""
+    ).lower()
+    if "counsel" in mod:
+        return "Counselling"
+    if "homecare" in mod:
+        return "Homecare"
+    if "shadow" in mod or "b2b" in mod:
+        return "Shadow"
+    return "Case"
+
+
 def _collect_case_rows(case_group: dict) -> list[list[str]]:
-    """Session-wise rows for one case."""
+    """Session-wise rows for one case (no extra status tags except Pending)."""
     rows: list[list[str]] = []
 
     def add(line: dict, *, force_pending: bool = False) -> None:
         date_s = str(line.get("session_date") or "")
         what = str(line.get("ui_label") or line.get("line_type") or "Session")
-        tag = str(line.get("status_tag") or "")
         if force_pending or line.get("breakdown_bucket") == labels.BUCKET_PENDING or (line.get("flags") or {}).get(
             "pending_approval"
         ):
-            tag = labels.PENDING_TAG
+            what = f"{what} ({labels.PENDING_TAG})"
         amt = line.get("display_amount_inr")
         if amt is None:
             amt = line.get("amount_inr")
@@ -101,7 +117,7 @@ def _collect_case_rows(case_group: dict) -> list[list[str]]:
             in_pay = "Held"
         if line.get("breakdown_bucket") == labels.BUCKET_INFO:
             in_pay = "—"
-        rows.append([date_s, what, tag, _fmt_inr(float(amt or 0)), in_pay])
+        rows.append([date_s, what, _fmt_inr(float(amt or 0)), in_pay])
 
     for line in case_group.get("session_lines") or []:
         if line.get("included") is False and not (line.get("flags") or {}).get("pending_approval"):
@@ -242,22 +258,17 @@ def therapist_statement_pdf_bytes(payload: dict[str, Any]) -> bytes:
         title += " · Homecare" if block.get("homecare") else " · Shadow"
         story.append(Paragraph(title, section_style))
         if block.get("homecare"):
-            story.append(
-                Paragraph(
-                    "Homecare pay is based on sessions completed. Leave and child away are cancelled — not billed.",
-                    fine_style,
-                )
-            )
+            story.append(Paragraph("Homecare: pay is based on sessions completed.", fine_style))
         else:
             story.append(
                 Paragraph(
-                    "Shadow monthly share: child away and paid leave stay paid; unpaid leave is deducted.",
+                    "Shadow: unpaid leave is deducted from monthly share; paid leave is not.",
                     fine_style,
                 )
             )
-        table_data = [["Date", "What happened", "Tag", "Amount", "In this pay?"]]
-        table_data.extend(block.get("rows") or [["—", "No session lines", "", "", ""]])
-        t = Table(table_data, colWidths=[70, 180, 90, 60, 70])
+        table_data = [["Date", "What happened", "Amount", "In this pay?"]]
+        table_data.extend(block.get("rows") or [["—", "No session lines", "", ""]])
+        t = Table(table_data, colWidths=[75, 230, 70, 80])
         t.setStyle(
             TableStyle(
                 [
@@ -265,7 +276,7 @@ def therapist_statement_pdf_bytes(payload: dict[str, Any]) -> bytes:
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                     ("FONTSIZE", (0, 0), (-1, -1), 8),
                     ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
-                    ("ALIGN", (3, 1), (3, -1), "RIGHT"),
+                    ("ALIGN", (2, 1), (2, -1), "RIGHT"),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ]
             )
@@ -274,18 +285,20 @@ def therapist_statement_pdf_bytes(payload: dict[str, Any]) -> bytes:
         story.append(Paragraph(f'Case total: {_fmt_inr(block.get("caseTotal"))}', body_style))
 
         plan = block.get("nextMonthPlan") or {}
-        plan_sessions = plan.get("sessions") if isinstance(plan, dict) else None
-        if plan_sessions:
-            story.append(Paragraph("Next month session plan (not billed this month)", fine_style))
-            for s in plan_sessions:
-                story.append(
-                    Paragraph(
-                        f'• {s.get("date", "")} {s.get("start_time") or ""}'
-                        f'{("–" + s["end_time"]) if s.get("end_time") else ""}'
-                        f'{(" · " + s["note"]) if s.get("note") else ""}',
-                        fine_style,
-                    )
+        count = 0
+        if isinstance(plan, dict):
+            count = int(plan.get("session_count") or 0)
+            if not count and isinstance(plan.get("sessions"), list):
+                count = len(plan["sessions"])
+        if count > 0:
+            story.append(
+                Paragraph(
+                    f"Next month: {count} session{'s' if count != 1 else ''} planned (not billed this month)",
+                    fine_style,
                 )
+            )
+            if isinstance(plan, dict) and plan.get("notes"):
+                story.append(Paragraph(str(plan["notes"]), fine_style))
 
     lb = payload.get("leaveBalance")
     if lb:

@@ -88,14 +88,15 @@ def test_homecare_child_absence_is_info_not_pending():
         assert abs_lines
         line = abs_lines[0]
         assert line["breakdown_bucket"] == labels.BUCKET_INFO
-        assert "not billed" in line["ui_label"].lower()
-        assert line.get("status_tag") == labels.NOT_BILLED_TAG
+        assert line["ui_label"] == "Session cancelled"
+        assert line.get("status_tag") in (None, "")
+        assert float(line.get("display_amount_inr") or 0) == 0
         assert all(l.get("breakdown_bucket") != labels.BUCKET_PENDING or l.get("line_kind") == "PENDING_ABSENCE" for l in abs_lines)
     finally:
         db.close()
 
 
-def test_shadow_child_away_still_paid_display_amount():
+def test_shadow_child_away_is_session_cancelled_zero():
     db = SessionLocal()
     try:
         therapist = _therapist(db)
@@ -128,11 +129,10 @@ def test_shadow_child_away_still_paid_display_amount():
         )
         case_facts = next(c for c in facts["cases"] if c["case_id"] == case.id)
         line = case_facts["child_absence_lines"][0]
-        assert line["breakdown_bucket"] == labels.BUCKET_IN_PAY
-        assert line.get("counts_toward_monthly") is True
-        assert float(line.get("display_amount_inr") or 0) > 0
-        assert "still paid" in line["ui_label"].lower()
-        assert "not billable" not in line["ui_label"].lower()
+        assert line["breakdown_bucket"] == labels.BUCKET_INFO
+        assert line["ui_label"] == "Session cancelled"
+        assert float(line.get("display_amount_inr") or 0) == 0
+        assert line.get("status_tag") in (None, "")
     finally:
         db.close()
 
@@ -185,8 +185,8 @@ def test_pdf_uses_childcare_company_and_session_rows():
                 "childName": "Asha",
                 "homecare": True,
                 "caseTotal": 6000,
-                "rows": [["2026-06-01", "Session completed", "", "₹3,000", "Yes"]],
-                "nextMonthPlan": {"sessions": [{"date": "2026-07-05", "start_time": "09:00"}]},
+                "rows": [["2026-06-01", "Session completed", "₹3,000", "Yes"]],
+                "nextMonthPlan": {"session_count": 4, "notes": "Prefer mornings"},
             }
         ],
         "leaveBalance": None,
@@ -198,7 +198,7 @@ def test_pdf_uses_childcare_company_and_session_rows():
     text = _pdf_extract_text(raw)
     assert b"Insighte" in text
     assert b"Homecare" in text or b"Session completed" in text
-    assert b"2026-07-05" in text or b"Next month" in text
+    assert b"4 session" in text or b"Next month" in text
 
 
 def test_next_month_plan_normalized_on_preview_edit():
@@ -231,11 +231,11 @@ def test_next_month_plan_normalized_on_preview_edit():
             "next_month_plans": {
                 "42": {
                     "notes": "Morning preference",
-                    "sessions": [{"date": "2026-07-08", "start_time": "10:00", "end_time": "11:00"}],
+                    "session_count": 6,
                 }
             }
         },
     )
     plan = edited["cases"][0]["next_month_session_plan"]
     assert plan["notes"] == "Morning preference"
-    assert plan["sessions"][0]["date"] == "2026-07-08"
+    assert plan["session_count"] == 6

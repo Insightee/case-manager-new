@@ -29,29 +29,18 @@ from app.services.reports_export_helpers import cases_by_ids, parent_by_child, c
 
 
 def _normalize_next_month_plan(raw: Any) -> dict[str, Any]:
+    """Next-month plan is a session count (legacy sessions[] maps to count)."""
     if not isinstance(raw, dict):
-        return {"notes": "", "sessions": []}
-    sessions_in = raw.get("sessions") or []
-    sessions: list[dict[str, Any]] = []
-    if isinstance(sessions_in, list):
-        for row in sessions_in[:60]:
-            if not isinstance(row, dict):
-                continue
-            d = str(row.get("date") or "").strip()
-            if not d:
-                continue
-            sessions.append(
-                {
-                    "date": d,
-                    "start_time": str(row.get("start_time") or "").strip() or None,
-                    "end_time": str(row.get("end_time") or "").strip() or None,
-                    "note": str(row.get("note") or "").strip() or None,
-                }
-            )
-    return {
-        "notes": str(raw.get("notes") or "").strip()[:2000],
-        "sessions": sessions,
-    }
+        return {"notes": "", "session_count": 0}
+    notes = str(raw.get("notes") or "").strip()[:2000]
+    count_raw = raw.get("session_count")
+    if count_raw is None and isinstance(raw.get("sessions"), list):
+        count_raw = len(raw.get("sessions") or [])
+    try:
+        session_count = max(0, min(int(count_raw or 0), 60))
+    except (TypeError, ValueError):
+        session_count = 0
+    return {"notes": notes, "session_count": session_count}
 
 
 def parse_month(month: str) -> tuple[int, int, str]:
@@ -633,7 +622,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
             "leave_lines": leave_lines,
             "pending_approval_lines": pending_approval_lines,
             "pending_late_lines": pending_approval_lines,
-            "next_month_session_plan": {"notes": "", "sessions": []},
+            "next_month_session_plan": {"notes": "", "session_count": 0},
             "cycle": {
                 "calendarDays": segment.calendar_days if segment else 0,
                 "unpaidLeaves": segment.unpaid_leaves if segment else 0,

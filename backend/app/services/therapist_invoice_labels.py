@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 
-PENDING_TAG = "Pending approval"
-STILL_PAID_TAG = "Still paid"
-NOT_BILLED_TAG = "Not billed"
-DEDUCTED_TAG = "Deducted from pay"
+PENDING_TAG = "Pending"
 
 BUCKET_IN_PAY = "in_pay"
 BUCKET_PENDING = "pending"
@@ -16,26 +13,25 @@ def session_completed_label(*, line_type: str | None = None) -> str:
     if line_type == "ADDITIONAL":
         return "Extra session"
     if line_type == "INCLUDED":
-        return "Counts toward package"
+        return "Session completed"
     return "Session completed"
 
 
-def child_away_label(*, is_shadow: bool, pending: bool = False) -> str:
+def child_away_label(*, is_shadow: bool = False, pending: bool = False) -> str:
+    del is_shadow  # Same wording for all modules — amount stays ₹0.
     if pending:
-        return "Child away — waiting on review"
-    if is_shadow:
-        return "Child away — still paid"
-    return "Session cancelled — not billed"
+        return "Session cancelled"
+    return "Session cancelled"
 
 
 def leave_label(*, is_shadow: bool, paid: bool, pending: bool = False) -> str:
     if pending:
-        return "Leave — waiting on review"
+        return "Leave" if is_shadow else "Session cancelled"
     if not is_shadow:
-        return "Session cancelled — not billed"
+        return "Session cancelled"
     if paid:
-        return "Paid leave — no deduction"
-    return "Unpaid leave — deducted"
+        return "Paid leave"
+    return "Unpaid leave"
 
 
 def pending_reason_label(*, late: bool) -> str:
