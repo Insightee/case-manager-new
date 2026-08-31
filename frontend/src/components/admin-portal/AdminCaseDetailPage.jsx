@@ -40,11 +40,17 @@ const TABS = [
   { id: 'observation', label: 'Observation' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'Meetings' },
-  { id: 'billing', label: 'Billing', perms: ['case.update', 'case.billing.update', 'invoice.approve'] },
+  { id: 'billing', label: 'Billing', perms: BILLING_TAB_PERMS },
   { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
 
 const FINANCE_TAB_IDS = new Set(['overview', 'activity', 'logs', 'billing'])
+
+const BILLING_TAB_PERMS = ['case.update', 'case.billing.update', 'invoice.approve']
+
+function canAccessBillingTab(can) {
+  return BILLING_TAB_PERMS.some((permission) => can(permission))
+}
 
 export function AdminCaseDetailPage() {
   const { caseId } = useParams()
@@ -398,8 +404,7 @@ export function AdminCaseDetailPage() {
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' &&
-        (can('case.update') || can('case.billing.update') || (financeDesk && can('invoice.approve'))) && (
+      {tab === 'billing' && canAccessBillingTab(can) && (
         <section className="admin-layout admin-layout--stack">
           {billingApprovalRequestId && !financeDesk ? (
             <BillingApprovalPanel requestId={billingApprovalRequestId} onApplied={load} />

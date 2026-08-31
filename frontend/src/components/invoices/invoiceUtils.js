@@ -113,6 +113,11 @@ export function billingSummary(b) {
       b.client_rate_per_session_inr != null ? `₹${b.client_rate_per_session_inr}/session · ` : ''
     return `${clientPart}₹${share} therapist share`
   }
+  if (b.billing_type === 'MONTHLY_FIXED') {
+    const clientPart =
+      b.client_monthly_rate_inr != null ? `₹${b.client_monthly_rate_inr}/month · ` : ''
+    return `${clientPart}₹${share} therapist share`
+  }
   if (b.compensation_mode === 'FIXED_LUMP') {
     return `Package ${b.package_session_count} sessions · ₹${b.therapist_fixed_pay_inr} fixed pay`
   }

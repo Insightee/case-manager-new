@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { billingSummary } from '../invoices/invoiceUtils.js'
-import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   product_billing_rule_id: '',
   billing_type: '',
   client_billing_mode: '',
   client_rate_per_session_inr: '',
+  client_monthly_rate_inr: '',
   package_session_count: '',
   package_amount_inr: '',
   compensation_mode: '',
@@ -21,12 +21,38 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState('')
   const [productRules, setProductRules] = useState([])
+  const [productRulesState, setProductRulesState] = useState('idle')
+  const [productRulesHint, setProductRulesHint] = useState('')
 
   useEffect(() => {
     if (!caseItem?.product_module) return
+    let cancelled = false
+    setProductRulesState('loading')
+    setProductRulesHint('')
     apiFetch(`/api/v1/admin/ledger-billing/product-rules?product_module=${caseItem.product_module}`)
-      .then(setProductRules)
-      .catch(() => setProductRules([]))
+      .then((rules) => {
+        if (cancelled) return
+        setProductRules(Array.isArray(rules) ? rules : [])
+        setProductRulesState('ready')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setProductRules([])
+        setProductRulesState('error')
+        const status = err?.status
+        if (status === 404) {
+          setProductRulesHint(
+            'Product billing rules are unavailable until ENABLE_BILLING is enabled on the server. You can still set rates below.',
+          )
+        } else if (status === 403) {
+          setProductRulesHint('Product rule list needs invoice.approve — rates below can still be saved.')
+        } else {
+          setProductRulesHint(err?.message || 'Could not load product billing rules.')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [caseItem?.product_module])
 
   useEffect(() => {
@@ -43,6 +69,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
       billing_type: caseItem.billing_type || '',
       client_billing_mode: caseItem.client_billing_mode || '',
       client_rate_per_session_inr: caseItem.client_rate_per_session_inr ?? '',
+      client_monthly_rate_inr: caseItem.client_monthly_rate_inr ?? '',
       package_session_count: caseItem.package_session_count ?? '',
       package_amount_inr: caseItem.package_amount_inr ?? '',
       compensation_mode: caseItem.compensation_mode || '',
@@ -77,6 +104,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
         billing_type: form.billing_type || null,
         client_billing_mode: form.client_billing_mode || null,
         client_rate_per_session_inr: form.client_rate_per_session_inr ? Number(form.client_rate_per_session_inr) : null,
+        client_monthly_rate_inr: form.client_monthly_rate_inr ? Number(form.client_monthly_rate_inr) : null,
         package_session_count: form.package_session_count ? Number(form.package_session_count) : null,
         package_amount_inr: form.package_amount_inr ? Number(form.package_amount_inr) : null,
         compensation_mode: form.compensation_mode || null,
@@ -97,6 +125,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
   const summary = billingSummary({
     billing_type: form.billing_type,
     client_rate_per_session_inr: form.client_rate_per_session_inr,
+    client_monthly_rate_inr: form.client_monthly_rate_inr,
     package_session_count: form.package_session_count,
     package_amount_inr: form.package_amount_inr,
     compensation_mode: form.compensation_mode,
@@ -130,7 +159,17 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
             </option>
           ))}
         </select>
-        {productRules.length === 0 ? (
+        {productRulesState === 'loading' ? (
+          <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+            Loading product rules…
+          </span>
+        ) : null}
+        {productRulesHint ? (
+          <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+            {productRulesHint}
+          </span>
+        ) : null}
+        {productRulesState === 'ready' && productRules.length === 0 && !productRulesHint ? (
           <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
             No rules for module &quot;{caseItem.product_module}&quot; — add under Finance → ledger billing, or change
             this case&apos;s product module to match an existing rule set.
@@ -150,6 +189,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
         <select value={form.billing_type} onChange={(e) => setField('billing_type', e.target.value)} required>
           <option value="">Select…</option>
           <option value="PER_SESSION">Per session</option>
+          <option value="MONTHLY_FIXED">Monthly fixed</option>
           <option value="PACKAGE">Package</option>
         </select>
       </label>
@@ -162,6 +202,19 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
           </label>
           <label>
             Therapist share (INR)
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
+          </label>
+        </>
+      ) : null}
+
+      {form.billing_type === 'MONTHLY_FIXED' ? (
+        <>
+          <label>
+            Monthly rate (INR)
+            <input type="number" min="0" value={form.client_monthly_rate_inr} onChange={(e) => setField('client_monthly_rate_inr', e.target.value)} />
+          </label>
+          <label>
+            Therapist pay share (INR)
             <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
           </label>
         </>

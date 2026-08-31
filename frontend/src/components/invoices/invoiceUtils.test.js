@@ -64,6 +64,16 @@ test('billingSummary fixed-lump package shows therapist fixed pay only', () => {
   assert.equal(out, 'Package 20 sessions · ₹25000 fixed pay')
 })
 
+test('billingSummary shows client monthly rate for admin monthly payload', () => {
+  const out = billingSummary({
+    billing_type: 'MONTHLY_FIXED',
+    client_monthly_rate_inr: 29000,
+    pay_share_amount_inr: 18000,
+  })
+  assert.match(out, /₹29000\/month/)
+  assert.match(out, /₹18000 therapist share/)
+})
+
 test('billingSummary handles unconfigured billing', () => {
   assert.equal(billingSummary(null), 'Billing not configured')
   assert.equal(billingSummary({}), 'Billing not configured')
