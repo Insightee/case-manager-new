@@ -255,17 +255,20 @@ def therapist_statement_pdf_bytes(payload: dict[str, Any]) -> bytes:
         title = f'{block.get("caseCode") or "Case"}'
         if block.get("childName"):
             title += f' · {block["childName"]}'
-        title += " · Homecare" if block.get("homecare") else " · Shadow"
+        title += f' · {_module_label(block)}'
         story.append(Paragraph(title, section_style))
-        if block.get("homecare"):
+        mod_label = _module_label(block)
+        if mod_label == "Homecare":
             story.append(Paragraph("Homecare: pay is based on sessions completed.", fine_style))
-        else:
+        elif mod_label == "Shadow":
             story.append(
                 Paragraph(
                     "Shadow: unpaid leave is deducted from monthly share; paid leave is not.",
                     fine_style,
                 )
             )
+        elif mod_label == "Counselling":
+            story.append(Paragraph("Counselling: pay is based on sessions completed.", fine_style))
         table_data = [["Date", "What happened", "Amount", "In this pay?"]]
         table_data.extend(block.get("rows") or [["—", "No session lines", "", ""]])
         t = Table(table_data, colWidths=[75, 230, 70, 80])
