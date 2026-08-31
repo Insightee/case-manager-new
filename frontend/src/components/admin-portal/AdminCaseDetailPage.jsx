@@ -73,7 +73,7 @@ export function AdminCaseDetailPage() {
     (t) =>
       (!financeDesk || FINANCE_TAB_IDS.has(t.id)) &&
       !(accessAsMentor && (t.id === 'billing' || t.id === 'scheduling')) &&
-      !(cmFocused && (t.id === 'billing' || t.id === 'cm-meetings')) &&
+      !(cmFocused && (t.id === 'billing' || t.id === 'cm-meetings' || t.id === 'scheduling')) &&
       (t.id !== 'billing' || canSeeBilling) &&
       (!t.perm || can(t.perm)) &&
       (!t.perms || t.perms.some((permission) => can(permission))) &&
@@ -179,6 +179,7 @@ export function AdminCaseDetailPage() {
   const canAssignCase = Boolean(
     caseRow &&
       !caseRow.access_as_mentor &&
+      !cmFocused &&
       can('case.assign') &&
       !financeDesk &&
       canWriteProduct(caseRow.product_module),
@@ -364,7 +365,7 @@ export function AdminCaseDetailPage() {
         </section>
       )}
 
-      {tab === 'scheduling' && can('slot.book_any') && (
+      {tab === 'scheduling' && can('slot.book_any') && !cmFocused && (
         <AdminCaseSchedulingPanel
           caseItem={caseRow}
           assignments={assignments}

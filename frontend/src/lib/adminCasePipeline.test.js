@@ -195,4 +195,12 @@ describe('buildPipelineActions', () => {
     assert.ok(!actions.some((a) => a.id === 'close'))
     assert.ok(actions.some((a) => a.id === 'case'))
   })
+
+  it('hides assign actions for case-manager-only users', () => {
+    const actions = buildPipelineActions(
+      { id: 2, pipeline_column: 'needs_therapist', product_module: 'homecare' },
+      { canAssign: true, canUpdate: true, canCreate: true, canWrite: true, cmFocused: true },
+    )
+    assert.ok(!actions.some((a) => a.id === 'reallot'))
+  })
 })

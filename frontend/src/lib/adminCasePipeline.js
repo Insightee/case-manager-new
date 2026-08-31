@@ -468,7 +468,7 @@ export async function activateCaseAllotment(caseId) {
 /**
  * Primary + secondary actions for a pipeline row (no navigation on row click).
  */
-export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false }) {
+export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false, cmFocused = false }) {
   if (detailsOnly) {
     return [{ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` }]
   }
@@ -476,9 +476,9 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
     const actions = [
       {
         id: 'transition',
-        label: 'Manage transition',
+        label: cmFocused ? 'View case' : 'Manage transition',
         variant: 'primary',
-        href: `/admin/cases/${row.id}?tab=scheduling`,
+        href: cmFocused ? `/admin/cases/${row.id}` : `/admin/cases/${row.id}?tab=scheduling`,
       },
       { id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` },
     ]
@@ -494,7 +494,7 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
   const actions = []
   const col = row.pipeline_column
-  const write = canWrite && canAssign
+  const write = canWrite && canAssign && !cmFocused
   const writeCase = canWrite && canUpdate
   const writeCreate = canWrite && canCreate
 
