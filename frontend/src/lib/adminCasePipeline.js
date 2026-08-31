@@ -105,8 +105,6 @@ export function defaultOpenedRange(referenceDate = new Date()) {
   return { from: isoDay(start), to: isoDay(today) }
 }
 
-const DEFAULT_OPENED = defaultOpenedRange()
-
 const EMPTY_FILTERS = {
   queue: 'all',
   search: '',
@@ -115,11 +113,11 @@ const EMPTY_FILTERS = {
   caseManagerId: 'all',
   therapistId: 'all',
   childId: 'all',
-  openedPreset: 'custom',
+  openedPreset: 'all',
   openedMonth: 'all',
   openedYear: 'all',
-  dateFrom: DEFAULT_OPENED.from,
-  dateTo: DEFAULT_OPENED.to,
+  dateFrom: '',
+  dateTo: '',
   operationalStage: 'all',
   unassignedCmOnly: false,
   unassignedTherapistOnly: false,
@@ -403,12 +401,9 @@ export function countActivePipelineFilters(filters = {}) {
   if (f.caseManagerId !== 'all') n += 1
   if (f.therapistId !== 'all') n += 1
   if (f.childId !== 'all') n += 1
-  const defaultRange = defaultOpenedRange()
-  if (f.openedPreset === 'all') {
-    n += 1
-  } else if (f.openedPreset === 'custom') {
-    if (f.dateFrom !== defaultRange.from || f.dateTo !== defaultRange.to) n += 1
-  } else if (f.openedPreset !== 'this_month') {
+  if (f.openedPreset === 'custom') {
+    if (f.dateFrom || f.dateTo) n += 1
+  } else if (f.openedPreset !== 'all' && f.openedPreset !== 'this_month') {
     n += 1
   }
   if (f.openedMonth !== 'all') n += 1

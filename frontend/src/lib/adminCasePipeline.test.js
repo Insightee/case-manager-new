@@ -147,11 +147,10 @@ describe('defaultOpenedRange', () => {
 })
 
 describe('filterPipelineRows opened date range', () => {
-  it('defaults to current month window', () => {
+  it('defaults to all cases without an opened-date window', () => {
     const filters = defaultPipelineFilters()
     const rows = filterPipelineRows(datedSampleRows, filters)
-    assert.equal(rows.length, 1)
-    assert.equal(rows[0].case_code, 'IC-2026-001')
+    assert.equal(rows.length, 2)
   })
 
   it('includes older cases when preset is all', () => {
@@ -165,9 +164,10 @@ describe('countActivePipelineFilters date defaults', () => {
     assert.equal(countActivePipelineFilters(defaultPipelineFilters()), 0)
   })
 
-  it('counts custom range when dates differ from default', () => {
+  it('counts custom range when dates are set', () => {
     const n = countActivePipelineFilters({
       ...defaultPipelineFilters(),
+      openedPreset: 'custom',
       dateFrom: '2026-01-01',
       dateTo: '2026-01-31',
     })
