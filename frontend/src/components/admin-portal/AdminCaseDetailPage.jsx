@@ -24,6 +24,7 @@ import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { isFinanceDeskUser } from '../../lib/financeDesk.js'
+import { isCaseManagerOnlyRole } from '../../lib/adminCasePipeline.js'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 import { CaseOverviewPanel } from './CaseOverviewPanel.jsx'
@@ -57,6 +58,7 @@ export function AdminCaseDetailPage() {
   const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { canReviewLogs } = useModuleWrite()
   const financeDesk = isFinanceDeskUser(user)
+  const cmFocused = isCaseManagerOnlyRole(user?.roles || [])
   const clinicalRevamp = isReportsRevampActive('admin')
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
@@ -65,11 +67,13 @@ export function AdminCaseDetailPage() {
   const accessAsMentor = Boolean(caseRow?.access_as_mentor)
   const canSeeBilling =
     !accessAsMentor &&
+    !cmFocused &&
     (can('case.update') || can('case.billing.update') || can('invoice.approve') || can('admin.override'))
   const visibleTabs = TABS.filter(
     (t) =>
       (!financeDesk || FINANCE_TAB_IDS.has(t.id)) &&
       !(accessAsMentor && (t.id === 'billing' || t.id === 'scheduling')) &&
+      !(cmFocused && (t.id === 'billing' || t.id === 'cm-meetings')) &&
       (t.id !== 'billing' || canSeeBilling) &&
       (!t.perm || can(t.perm)) &&
       (!t.perms || t.perms.some((permission) => can(permission))) &&
@@ -331,9 +335,9 @@ export function AdminCaseDetailPage() {
         <CaseDocumentsPanel caseId={Number(caseRow?.id || caseId)} variant="admin" />
       )}
 
-      {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
+      {tab === 'cm-meetings' && !cmFocused && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' && canSeeBilling && (
+      {tab === 'billing' && canSeeBilling && !cmFocused && (
         <section className="admin-layout admin-layout--stack">
           {billingApprovalRequestId && !financeDesk ? (
             <BillingApprovalPanel requestId={billingApprovalRequestId} onApplied={load} />
