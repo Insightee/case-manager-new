@@ -22,6 +22,7 @@ from app.services import email_service
 from app.services import leave_migration_service as leave_migration
 from app.services import leave_service
 from app.services import notification_service
+from app.services.parent_notification_preferences import parent_wants_log_leave_emails
 from app.services.assignment_service import resolve_primary_case_manager_user_id
 
 
@@ -186,7 +187,7 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
             entity_id=leave.id,
         )
         u = db.get(User, parent_user_id)
-        if u:
+        if u and parent_wants_log_leave_emails(u):
             email_service.leave_pending_parent_email(
                 to=u.email,
                 therapist_name=therapist.full_name,
@@ -461,7 +462,7 @@ def notify_leave_cancelled_after_approval(db: Session, leave: TherapistLeave, th
         lines = reinstated_by_parent.get(parent_user_id, [])
         case_codes = ", ".join(c.case_code for c in cases)
         u = db.get(User, parent_user_id)
-        if u:
+        if u and parent_wants_log_leave_emails(u):
             email_service.leave_cancelled_after_approval_email(
                 to=u.email,
                 therapist_name=therapist.full_name,

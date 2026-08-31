@@ -236,6 +236,28 @@ def test_parent_profile_secondary_contact():
     assert body["secondary_contact_email"] == "spouse@example.com"
 
 
+def test_parent_profile_log_leave_email_preference():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+    assert profile.get("receive_log_leave_emails") is True
+
+    off = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": False},
+    )
+    assert off.status_code == 200, off.text
+    assert off.json()["receive_log_leave_emails"] is False
+
+    on = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": True},
+    )
+    assert on.status_code == 200, on.text
+    assert on.json()["receive_log_leave_emails"] is True
+
+
 def test_parent_profile_home_and_school_addresses_are_separate():
     headers = _login("parent@demo.com")
     r = client.patch(

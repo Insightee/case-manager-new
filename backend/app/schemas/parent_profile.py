@@ -55,6 +55,7 @@ class ParentProfileRead(BaseModel):
     children: list[ParentChildRead] = []
     services: list[ParentServiceRead] = []
     homecare_cases: list[ParentHomecareCaseRead] = []
+    receive_log_leave_emails: bool = True
 
 
 class ParentServiceAddressPatch(BaseModel):
@@ -86,3 +87,4 @@ class ParentProfileUpdate(BaseModel):
     address_type: Optional[VisitAddressType] = None
     children: Optional[list[ParentChildUpdate]] = None
     service_address: Optional[ParentServiceAddressPatch] = None
+    receive_log_leave_emails: Optional[bool] = None

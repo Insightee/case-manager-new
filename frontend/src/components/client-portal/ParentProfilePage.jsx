@@ -150,6 +150,7 @@ export function ParentProfilePage() {
   const [addressType, setAddressType] = useState('home') // which address is shown / preferred for visits
   const [billingSame, setBillingSame] = useState(true)
   const [billingAddr, setBillingAddr] = useState(emptyAddress())
+  const [receiveLogLeaveEmails, setReceiveLogLeaveEmails] = useState(true)
   const [homecareCases, setHomecareCases] = useState([])
 
   const loadProfile = useCallback(async () => {
@@ -162,6 +163,7 @@ export function ParentProfilePage() {
       setPhone(p.phone || '')
       setSecondaryContactName(p.secondary_contact_name || '')
       setSecondaryContactEmail(p.secondary_contact_email || '')
+      setReceiveLogLeaveEmails(p.receive_log_leave_emails !== false)
       setChildren(
         dedupeChildren(p.children).map((c) => ({
           id: c.id,
@@ -252,6 +254,7 @@ export function ParentProfilePage() {
         phone: phone.trim() || null,
         secondary_contact_name: secondaryContactName.trim() || null,
         secondary_contact_email: secondaryContactEmail.trim() || null,
+        receive_log_leave_emails: receiveLogLeaveEmails,
         address_type: addressType,
         ...addressToPayload(homeAddr, 'home_'),
         ...addressToPayload(schoolAddr, 'school_'),
@@ -489,6 +492,28 @@ export function ParentProfilePage() {
               </p>
             )}
           </div>
+        </section>
+
+        <section className="parent-profile__card">
+          <h3>Email updates</h3>
+          <p className="parent-profile__hint">
+            Choose whether we email you about session logs and therapist leave on your cases.
+          </p>
+          <label className="parent-profile__checkbox-row">
+            <input
+              type="checkbox"
+              checked={receiveLogLeaveEmails}
+              onChange={(e) => setReceiveLogLeaveEmails(e.target.checked)}
+            />
+            <span className="parent-profile__checkbox-copy">
+              <strong>Receive emails (session logs &amp; leave)</strong>
+              <span className="parent-profile__checkbox-sub">
+                {receiveLogLeaveEmails
+                  ? 'We will email you when a log is submitted or a therapist requests leave.'
+                  : 'You will still see updates in the portal, but we will not email you about logs or leave.'}
+              </span>
+            </span>
+          </label>
         </section>
 
         <div className="parent-profile__save-bar">

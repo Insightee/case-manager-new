@@ -103,6 +103,36 @@
   margin-top: 8px;
 }
 
+.parent-profile__checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.parent-profile__checkbox-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: #6366f1;
+  flex-shrink: 0;
+}
+
+.parent-profile__checkbox-copy {
+  display: grid;
+  gap: 4px;
+  font-size: 0.875rem;
+  color: #0f172a;
+}
+
+.parent-profile__checkbox-sub {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: #64748b;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .parent-profile__card {
     padding: 16px;
