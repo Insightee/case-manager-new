@@ -24,6 +24,7 @@ from app.core.session_times import effective_session_datetimes
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_attendance_service as attendance
 from app.services import payout_settlement_service
+from app.services import therapist_invoice_labels as labels
 from app.services.reports_export_helpers import cases_by_ids, parent_by_child, case_people_export_fields
 
 
@@ -898,6 +899,13 @@ def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: 
         for sl in case_group.get("session_lines", []):
             if not sl.get("included"):
                 continue
+            flags = dict(sl.get("flags") or {})
+            if sl.get("ui_label"):
+                flags["ui_label"] = sl["ui_label"]
+            if sl.get("breakdown_bucket"):
+                flags["breakdown_bucket"] = sl["breakdown_bucket"]
+            if sl.get("line_kind"):
+                flags["line_kind"] = sl["line_kind"]
             db.add(
                 InvoiceSessionLine(
                     invoice_case_line_id=case_line.id,
@@ -909,13 +917,19 @@ def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: 
                     amount_inr=sl["amount_inr"],
                     source=SessionLineSource(sl.get("source", SessionLineSource.LOG.value)),
                     included=True,
-                    flags=sl.get("flags") or {},
+                    flags=flags,
                 )
             )
 
         for sl in case_group.get("pending_approval_lines") or case_group.get("pending_late_lines") or []:
             flags = dict(sl.get("flags") or {})
             flags["provisional_amount_inr"] = sl["amount_inr"]
+            if sl.get("ui_label"):
+                flags["ui_label"] = sl["ui_label"]
+            if sl.get("breakdown_bucket"):
+                flags["breakdown_bucket"] = sl["breakdown_bucket"]
+            if sl.get("line_kind"):
+                flags["line_kind"] = sl["line_kind"]
             db.add(
                 InvoiceSessionLine(
                     invoice_case_line_id=case_line.id,
@@ -1008,9 +1022,20 @@ def _session_line_entry(sl: InvoiceSessionLine) -> tuple[dict, bool]:
         "duration_minutes": sl.duration_minutes,
         "line_type": sl.line_type.value,
         "amount_inr": float(provisional if is_pending else sl.amount_inr),
+        "display_amount_inr": float(provisional if is_pending else sl.amount_inr),
         "source": sl.source.value,
         "included": sl.included,
         "flags": flags,
+        "line_kind": flags.get("line_kind") or ("PENDING_LOG" if is_pending else "SESSION"),
+        "breakdown_bucket": flags.get("breakdown_bucket")
+        or (
+            labels.BUCKET_PENDING
+            if is_pending
+            else (labels.BUCKET_IN_PAY if sl.included else labels.BUCKET_INFO)
+        ),
+        "ui_label": flags.get("ui_label")
+        or labels.session_completed_label(line_type=sl.line_type.value),
+        "status_tag": labels.PENDING_TAG if is_pending else None,
     }
     return entry, is_pending
 

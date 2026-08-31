@@ -447,6 +447,25 @@ def build_leave_lines_for_case(
     for lv in leaves:
         if lv.status == LeaveStatus.PENDING:
             for d in _iter_leave_dates(lv, month_start, month_end):
+                if not shadow:
+                    lines.append(
+                        {
+                            "leave_id": lv.id,
+                            "session_date": d.isoformat(),
+                            "duration_minutes": 0,
+                            "line_type": SessionLineType.INCLUDED.value,
+                            "ui_label": labels.leave_label(is_shadow=False, paid=False, pending=False),
+                            "amount_inr": 0.0,
+                            "display_amount_inr": 0.0,
+                            "included": False,
+                            "affects_net": False,
+                            "breakdown_bucket": labels.BUCKET_INFO,
+                            "status_tag": labels.NOT_BILLED_TAG,
+                            "line_kind": "LEAVE_CANCELLED",
+                            "flags": {"homecare_leave": True, "leave_pending_elsewhere": True},
+                        }
+                    )
+                    continue
                 lines.append(
                     {
                         "leave_id": lv.id,
