@@ -6,6 +6,7 @@ import {
   countActivePipelineFilters,
   defaultOpenedRange,
   defaultPipelineFilters,
+  displayCaseClientName,
   deriveOpenedYearOptions,
   filterPipelineRows,
   filterPipelineRowsForQueueCounts,
@@ -136,6 +137,16 @@ test('filterPipelineRows applies case state and queue together', () => {
     openedPreset: 'all',
   })
   assert.equal(pipelineActiveNeedsAction.length, 0)
+})
+
+describe('displayCaseClientName', () => {
+  it('collapses duplicated labels from bad imports', () => {
+    assert.equal(
+      displayCaseClientName('Tattva Swayam Open Learning Resource Centre Tattva Swayam Open Learning Resource Centre'),
+      'Tattva Swayam Open Learning Resource Centre',
+    )
+    assert.equal(displayCaseClientName('Ava Demo'), 'Ava Demo')
+  })
 })
 
 describe('defaultOpenedRange', () => {

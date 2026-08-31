@@ -24,7 +24,7 @@ import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { isFinanceDeskUser } from '../../lib/financeDesk.js'
-import { isCaseManagerOnlyRole } from '../../lib/adminCasePipeline.js'
+import { isCaseManagerOnlyRole, displayCaseClientName } from '../../lib/adminCasePipeline.js'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 import { CaseOverviewPanel } from './CaseOverviewPanel.jsx'
@@ -231,7 +231,7 @@ export function AdminCaseDetailPage() {
 
       <header className="admin-case-detail__header-compact admin-case-detail__header--desktop" style={{ marginBottom: 12 }}>
         <p className="admin-page__eyebrow">{caseRow.case_code}</p>
-        <h1 className="admin-page__title">{caseRow.child_name}</h1>
+        <h1 className="admin-page__title">{displayCaseClientName(caseRow.child_name)}</h1>
         <p className="admin-page__subtitle admin-portal-lead">
           Therapist:{' '}
           <strong>{activeAssignment?.therapist_name || 'Unassigned'}</strong>

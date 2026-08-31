@@ -196,6 +196,14 @@ export function isCaseManagerOnlyRole(roles = []) {
   return !roles.some((r) => STAFF_ROLES_BLOCKING_CM_ONLY.has(r))
 }
 
+/** Collapse duplicated import labels like "Acme Acme" for case headers. */
+export function displayCaseClientName(name) {
+  if (!name) return ''
+  const text = String(name).trim().replace(/\s+/g, ' ')
+  const repeated = text.match(/^(.+?)\s+\1$/)
+  return repeated ? repeated[1] : text
+}
+
 export function defaultCaseManagerFilterId(user) {
   if (!isCaseManagerOnlyRole(user?.roles || [])) return null
   return user?.id ? String(user.id) : null
