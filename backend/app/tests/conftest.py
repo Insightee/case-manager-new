@@ -103,7 +103,11 @@ def future_meeting_date(days_ahead: int = 14) -> str:
     """ISO date safely in the future for meeting booking tests."""
     from datetime import date, timedelta
 
-    return (date.today() + timedelta(days=days_ahead)).isoformat()
+    target = date.today() + timedelta(days=days_ahead)
+    # Availability defaults are weekday-only; keep meeting tests off Sat/Sun.
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    return target.isoformat()
 
 
 def past_meeting_date(days_ago: int = 1) -> str:
