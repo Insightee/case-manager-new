@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import csv
 import json
+import uuid
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import extract, or_, select
@@ -17,7 +18,15 @@ from app.core.database import get_db
 from app.core.db_errors import commit_or_http
 from app.core.module_access import get_allowed_case_product_modules, is_view_only_user
 from app.core.module_write import ensure_feature_write_access, guard_clinical_case
-from app.core.permissions import RoleName, case_scope_check, user_has_permission
+from app.core.timezone import IST, now_ist, today_ist
+from app.core.permissions import (
+    RoleName,
+    case_scope_check,
+    effective_role,
+    has_any_role,
+    has_role,
+    user_has_permission,
+)
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.child import Child
@@ -25,6 +34,15 @@ from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, M
 from app.models.meeting_action import MeetingAction
 from app.models.session import Session as TherapySession, SessionStatus
 from app.models.user import User
+from app.services import parent_service
+from app.services import availability_service
+from app.services.cm_meeting_service import meeting_participant_user_ids, parse_staff_attendee_ids
+from app.services.cm_meeting_service import user_can_view_meeting, notify_meeting_cancellation
+from app.services.cm_meeting_service import send_meeting_reminder_if_within_hour
+from app.services.admin_scope_service import scoped_case_ids_subquery, user_sees_global_cases
+from app.services.mentor_scope_service import mentor_case_ids_subquery
+from app.services.reports_export_helpers import parse_int_list
+from app.services import case_document_service as doc_svc
 
 router = APIRouter(tags=["meetings"])
 compat_router = APIRouter(tags=["cm-meetings"])
@@ -38,7 +56,8 @@ class MeetingActionSchema(BaseModel):
     title: str
     owner_role: str  # parent, therapist, case_manager, admin
     due_date: Optional[date] = None
-    status: str = "open"  # open, completed
+    status: Optional[str] = None  # open, completed
+    id: Optional[int] = None
 
 
 class MeetingCreate(BaseModel):
@@ -107,26 +126,29 @@ class MeetingReschedulePayload(BaseModel):
     reschedule_reason: str
 
 
+class MeetingCancelPayload(BaseModel):
+    reason: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers & Validations
+# scheduled_time is naive local time in Asia/Kolkata (IST).
 # ---------------------------------------------------------------------------
-
-def _role_name(user: User) -> str:
-    return user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
-
 
 def _can_read_meetings(user: User) -> bool:
     if user_has_permission(user, "admin.override"):
         return True
-    role = _role_name(user)
-    return role in {
-        RoleName.CASE_MANAGER.value,
-        RoleName.ADMIN.value,
-        RoleName.SUPER_ADMIN.value,
-        RoleName.SUPERVISOR.value,
-        RoleName.THERAPIST.value,
-        RoleName.PARENT.value,
-    }
+    return has_any_role(
+        user,
+        RoleName.CASE_MANAGER,
+        RoleName.ADMIN,
+        RoleName.MODULE_ADMIN,
+        RoleName.SUPER_ADMIN,
+        RoleName.SUPERVISOR,
+        RoleName.HR,
+        RoleName.THERAPIST,
+        RoleName.PARENT,
+    )
 
 
 def _require_meetings_read(user: User) -> None:
@@ -135,14 +157,15 @@ def _require_meetings_read(user: User) -> None:
 
 
 def _require_meetings_write(user: User) -> None:
-    role = _role_name(user)
-    allowed = {
-        RoleName.CASE_MANAGER.value,
-        RoleName.ADMIN.value,
-        RoleName.SUPER_ADMIN.value,
-        RoleName.THERAPIST.value,
-    }
-    if role not in allowed and not user_has_permission(user, "admin.override"):
+    allowed = has_any_role(
+        user,
+        RoleName.CASE_MANAGER,
+        RoleName.ADMIN,
+        RoleName.MODULE_ADMIN,
+        RoleName.SUPER_ADMIN,
+        RoleName.THERAPIST,
+    )
+    if not allowed and not user_has_permission(user, "admin.override"):
         raise HTTPException(status_code=403, detail="Not allowed to schedule meetings")
     if is_view_only_user(user):
         raise HTTPException(status_code=403, detail="View-only access — changes are not allowed")
@@ -155,8 +178,7 @@ def _guard_meeting_write(
     *,
     meeting: CaseManagerMeeting | None = None,
 ) -> None:
-    role = _role_name(user)
-    if role == RoleName.THERAPIST.value:
+    if effective_role(user) == RoleName.THERAPIST.value:
         from app.services.cm_meeting_service import user_can_view_meeting
         if meeting is not None and user_can_view_meeting(meeting, user.id):
             return
@@ -180,19 +202,6 @@ def _guard_meeting_write(
 def _validate_meeting_duration(duration: int) -> None:
     if duration not in {30, 45, 60, 90}:
         raise HTTPException(status_code=400, detail="Meeting duration must be 30, 45, 60, or 90 minutes")
-
-
-def meeting_availability_slots_grid() -> list[time]:
-    """30-minute start times from 09:00 through 20:00."""
-    anchor = date(2000, 1, 1)
-    start = datetime.combine(anchor, time(9, 0))
-    end = datetime.combine(anchor, time(20, 0))
-    slots: list[time] = []
-    cur = start
-    while cur <= end:
-        slots.append(cur.time())
-        cur += timedelta(minutes=30)
-    return slots
 
 
 def _all_case_product_modules(db: Session) -> set[str]:
@@ -219,15 +228,15 @@ def _bookable_cases_stmt(
             return stmt.where(Case.id < 0)
         stmt = stmt.where(Case.product_module.in_(allowed_modules))
 
-    role = _role_name(user)
+    role = effective_role(user)
     if case_manager_user_id is not None:
-        if role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
+        if _is_case_manager_scoped(user):
             if case_manager_user_id != user.id:
                 raise HTTPException(status_code=403, detail="Cannot view another case manager's caseload")
         elif role == RoleName.THERAPIST.value:
             raise HTTPException(status_code=403, detail="Not allowed")
         stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
-    elif role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
+    elif _is_case_manager_scoped(user):
         stmt = stmt.where(Case.case_manager_user_id == user.id)
     elif role == RoleName.THERAPIST.value:
         stmt = (
@@ -264,19 +273,98 @@ def _validate_meeting_link(platform: Optional[str], url: Optional[str]) -> None:
         raise HTTPException(status_code=400, detail="Invalid Microsoft Teams URL")
 
 
+def _normalize_guest_emails(guest_emails: Optional[list[str]]) -> str | None:
+    cleaned = [e.strip() for e in guest_emails or [] if e and e.strip()]
+    return json.dumps(cleaned) if cleaned else None
+
+
+def _meeting_start_dt(meeting_date: date | None, meeting_time: time | None) -> datetime | None:
+    if meeting_date is None:
+        return None
+    start_time = meeting_time or time(0, 0)
+    return datetime.combine(meeting_date, start_time, tzinfo=IST)
+
+
 def _can_complete_meeting(user: User, meeting: CaseManagerMeeting) -> bool:
     if user_has_permission(user, "admin.override"):
         return True
-    role = _role_name(user)
-    return role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id == user.id
+    return has_role(user, RoleName.CASE_MANAGER) and meeting.case_manager_user_id == user.id
 
 
 def _viewer_is_therapist(user: User | None) -> bool:
-    return user is not None and _role_name(user) == RoleName.THERAPIST.value
+    return user is not None and effective_role(user) == RoleName.THERAPIST.value
 
 
 def _viewer_is_parent(user: User | None) -> bool:
-    return user is not None and _role_name(user) == RoleName.PARENT.value
+    return user is not None and effective_role(user) == RoleName.PARENT.value
+
+
+def _is_case_manager_scoped(user: User) -> bool:
+    """True when the user should be limited to their own CM caseload for meetings."""
+    if user_has_permission(user, "admin.override"):
+        return False
+    return effective_role(user) == RoleName.CASE_MANAGER.value
+
+
+def _case_manager_meeting_scope(user: User, db: Session):
+    clauses = [CaseManagerMeeting.case_manager_user_id == user.id]
+    mentor_case_ids = list(db.scalars(mentor_case_ids_subquery(user.id)).all())
+    if mentor_case_ids:
+        clauses.append(CaseManagerMeeting.case_id.in_(mentor_case_ids))
+    return or_(*clauses)
+
+
+def _meetings_scope_stmt(user: User, db: Session, *, include_rescheduled: bool = False):
+    stmt = select(CaseManagerMeeting).options(selectinload(CaseManagerMeeting.actions)).order_by(
+        CaseManagerMeeting.scheduled_date.desc(),
+        CaseManagerMeeting.scheduled_time.desc(),
+    )
+
+    role = effective_role(user)
+    if _is_case_manager_scoped(user):
+        stmt = stmt.where(_case_manager_meeting_scope(user, db))
+    elif role == RoleName.SUPERVISOR.value and not user_has_permission(user, "admin.override"):
+        case_ids = db.scalars(scoped_case_ids_subquery(user)).all()
+        if not case_ids:
+            stmt = stmt.where(CaseManagerMeeting.id < 0)
+        else:
+            stmt = stmt.where(
+                or_(
+                    CaseManagerMeeting.case_id.in_(case_ids),
+                    CaseManagerMeeting.case_manager_user_id == user.id,
+                )
+            )
+    elif role == RoleName.THERAPIST.value:
+        assigned_case_ids = list(
+            db.scalars(
+                select(CaseAssignment.case_id).where(
+                    CaseAssignment.therapist_user_id == user.id,
+                    CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                )
+            ).all()
+        )
+        therapist_clauses = [
+            CaseManagerMeeting.therapist_user_id == user.id,
+            CaseManagerMeeting.parent_user_id == user.id,
+        ]
+        if assigned_case_ids:
+            therapist_clauses.append(CaseManagerMeeting.case_id.in_(assigned_case_ids))
+        stmt = stmt.where(or_(*therapist_clauses))
+    elif role == RoleName.PARENT.value:
+        child_ids = parent_service.child_ids_for_parent(db, user.id)
+        if not child_ids:
+            return stmt.where(CaseManagerMeeting.id < 0)
+        case_ids = list(db.scalars(select(Case.id).where(Case.child_id.in_(child_ids))).all())
+        if not case_ids:
+            return stmt.where(CaseManagerMeeting.id < 0)
+        stmt = stmt.where(
+            CaseManagerMeeting.case_id.in_(case_ids),
+            CaseManagerMeeting.status != MeetingStatus.CANCELLED,
+        )
+
+    if not include_rescheduled:
+        stmt = stmt.where(CaseManagerMeeting.status != MeetingStatus.RESCHEDULED)
+    return stmt
 
 
 def _apply_role_scoped_notes(data: dict, viewer: User | None) -> dict:
@@ -317,100 +405,157 @@ def _apply_role_scoped_notes(data: dict, viewer: User | None) -> dict:
     return data
 
 
-def _serialize(meeting: CaseManagerMeeting, db: Session, viewer: User | None = None) -> dict:
-    from app.services.cm_meeting_service import build_attendee_rows, parse_staff_attendee_ids
-    from app.core.timezone import today_ist
-
-    cm = db.get(User, meeting.case_manager_user_id)
-    parent = db.get(User, meeting.parent_user_id) if meeting.parent_user_id else None
-    therapist = db.get(User, meeting.therapist_user_id) if meeting.therapist_user_id else None
-    mentor = db.get(User, meeting.mentor_user_id) if meeting.mentor_user_id else None
-    
-    child_name: Optional[str] = None
-    case_code: Optional[str] = None
-    if meeting.case_id:
-        case = db.get(Case, meeting.case_id)
-        if case:
-            case_code = case.case_code
-            if case.child:
-                child_name = case.child.full_name
-
-    attendees = build_attendee_rows(meeting, db)
-    if meeting.mentor_user_id and mentor:
-        attendees.append({"role": "mentor", "user_id": mentor.id, "name": mentor.full_name})
-
-    notes_missing = not meeting.notes_outcome or not meeting.notes_summary
-    display_status = meeting.status.value if meeting.status else None
-    if meeting.status == MeetingStatus.SCHEDULED:
-        if meeting.scheduled_date and meeting.scheduled_date < today_ist():
-            display_status = "OVERDUE_NOTES" if notes_missing else "COMPLETED"
-        elif meeting.scheduled_date == today_ist() and notes_missing:
-            display_status = "PENDING_NOTES"
-    elif meeting.status == MeetingStatus.COMPLETED and notes_missing:
-        if meeting.scheduled_date and meeting.scheduled_date < today_ist():
-            display_status = "OVERDUE_NOTES"
-        else:
-            display_status = "PENDING_NOTES"
-
-    # Actions list
-    action_items = [
-        {
-            "id": a.id,
-            "title": a.title,
-            "owner_role": a.owner_role,
-            "due_date": a.due_date.isoformat() if a.due_date else None,
-            "status": a.status,
-        }
-        for a in meeting.actions
-    ]
-
-    data = {
-        "id": meeting.id,
-        "case_manager_user_id": meeting.case_manager_user_id,
-        "case_manager_name": cm.full_name if cm else None,
-        "case_id": meeting.case_id,
-        "case_code": case_code,
-        "child_name": child_name,
-        "parent_user_id": meeting.parent_user_id,
-        "parent_name": parent.full_name if parent else None,
-        "therapist_user_id": meeting.therapist_user_id,
-        "therapist_name": therapist.full_name if therapist else None,
-        "mentor_user_id": meeting.mentor_user_id,
-        "mentor_name": mentor.full_name if mentor else None,
-        "scheduled_date": meeting.scheduled_date.isoformat() if meeting.scheduled_date else None,
-        "scheduled_time": meeting.scheduled_time.strftime("%H:%M") if meeting.scheduled_time else None,
-        "duration_minutes": meeting.duration_minutes,
-        "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
-        "other_reason": meeting.other_reason,
-        "title": meeting.title,
-        "status": meeting.status.value if meeting.status else None,
-        "display_status": display_status,
-        "platform": meeting.platform,
-        "meeting_url": meeting.meeting_url,
-        "guest_emails": json.loads(meeting.guest_emails_json) if meeting.guest_emails_json else [],
-        "admin_user_ids": parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json),
-        "attendees": attendees,
-        "rescheduled_from_id": meeting.rescheduled_from_id,
-        "reschedule_reason": meeting.reschedule_reason,
-        "notes_outcome": meeting.notes_outcome,
-        "notes_summary": meeting.notes_summary,
-        "notes_next_meeting_required": meeting.notes_next_meeting_required,
-        "notes_additional": meeting.notes_additional,
-        "therapist_notes": meeting.therapist_notes,
-        "actions": action_items,
-        "linked_observation_report_id": meeting.linked_observation_report_id,
-        "linked_observation_checklist_id": meeting.linked_observation_checklist_id,
-        "linked_iep_id": meeting.linked_iep_id,
-        "linked_monthly_report_id": meeting.linked_monthly_report_id,
-        "linked_incident_id": meeting.linked_incident_id,
-        "linked_ticket_id": meeting.linked_ticket_id,
-        "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
-    }
-    return _apply_role_scoped_notes(data, viewer)
-
-
 def _serialize_many(meetings: list[CaseManagerMeeting], db: Session, viewer: User | None = None) -> list[dict]:
-    return [_serialize(m, db, viewer=viewer) for m in meetings]
+    if not meetings:
+        return []
+
+    meeting_ids = [meeting.id for meeting in meetings]
+    case_ids = sorted({meeting.case_id for meeting in meetings if meeting.case_id})
+    user_ids: set[int] = set()
+    for meeting in meetings:
+        user_ids.update(
+            uid
+            for uid in (
+                meeting.case_manager_user_id,
+                meeting.parent_user_id,
+                meeting.therapist_user_id,
+                meeting.mentor_user_id,
+                meeting.completed_by_user_id,
+                meeting.cancelled_by_user_id,
+            )
+            if uid
+        )
+        user_ids.update(parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json))
+
+    users_by_id = {
+        user.id: user
+        for user in db.scalars(select(User).where(User.id.in_(sorted(user_ids)))).all()
+    } if user_ids else {}
+    cases_by_id = {
+        case.id: case
+        for case in db.scalars(
+            select(Case).options(selectinload(Case.child)).where(Case.id.in_(case_ids))
+        ).all()
+    } if case_ids else {}
+    actions_by_meeting: dict[int, list[MeetingAction]] = {}
+    for action in db.scalars(select(MeetingAction).where(MeetingAction.meeting_id.in_(meeting_ids))).all():
+        actions_by_meeting.setdefault(action.meeting_id, []).append(action)
+
+    serialized: list[dict] = []
+    today = today_ist()
+    for meeting in meetings:
+        cm = users_by_id.get(meeting.case_manager_user_id)
+        parent = users_by_id.get(meeting.parent_user_id) if meeting.parent_user_id else None
+        therapist = users_by_id.get(meeting.therapist_user_id) if meeting.therapist_user_id else None
+        mentor = users_by_id.get(meeting.mentor_user_id) if meeting.mentor_user_id else None
+        completed_by = users_by_id.get(meeting.completed_by_user_id) if meeting.completed_by_user_id else None
+        cancelled_by = users_by_id.get(meeting.cancelled_by_user_id) if meeting.cancelled_by_user_id else None
+
+        case = cases_by_id.get(meeting.case_id) if meeting.case_id else None
+        case_code = case.case_code if case else None
+        child_name = case.child.full_name if case and case.child else None
+
+        attendees: list[dict] = []
+        seen_attendees: set[tuple[str, int]] = set()
+
+        def add_attendee(role: str, user: User | None) -> None:
+            if not user:
+                return
+            key = (role, user.id)
+            if key in seen_attendees:
+                return
+            seen_attendees.add(key)
+            attendees.append({"role": role, "user_id": user.id, "name": user.full_name or user.email})
+
+        add_attendee("case_manager", cm)
+        add_attendee("client", parent)
+        add_attendee("therapist", therapist)
+        add_attendee("mentor", mentor)
+        for uid in parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json):
+            add_attendee("admin", users_by_id.get(uid))
+
+        notes_missing = not meeting.notes_outcome or not meeting.notes_summary
+        display_status = meeting.status.value if meeting.status else None
+        if meeting.status == MeetingStatus.SCHEDULED:
+            if meeting.scheduled_date and meeting.scheduled_date < today:
+                display_status = "OVERDUE_NOTES" if notes_missing else "COMPLETED"
+            elif meeting.scheduled_date == today and notes_missing:
+                display_status = "PENDING_NOTES"
+        elif meeting.status == MeetingStatus.COMPLETED and notes_missing:
+            if meeting.scheduled_date and meeting.scheduled_date < today:
+                display_status = "OVERDUE_NOTES"
+            else:
+                display_status = "PENDING_NOTES"
+
+        action_items = [
+            {
+                "id": action.id,
+                "title": action.title,
+                "owner_role": action.owner_role,
+                "due_date": action.due_date.isoformat() if action.due_date else None,
+                "status": action.status,
+            }
+            for action in actions_by_meeting.get(meeting.id, [])
+        ]
+
+        data = {
+            "id": meeting.id,
+            "series_id": meeting.series_id,
+            "case_manager_user_id": meeting.case_manager_user_id,
+            "case_manager_name": cm.full_name if cm else None,
+            "case_id": meeting.case_id,
+            "case_code": case_code,
+            "child_name": child_name,
+            "parent_user_id": meeting.parent_user_id,
+            "parent_name": parent.full_name if parent else None,
+            "therapist_user_id": meeting.therapist_user_id,
+            "therapist_name": therapist.full_name if therapist else None,
+            "mentor_user_id": meeting.mentor_user_id,
+            "mentor_name": mentor.full_name if mentor else None,
+            "scheduled_date": meeting.scheduled_date.isoformat() if meeting.scheduled_date else None,
+            "scheduled_time": meeting.scheduled_time.strftime("%H:%M") if meeting.scheduled_time else None,
+            "duration_minutes": meeting.duration_minutes,
+            "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
+            "other_reason": meeting.other_reason,
+            "title": meeting.title,
+            "status": meeting.status.value if meeting.status else None,
+            "display_status": display_status,
+            "platform": meeting.platform,
+            "meeting_url": meeting.meeting_url,
+            "guest_emails": json.loads(meeting.guest_emails_json) if meeting.guest_emails_json else [],
+            "admin_user_ids": parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json),
+            "attendees": attendees,
+            "rescheduled_from_id": meeting.rescheduled_from_id,
+            "reschedule_reason": meeting.reschedule_reason,
+            "cancel_reason": meeting.cancel_reason,
+            "cancelled_by_user_id": meeting.cancelled_by_user_id,
+            "cancelled_by_name": cancelled_by.full_name if cancelled_by else None,
+            "cancelled_at": meeting.cancelled_at.isoformat() if meeting.cancelled_at else None,
+            "reminder_sent_at": meeting.reminder_sent_at.isoformat() if meeting.reminder_sent_at else None,
+            "notes_outcome": meeting.notes_outcome,
+            "notes_summary": meeting.notes_summary,
+            "notes_next_meeting_required": meeting.notes_next_meeting_required,
+            "notes_additional": meeting.notes_additional,
+            "therapist_notes": meeting.therapist_notes,
+            "actions": action_items,
+            "linked_observation_report_id": meeting.linked_observation_report_id,
+            "linked_observation_checklist_id": meeting.linked_observation_checklist_id,
+            "linked_iep_id": meeting.linked_iep_id,
+            "linked_monthly_report_id": meeting.linked_monthly_report_id,
+            "linked_incident_id": meeting.linked_incident_id,
+            "linked_ticket_id": meeting.linked_ticket_id,
+            "completed_at": meeting.completed_at.isoformat() if meeting.completed_at else None,
+            "completed_by_user_id": meeting.completed_by_user_id,
+            "completed_by_name": completed_by.full_name if completed_by else None,
+            "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
+        }
+        serialized.append(_apply_role_scoped_notes(data, viewer))
+    return serialized
+
+
+def _serialize(meeting: CaseManagerMeeting, db: Session, viewer: User | None = None) -> dict:
+    rows = _serialize_many([meeting], db, viewer=viewer)
+    return rows[0] if rows else {}
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +563,9 @@ def _serialize_many(meetings: list[CaseManagerMeeting], db: Session, viewer: Use
 # ---------------------------------------------------------------------------
 
 def _check_time_overlap(s1: time, duration1_mins: int, s2: time, duration2_mins: int) -> bool:
-    d1 = datetime.combine(date.today(), s1)
-    d2 = datetime.combine(date.today(), s2)
+    anchor = today_ist()
+    d1 = datetime.combine(anchor, s1)
+    d2 = datetime.combine(anchor, s2)
     e1 = d1 + timedelta(minutes=duration1_mins)
     e2 = d2 + timedelta(minutes=duration2_mins)
     return max(d1, d2) < min(e1, e2)
@@ -436,44 +582,20 @@ def check_conflicts(
     """Checks if any attendee is already booked in meetings or sessions during target slot."""
     if not attendee_ids:
         return False, None
-
-    # 1. Check Meetings
-    meetings_stmt = select(CaseManagerMeeting).where(
-        CaseManagerMeeting.scheduled_date == target_date,
-        CaseManagerMeeting.status.in_([MeetingStatus.SCHEDULED, MeetingStatus.COMPLETED, MeetingStatus.NO_SHOW]),
+    slot_start = datetime.combine(target_date, target_time).replace(tzinfo=availability_service.IST)
+    slot_end = slot_start + timedelta(minutes=duration_minutes)
+    busy = availability_service.busy_intervals(
+        db,
+        attendee_ids,
+        target_date,
+        target_date,
+        ignore_meeting_id=ignore_meeting_id,
     )
-    if ignore_meeting_id:
-        meetings_stmt = meetings_stmt.where(CaseManagerMeeting.id != ignore_meeting_id)
-
-    meetings = db.scalars(meetings_stmt).all()
-    for m in meetings:
-        if not m.scheduled_time:
-            continue
-        if _check_time_overlap(target_time, duration_minutes, m.scheduled_time, m.duration_minutes):
-            from app.services.cm_meeting_service import meeting_participant_user_ids
-            participants = meeting_participant_user_ids(m)
-            conflicted = [uid for uid in attendee_ids if uid in participants]
-            if conflicted:
-                conflicted_users = db.scalars(select(User.full_name).where(User.id.in_(conflicted))).all()
-                return True, f"Conflict: {', '.join(conflicted_users)} is busy in meeting '{m.title or m.meeting_type.value}'"
-
-    # 2. Check Therapy Sessions (specifically for therapists)
-    therapists = db.scalars(select(User.id).where(User.id.in_(attendee_ids), User.roles.any(name=RoleName.THERAPIST.value))).all()
-    if therapists:
-        sessions_stmt = select(TherapySession).where(
-            TherapySession.scheduled_date == target_date,
-            TherapySession.therapist_user_id.in_(therapists),
-            TherapySession.status.in_([SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS, SessionStatus.COMPLETED]),
-        )
-        sessions = db.scalars(sessions_stmt).all()
-        for s in sessions:
-            if not s.start_time:
-                continue
-            s_duration = s.scheduled_duration_mins or 60
-            s_time = s.start_time
-            if _check_time_overlap(target_time, duration_minutes, s_time, s_duration):
-                therapist_name = db.scalar(select(User.full_name).where(User.id == s.therapist_user_id))
-                return True, f"Conflict: Therapist {therapist_name} has a therapy session from {s_time.strftime('%H:%M')} to {(datetime.combine(date.today(), s_time) + timedelta(minutes=s_duration)).time().strftime('%H:%M')}"
+    for uid in attendee_ids:
+        for busy_start, busy_end in busy.get(uid, []):
+            if max(slot_start, busy_start) < min(slot_end, busy_end):
+                conflicted_name = db.scalar(select(User.full_name).where(User.id == uid)) or f"User {uid}"
+                return True, f"Conflict: {conflicted_name} is busy"
     return False, None
 
 
@@ -524,45 +646,14 @@ def get_meetings_availability(
     if mentor_id:
         attendees.append(mentor_id)
     attendees.extend(admin_ids)
-
-    slots_grid = meeting_availability_slots_grid()
-
-    results = []
-    has_available = False
-    for slot in slots_grid:
-        conflicted, reason = check_conflicts(db, target_date, slot, duration_minutes, attendees)
-        results.append({
-            "time": slot.strftime("%H:%M"),
-            "available": not conflicted,
-            "reason": reason
-        })
-        if not conflicted:
-            has_available = True
-
-    alternate_suggestions = []
-    if not has_available:
-        # Check next 7 days for alternate suggestions
-        for offset in range(1, 8):
-            alt_date = target_date + timedelta(days=offset)
-            alt_avail_slots = []
-            for slot in slots_grid:
-                conflicted, _ = check_conflicts(db, alt_date, slot, duration_minutes, attendees)
-                if not conflicted:
-                    alt_avail_slots.append(slot.strftime("%H:%M"))
-            if alt_avail_slots:
-                alternate_suggestions.append({
-                    "date": alt_date.isoformat(),
-                    "slots": alt_avail_slots
-                })
-                if len(alternate_suggestions) >= 3:
-                    break
-
-    return {
-        "date": target_date.isoformat(),
-        "duration_minutes": duration_minutes,
-        "slots": results,
-        "alternate_suggestions": alternate_suggestions
-    }
+    return availability_service.free_slots(
+        db,
+        attendees,
+        target_date,
+        target_date,
+        duration_minutes,
+        user,
+    )
 
 
 @router.get("/meetings/calendar")
@@ -605,6 +696,8 @@ def create_meeting(
     _guard_meeting_write(user, payload.case_id, db)
     _validate_meeting_duration(payload.duration_minutes)
     _validate_meeting_link(payload.platform, payload.meeting_url)
+    if payload.scheduled_date < today_ist():
+        raise HTTPException(status_code=400, detail="Scheduled date cannot be in the past")
 
     if payload.meeting_type == MeetingType.OTHER:
         other_reason = (payload.other_reason or "").strip() or (payload.title or "").strip()
@@ -613,7 +706,7 @@ def create_meeting(
     else:
         other_reason = (payload.other_reason or "").strip() or None
 
-    role = _role_name(user)
+    role = effective_role(user)
     invite_therapist = payload.invite_therapist
     therapist_user_id = payload.therapist_user_id
     invite_client = payload.invite_client
@@ -631,12 +724,13 @@ def create_meeting(
         cm_id = case.case_manager_user_id
     
     if not cm_id:
-        if role in {
-            RoleName.CASE_MANAGER.value,
-            RoleName.ADMIN.value,
-            RoleName.SUPER_ADMIN.value,
-            RoleName.MODULE_ADMIN.value,
-        }:
+        if has_any_role(
+            user,
+            RoleName.CASE_MANAGER,
+            RoleName.ADMIN,
+            RoleName.SUPER_ADMIN,
+            RoleName.MODULE_ADMIN,
+        ):
             cm_id = user.id
         else:
             raise HTTPException(status_code=400, detail="Select a case with an assigned case manager")
@@ -659,9 +753,10 @@ def create_meeting(
         if conflicted:
             raise HTTPException(status_code=400, detail=f"Double booking error: {reason}")
 
-    guest_json = json.dumps([e.strip() for e in payload.guest_emails if e and e.strip()]) if payload.guest_emails else None
+    guest_json = _normalize_guest_emails(payload.guest_emails)
 
     meeting = CaseManagerMeeting(
+        series_id=str(uuid.uuid4()),
         case_manager_user_id=cm_id,
         case_id=payload.case_id,
         parent_user_id=None,
@@ -706,6 +801,7 @@ def create_meeting(
         actor_user_id=user.id,
         invite_case_manager=payload.invite_case_manager,
     )
+    send_meeting_reminder_if_within_hour(db, meeting, now_ist_dt=now_ist())
 
     commit_or_http(db)
     db.refresh(meeting)
@@ -733,18 +829,16 @@ def reschedule_meeting(
     _validate_meeting_duration(payload.duration_minutes)
 
     # Prevent double booking on new slot
-    attendees = [meeting.case_manager_user_id]
-    if meeting.therapist_user_id:
-        attendees.append(meeting.therapist_user_id)
-    if meeting.parent_user_id:
-        attendees.append(meeting.parent_user_id)
-    if meeting.mentor_user_id:
-        attendees.append(meeting.mentor_user_id)
-    from app.services.cm_meeting_service import parse_staff_attendee_ids
-    admins = parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json)
-    attendees.extend(admins)
+    attendees = list(meeting_participant_user_ids(meeting))
 
-    conflicted, reason = check_conflicts(db, payload.scheduled_date, payload.scheduled_time, payload.duration_minutes, attendees)
+    conflicted, reason = check_conflicts(
+        db,
+        payload.scheduled_date,
+        payload.scheduled_time,
+        payload.duration_minutes,
+        attendees,
+        ignore_meeting_id=meeting.id,
+    )
     if conflicted:
         raise HTTPException(status_code=400, detail=f"Double booking error on new slot: {reason}")
 
@@ -754,6 +848,7 @@ def reschedule_meeting(
 
     # Create replacement meeting
     replacement = CaseManagerMeeting(
+        series_id=meeting.series_id or str(uuid.uuid4()),
         case_manager_user_id=meeting.case_manager_user_id,
         case_id=meeting.case_id,
         parent_user_id=meeting.parent_user_id,
@@ -790,6 +885,7 @@ def reschedule_meeting(
         actor_user_id=user.id,
         invite_case_manager=True,
     )
+    send_meeting_reminder_if_within_hour(db, replacement, now_ist_dt=now_ist())
 
     db.commit()
     db.refresh(replacement)
@@ -813,12 +909,39 @@ def list_meetings(
     month: Optional[int] = None,
     meeting_type: Optional[str] = None,
     case_manager_user_id: Optional[int] = None,
+    participant_role: Optional[str] = Query(
+        None,
+        description="Filter by participant role: case_manager | therapist | admin",
+    ),
+    participant_user_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated participant user ids (used with participant_role)",
+    ),
     search: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_meetings_read(user)
-    role = _role_name(user)
+    role = effective_role(user)
+
+    try:
+        participant_ids = parse_int_list(participant_user_ids)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Looks like we still need valid participant_user_ids (comma-separated integers).",
+        ) from exc
+
+    participant_role_norm = (participant_role or "").strip().lower() or None
+    if participant_role_norm and participant_role_norm not in {
+        "case_manager",
+        "therapist",
+        "admin",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="participant_role must be case_manager, therapist, or admin.",
+        )
     
     stmt = select(CaseManagerMeeting).options(
         selectinload(CaseManagerMeeting.actions)
@@ -827,8 +950,8 @@ def list_meetings(
         CaseManagerMeeting.scheduled_time.desc()
     )
 
-    if role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
-        stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == user.id)
+    if _is_case_manager_scoped(user):
+        stmt = stmt.where(_case_manager_meeting_scope(user, db))
     elif role == RoleName.SUPERVISOR.value and not user_has_permission(user, "admin.override"):
         from app.services.admin_scope_service import scoped_case_ids_subquery
         case_ids = db.scalars(scoped_case_ids_subquery(user)).all()
@@ -905,7 +1028,14 @@ def list_meetings(
             )
         )
 
-    meetings = db.scalars(stmt).all()
+    # Participant role filter (SQL for CM/therapist; admin JSON post-filtered below).
+    if participant_role_norm and participant_ids:
+        if participant_role_norm == "case_manager":
+            stmt = stmt.where(CaseManagerMeeting.case_manager_user_id.in_(participant_ids))
+        elif participant_role_norm == "therapist":
+            stmt = stmt.where(CaseManagerMeeting.therapist_user_id.in_(participant_ids))
+
+    meetings = list(db.scalars(stmt).all())
     from app.services.admin_scope_service import user_sees_global_cases
     if role in {
         RoleName.ADMIN.value,
@@ -914,6 +1044,14 @@ def list_meetings(
     } and not user_has_permission(user, "admin.override") and not user_sees_global_cases(user):
         from app.services.cm_meeting_service import user_can_view_meeting
         meetings = [m for m in meetings if user_can_view_meeting(m, user.id)]
+
+    if participant_role_norm == "admin" and participant_ids:
+        id_set = set(participant_ids)
+        meetings = [
+            m
+            for m in meetings
+            if id_set.intersection(parse_staff_attendee_ids(m.staff_attendee_user_ids_json))
+        ]
 
     return _serialize_many(meetings, db, viewer=user)
 
@@ -924,16 +1062,13 @@ def list_pending_completion_meetings(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from app.core.timezone import today_ist
-    from app.services.cm_meeting_service import user_can_view_meeting
-
     _require_meetings_read(user)
     today = today_ist()
     
     # Scheduled meetings in the past (notes missing), or completed in the past with missing notes
     # We query all meetings that are SCHEDULED in the past, or COMPLETED but have missing notes.
     stmt = (
-        select(CaseManagerMeeting)
+        select(CaseManagerMeeting).options(selectinload(CaseManagerMeeting.actions))
         .where(
             or_(
                 # Scheduled in the past
@@ -947,9 +1082,9 @@ def list_pending_completion_meetings(
         .limit(50)
     )
 
-    role = _role_name(user)
-    if role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
-        stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == user.id)
+    role = effective_role(user)
+    if _is_case_manager_scoped(user):
+        stmt = stmt.where(_case_manager_meeting_scope(user, db))
 
     meetings = db.scalars(stmt).all()
     if role == RoleName.THERAPIST.value:
@@ -961,6 +1096,51 @@ def list_pending_completion_meetings(
 # ---------------------------------------------------------------------------
 # Notes & Actions updates
 # ---------------------------------------------------------------------------
+
+async def _sync_meeting_docs(
+    db: Session,
+    user: User,
+    meeting: CaseManagerMeeting,
+    *,
+    notes_summary: str | None = None,
+    file: UploadFile | None = None,
+) -> list[dict]:
+    created_docs: list[dict] = []
+    if file is not None:
+        attachment = await doc_svc.create_meeting_attachment_document(db, user, meeting, file=file)
+        created_docs.append(attachment.model_dump())
+    if meeting.case_id and meeting.status == MeetingStatus.COMPLETED and (notes_summary or "").strip():
+        notes_doc = await doc_svc.upsert_meeting_notes_document(
+            db,
+            user,
+            meeting,
+            notes_summary=notes_summary or "",
+        )
+        if notes_doc is not None:
+            created_docs.append(notes_doc.model_dump())
+    return created_docs
+
+
+def _apply_meeting_notes_updates(
+    meeting: CaseManagerMeeting,
+    *,
+    notes_outcome: str | None = None,
+    notes_summary: str | None = None,
+    notes_next_meeting_required: bool | None = None,
+    notes_additional: str | None = None,
+    therapist_notes: str | None = None,
+) -> None:
+    if notes_outcome is not None:
+        meeting.notes_outcome = notes_outcome.strip() or None
+    if notes_summary is not None:
+        meeting.notes_summary = notes_summary.strip() or None
+    if notes_next_meeting_required is not None:
+        meeting.notes_next_meeting_required = notes_next_meeting_required
+    if notes_additional is not None:
+        meeting.notes_additional = notes_additional.strip() or None
+    if therapist_notes is not None:
+        meeting.therapist_notes = therapist_notes.strip() or None
+
 
 @router.patch("/meetings/{meeting_id}")
 @compat_router.patch("/cm-meetings/{meeting_id}")
@@ -976,10 +1156,16 @@ def update_meeting(
         raise HTTPException(status_code=404, detail="Meeting not found")
 
     _guard_meeting_write(user, meeting.case_id, db, meeting=meeting)
-    role = _role_name(user)
+    role = effective_role(user)
     is_therapist = role == RoleName.THERAPIST.value
-    if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
+    if _is_case_manager_scoped(user) and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")
+
+    if any(
+        value is not None
+        for value in (payload.scheduled_date, payload.scheduled_time, payload.duration_minutes)
+    ):
+        raise HTTPException(status_code=400, detail="Use reschedule to change meeting date, time, or duration.")
 
     if is_therapist:
         if payload.status is not None and payload.status != meeting.status:
@@ -997,9 +1183,6 @@ def update_meeting(
             payload.guest_emails,
             payload.therapist_user_id,
             payload.mentor_user_id,
-            payload.scheduled_date,
-            payload.scheduled_time,
-            payload.duration_minutes,
             payload.linked_observation_report_id,
             payload.linked_observation_checklist_id,
             payload.linked_iep_id,
@@ -1027,6 +1210,9 @@ def update_meeting(
     if completing and not _can_complete_meeting(user, meeting):
         raise HTTPException(status_code=403, detail="Only the assigned case manager can complete this meeting")
     if completing:
+        meeting_start = _meeting_start_dt(meeting.scheduled_date, meeting.scheduled_time)
+        if meeting_start and meeting_start > now_ist():
+            raise HTTPException(status_code=400, detail="You can only mark a meeting complete after its scheduled start time.")
         outcome = payload.notes_outcome if payload.notes_outcome is not None else meeting.notes_outcome
         summary = payload.notes_summary if payload.notes_summary is not None else meeting.notes_summary
         if not outcome or not outcome.strip() or not summary or not summary.strip():
@@ -1038,7 +1224,7 @@ def update_meeting(
     if payload.status is not None:
         meeting.status = payload.status
         if payload.status == MeetingStatus.COMPLETED:
-            meeting.completed_at = datetime.utcnow()
+            meeting.completed_at = now_ist()
             meeting.completed_by_user_id = user.id
 
     if payload.title is not None:
@@ -1050,7 +1236,7 @@ def update_meeting(
     if payload.meeting_url is not None:
         meeting.meeting_url = (payload.meeting_url or "").strip() or None
     if payload.guest_emails is not None:
-        meeting.guest_emails_json = json.dumps([e.strip() for e in payload.guest_emails if e and e.strip()]) or None
+        meeting.guest_emails_json = _normalize_guest_emails(payload.guest_emails)
 
     if payload.notes_outcome is not None:
         meeting.notes_outcome = payload.notes_outcome
@@ -1086,27 +1272,57 @@ def update_meeting(
         meeting.linked_ticket_id = payload.linked_ticket_id
 
     if payload.actions is not None:
-        for act in list(meeting.actions):
-            db.delete(act)
+        existing_actions = {act.id: act for act in list(meeting.actions)}
+        kept_ids: set[int] = set()
         for act_schema in payload.actions:
+            if act_schema.id is not None and act_schema.id in existing_actions:
+                action = existing_actions[act_schema.id]
+                action.title = act_schema.title
+                action.owner_role = act_schema.owner_role
+                action.due_date = act_schema.due_date
+                if act_schema.status is not None:
+                    action.status = act_schema.status
+                kept_ids.add(action.id)
+                continue
+
             new_action = MeetingAction(
                 meeting_id=meeting.id,
                 title=act_schema.title,
                 owner_role=act_schema.owner_role,
                 due_date=act_schema.due_date,
-                status=act_schema.status
+                status=act_schema.status or "open",
             )
             db.add(new_action)
+
+        for action_id, action in existing_actions.items():
+            if action_id not in kept_ids and all((item.id is None or item.id != action_id) for item in payload.actions):
+                db.delete(action)
+
+    db.flush()
+    if meeting.case_id and meeting.status == MeetingStatus.COMPLETED and (meeting.notes_summary or "").strip():
+        doc_svc.upsert_meeting_notes_document(
+            db,
+            user,
+            meeting,
+            notes_summary=meeting.notes_summary or "",
+        )
 
     db.commit()
     db.refresh(meeting)
     return _serialize(meeting, db, viewer=user)
 
 
-@router.delete("/meetings/{meeting_id}", status_code=204)
-@compat_router.delete("/cm-meetings/{meeting_id}", status_code=204)
-def cancel_meeting(
+@router.post("/meetings/{meeting_id}/notes")
+@compat_router.post("/cm-meetings/{meeting_id}/notes")
+async def save_meeting_notes(
     meeting_id: int,
+    notes_outcome: Optional[str] = Form(None),
+    notes_summary: Optional[str] = Form(None),
+    notes_next_meeting_required: Optional[bool] = Form(None),
+    notes_additional: Optional[str] = Form(None),
+    therapist_notes: Optional[str] = Form(None),
+    status: Optional[MeetingStatus] = Form(None),
+    file: Optional[UploadFile] = File(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -1116,12 +1332,113 @@ def cancel_meeting(
         raise HTTPException(status_code=404, detail="Meeting not found")
 
     _guard_meeting_write(user, meeting.case_id, db, meeting=meeting)
-    role = _role_name(user)
-    if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
+    role = effective_role(user)
+    is_therapist = role == RoleName.THERAPIST.value
+
+    if is_therapist:
+        if file is not None:
+            raise HTTPException(status_code=400, detail="File uploads are available for case-linked shared minutes only")
+        if any(
+            value is not None
+            for value in (notes_outcome, notes_summary, notes_next_meeting_required, notes_additional, status)
+        ):
+            raise HTTPException(status_code=403, detail="Therapists can only save their own meeting notes")
+        if therapist_notes is not None:
+            meeting.therapist_notes = therapist_notes.strip() or None
+        db.commit()
+        db.refresh(meeting)
+        return _serialize(meeting, db, viewer=user)
+
+    if therapist_notes is not None:
+        raise HTTPException(status_code=403, detail="Therapist notes can only be edited by the therapist")
+
+    _apply_meeting_notes_updates(
+        meeting,
+        notes_outcome=notes_outcome,
+        notes_summary=notes_summary,
+        notes_next_meeting_required=notes_next_meeting_required,
+        notes_additional=notes_additional,
+    )
+    if status is not None:
+        meeting.status = status
+        if status == MeetingStatus.COMPLETED:
+            meeting.completed_at = now_ist()
+            meeting.completed_by_user_id = user.id
+
+    if file is not None and not meeting.case_id:
+        raise HTTPException(status_code=400, detail="File uploads require a case-linked meeting")
+
+    final_summary = (meeting.notes_summary or "").strip()
+    final_outcome = (meeting.notes_outcome or "").strip()
+    if meeting.status == MeetingStatus.COMPLETED and (not final_summary or not final_outcome):
+        raise HTTPException(
+            status_code=400,
+            detail="Shared minutes outcome and summary are required before completing the meeting.",
+        )
+
+    db.flush()
+    if file is not None:
+        await doc_svc.create_meeting_attachment_document(db, user, meeting, file=file)
+    if meeting.case_id and meeting.status == MeetingStatus.COMPLETED and final_summary:
+        doc_svc.upsert_meeting_notes_document(
+            db,
+            user,
+            meeting,
+            notes_summary=final_summary,
+        )
+
+    db.commit()
+    db.refresh(meeting)
+    return _serialize(meeting, db, viewer=user)
+
+
+@router.post("/meetings/{meeting_id}/cancel")
+def cancel_meeting_post(
+    meeting_id: int,
+    payload: MeetingCancelPayload,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_meetings_write(user)
+    meeting = db.get(CaseManagerMeeting, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    _guard_meeting_write(user, meeting.case_id, db, meeting=meeting)
+    if _is_case_manager_scoped(user) and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")
 
+    reason = (payload.reason or "").strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=400, detail="Use the cancel endpoint with a reason of at least 3 characters.")
+
     meeting.status = MeetingStatus.CANCELLED
+    meeting.cancel_reason = reason
+    meeting.cancelled_by_user_id = user.id
+    meeting.cancelled_at = now_ist()
+    notify_meeting_cancellation(db, meeting, actor_user_id=user.id)
     db.commit()
+    db.refresh(meeting)
+    return _serialize(meeting, db, viewer=user)
+
+
+@router.delete("/meetings/{meeting_id}", status_code=204)
+@compat_router.delete("/cm-meetings/{meeting_id}", status_code=204)
+def cancel_meeting(
+    meeting_id: int,
+    reason: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not reason or len(reason.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Use POST /api/v1/meetings/{meeting_id}/cancel with a reason.")
+
+    cancel_meeting_post(
+        meeting_id=meeting_id,
+        payload=MeetingCancelPayload(reason=reason),
+        user=user,
+        db=db,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1134,7 +1451,7 @@ def list_open_actions(
     user: User = Depends(get_current_user),
 ):
     _require_meetings_read(user)
-    role = _role_name(user)
+    role = effective_role(user)
 
     stmt = select(MeetingAction).join(CaseManagerMeeting).where(MeetingAction.status == "open")
 
@@ -1159,7 +1476,7 @@ def list_open_actions(
             MeetingAction.owner_role == "therapist",
             CaseManagerMeeting.case_id.in_(assigned_case_ids)
         )
-    elif role == RoleName.CASE_MANAGER.value:
+    elif _is_case_manager_scoped(user):
         stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == user.id)
 
     actions = db.scalars(stmt.order_by(MeetingAction.due_date.asc())).all()
@@ -1218,9 +1535,14 @@ def case_manager_productivity_analytics(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Admin/SuperAdmin/Supervisor only
-    role = _role_name(user)
-    if role not in {RoleName.SUPER_ADMIN.value, RoleName.ADMIN.value, RoleName.SUPERVISOR.value}:
+    # Admin/SuperAdmin/ModuleAdmin/Supervisor only
+    if not has_any_role(
+        user,
+        RoleName.SUPER_ADMIN,
+        RoleName.ADMIN,
+        RoleName.MODULE_ADMIN,
+        RoleName.SUPERVISOR,
+    ) and not user_has_permission(user, "admin.override"):
         raise HTTPException(status_code=403, detail="Analytics restricted to administrators.")
 
     from app.core.timezone import today_ist
@@ -1285,13 +1607,40 @@ def export_meetings(
     year: Optional[int] = None,
     month: Optional[int] = None,
     case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    meeting_type: Optional[str] = None,
+    case_manager_user_id: Optional[int] = None,
+    participant_role: Optional[str] = Query(
+        None,
+        description="Filter by participant role: case_manager | therapist | admin",
+    ),
+    participant_user_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated participant user ids (used with participant_role)",
+    ),
+    search: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_meetings_read(user)
 
     # 1. Fetch meetings using general list logic
-    meetings = list_meetings(case_id=case_id, year=year, month=month, user=user, db=db)
+    meetings = list_meetings(
+        case_id=case_id,
+        status=status,
+        year=year,
+        month=month,
+        meeting_type=meeting_type,
+        case_manager_user_id=case_manager_user_id,
+        participant_role=participant_role,
+        participant_user_ids=participant_user_ids,
+        search=search,
+        user=user,
+        db=db,
+    )
+
+    if len(meetings) > 10000:
+        raise HTTPException(status_code=400, detail="Export is limited to 10,000 meetings at a time.")
 
     headers = [
         "Meeting ID", "Case Code", "Client Name", "Meeting Type", "Date",
@@ -1422,6 +1771,44 @@ def export_meetings(
 # ---------------------------------------------------------------------------
 # Backward Compatibility Endpoint Redirect (optional wrapper)
 # ---------------------------------------------------------------------------
+
+
+@router.get("/meetings/{meeting_id}")
+def get_meeting(
+    meeting_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_meetings_read(user)
+    stmt = _meetings_scope_stmt(user, db)
+    meeting = db.scalars(stmt.where(CaseManagerMeeting.id == meeting_id)).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    role = effective_role(user)
+    if role in {
+        RoleName.ADMIN.value,
+        RoleName.SUPER_ADMIN.value,
+        RoleName.MODULE_ADMIN.value,
+    } and not user_has_permission(user, "admin.override") and not user_sees_global_cases(user):
+        if not user_can_view_meeting(meeting, user.id):
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+    return _serialize(meeting, db, viewer=user)
+
+
+@router.get("/meetings/{meeting_id}/documents")
+def list_meeting_documents(
+    meeting_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_meetings_read(user)
+    meeting = db.scalars(_meetings_scope_stmt(user, db, include_rescheduled=True).where(CaseManagerMeeting.id == meeting_id)).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return doc_svc.list_for_meeting_series(db, user, meeting.id)
+
 
 @router.get("/parent/cm-meetings")
 def parent_cm_meetings_compat(

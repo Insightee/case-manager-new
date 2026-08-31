@@ -1,6 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/apiClient.js'
+import {
+  readForgotPasswordCooldownRemaining,
+  startForgotPasswordCooldown,
+} from '../lib/forgotPasswordCooldown.js'
 import { loginPathFromApiPortal, portalLoginPath } from '../lib/portalLogin.js'
 
 const SUCCESS_MESSAGE =
@@ -21,9 +25,29 @@ export function ForgotPasswordPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [cooldownRemaining, setCooldownRemaining] = useState(() => readForgotPasswordCooldownRemaining())
+
+  useEffect(() => {
+    const remaining = readForgotPasswordCooldownRemaining()
+    setCooldownRemaining(remaining)
+    if (remaining > 0) {
+      setSent(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return undefined
+    const timer = window.setInterval(() => {
+      setCooldownRemaining(readForgotPasswordCooldownRemaining())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldownRemaining])
+
+  const resendBlocked = cooldownRemaining > 0
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (resendBlocked) return
     setError('')
     setSubmitting(true)
     try {
@@ -31,6 +55,8 @@ export function ForgotPasswordPage() {
         method: 'POST',
         body: JSON.stringify({ email: email.trim() }),
       })
+      startForgotPasswordCooldown()
+      setCooldownRemaining(readForgotPasswordCooldownRemaining())
       setSent(true)
     } catch (err) {
       setError(err.message || 'Could not send reset email')
@@ -51,7 +77,16 @@ export function ForgotPasswordPage() {
             <p className="login-sub" role="status">
               {SUCCESS_MESSAGE}
             </p>
-          ) : (
+          ) : null}
+
+          {sent && resendBlocked ? (
+            <p className="login-sub" role="status" aria-live="polite">
+              You can request another link in{' '}
+              <strong>{cooldownRemaining}</strong> second{cooldownRemaining === 1 ? '' : 's'}.
+            </p>
+          ) : null}
+
+          {!sent || !resendBlocked ? (
             <form onSubmit={handleSubmit} className="login-form">
               <label>
                 Email
@@ -62,6 +97,7 @@ export function ForgotPasswordPage() {
                   placeholder="you@example.com"
                   autoComplete="email"
                   required
+                  disabled={submitting || resendBlocked}
                 />
               </label>
               {error ? (
@@ -69,10 +105,18 @@ export function ForgotPasswordPage() {
                   {error}
                 </p>
               ) : null}
-              <button type="submit" className="login-submit" disabled={submitting}>
-                {submitting ? 'Sending…' : 'Send reset link'}
+              <button
+                type="submit"
+                className="login-submit"
+                disabled={submitting || resendBlocked}
+              >
+                {submitting ? 'Sending…' : sent ? 'Send another link' : 'Send reset link'}
               </button>
             </form>
+          ) : (
+            <button type="button" className="login-submit" disabled aria-disabled="true">
+              Send another link in {cooldownRemaining}s
+            </button>
           )}
 
           <p className="login-sub" style={{ marginTop: '1.25rem' }}>

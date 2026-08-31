@@ -319,14 +319,28 @@ def import_cases(db, rows: list[dict], *, actor: User, dry_run: bool, stats: dic
                 "client_rate_per_session_inr",
                 "package_session_count",
                 "package_amount_inr",
-                "pay_share_pct",
+                "pay_share_amount_inr",
                 "therapist_fixed_pay_inr",
             ):
                 if row.get(key):
                     payload[key] = float(row[key])
+            # Legacy CSV column pay_share_pct → convert once to INR lumpsum when amount missing
+            if row.get("pay_share_pct") and not payload.get("therapist_fixed_pay_inr") and not payload.get(
+                "pay_share_amount_inr"
+            ):
+                pct = float(row["pay_share_pct"])
+                base = payload.get("client_rate_per_session_inr") or payload.get("package_amount_inr")
+                if base:
+                    lump = round(float(base) * (pct / 100.0), 2)
+                    payload["therapist_fixed_pay_inr"] = lump
+                    payload["pay_share_amount_inr"] = lump
             cm_mode = (row.get("compensation_mode") or "").strip().upper()
-            if cm_mode:
+            if cm_mode == "PERCENTAGE":
+                payload["compensation_mode"] = "FIXED_LUMP"
+            elif cm_mode:
                 payload["compensation_mode"] = cm_mode
+            if payload.get("therapist_fixed_pay_inr") and not payload.get("compensation_mode"):
+                payload["compensation_mode"] = "FIXED_LUMP"
             cbm = (row.get("client_billing_mode") or "").strip().upper()
             if cbm:
                 payload["client_billing_mode"] = cbm

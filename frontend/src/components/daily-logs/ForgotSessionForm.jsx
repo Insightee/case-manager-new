@@ -132,15 +132,30 @@ export function ForgotSessionForm({
         case_id: c.id,
         child_name: c.child_name || c.child?.full_name,
         case_code: c.case_code,
+        product_module: c.product_module,
       })
     }
     for (const s of fallbackCases) {
       if (!map.has(s.case_id)) {
-        map.set(s.case_id, { case_id: s.case_id, child_name: s.child_name, case_code: s.case_code })
+        map.set(s.case_id, {
+          case_id: s.case_id,
+          child_name: s.child_name,
+          case_code: s.case_code,
+          product_module: s.product_module,
+        })
       }
     }
     return [...map.values()]
   }, [cases, fallbackCases])
+
+  useEffect(() => {
+    if (!form.case_id) return
+    const selected = caseOptions.find((c) => String(c.case_id) === String(form.case_id))
+    const mod = (selected?.product_module || '').toLowerCase()
+    if (!mod) return
+    const schoolDefault = mod.includes('shadow') || mod === 'b2b' || mod.includes('b2b')
+    setForm((f) => ({ ...f, mode: schoolDefault ? 'SCHOOL' : 'HOME' }))
+  }, [form.case_id, caseOptions])
 
   const today = todayIsoIST()
   const startDt = combineDateAndTime(form.session_date, form.start_time)

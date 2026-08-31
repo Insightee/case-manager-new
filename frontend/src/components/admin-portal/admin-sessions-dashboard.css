@@ -109,6 +109,158 @@
   box-shadow: inset 3px 0 0 #eab308;
 }
 
+/* Sessions list: cards at tablet and below; table stays on wide desktops */
+@media (max-width: 1024px) {
+  .admin-data-list.admin-data-list--sessions .admin-data-list__desktop {
+    display: none !important;
+  }
+
+  .admin-data-list.admin-data-list--sessions .admin-data-list__mobile {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@media (min-width: 1025px) {
+  .admin-data-list.admin-data-list--sessions .admin-data-list__mobile {
+    display: none !important;
+  }
+
+  .admin-data-list.admin-data-list--sessions .admin-data-list__desktop {
+    display: block !important;
+  }
+}
+
+.admin-task-card.sessions-dash__session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.admin-task-card.sessions-dash__session-card.is-highlight {
+  background: #fef9c3;
+  border-color: #fde047;
+  box-shadow: inset 3px 0 0 #eab308, 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sessions-dash__session-card .admin-task-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  order: 1;
+}
+
+.sessions-dash__session-card .admin-task-card__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.sessions-dash__session-card .admin-task-card__meta {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.sessions-dash__card-meta-line {
+  color: #64748b;
+}
+
+.sessions-dash__session-card .admin-task-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  max-width: 52%;
+}
+
+.sessions-dash__card-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.sessions-dash__card-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.sessions-dash__card-fact-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.sessions-dash__session-card .admin-task-card__actions {
+  order: 3;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: stretch;
+  margin: 4px -14px 0;
+  padding: 10px 14px 12px;
+  border-top: 1px solid #f1f5f9;
+  background: #fff;
+  border-radius: 0 0 12px 12px;
+  position: sticky;
+  bottom: 0;
+}
+
+.sessions-dash__session-card.is-highlight .admin-task-card__actions {
+  background: #fef9c3;
+}
+
+.sessions-dash__session-card .sessions-dash__card-action,
+.sessions-dash__session-card .admin-task-card__actions .admin-btn {
+  min-height: 44px;
+  min-width: 44px;
+  flex: 1 1 0;
+  justify-content: center;
+  padding: 10px 14px;
+  font-size: 0.8125rem;
+}
+
+.sessions-dash__session-card .sessions-dash__flag-btn {
+  padding: 10px 14px;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .sessions-dash__session-card .admin-task-card__head {
+    flex-direction: column;
+  }
+
+  .sessions-dash__session-card .admin-task-card__badges {
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+}
+
 .admin-chip--sm {
   font-size: 0.625rem;
   padding: 1px 6px;
@@ -601,10 +753,46 @@
 
 .sessions-dash__export-bar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.sessions-dash__duration-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.sessions-dash__export-bar .sessions-dash__filter-input--grow {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sessions-dash__export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 100%;
+}
+
+@media (min-width: 640px) {
+  .sessions-dash__duration-note {
+    flex: 1 1 auto;
+    margin-right: auto;
+  }
+
+  .sessions-dash__export-actions {
+    flex: 0 0 auto;
+  }
+}
+
+.sessions-dash__duration-mins {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ── Flag drawer ────────────────────────────────────────────────────────── */

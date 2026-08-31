@@ -270,6 +270,8 @@ def test_inactive_clients_json_columns():
         assert "Child Name" in row
         assert "Parent Name" in row
         assert "Therapist Name" in row
+        assert "Case Status" in row
+        assert "Therapist Status" in row
         assert "Reason" not in row
 
 
@@ -292,6 +294,8 @@ def test_parent_portal_usage_json():
         assert "Login Status" in row
         assert "Last Login" in row
         assert "Days Since Last Activity" in row
+        assert "Case Status" in row
+        assert row["Case Status"] not in {"CLOSED", "DEACTIVATED"}
         assert "Has Logged In" not in row
         assert "Last Seen" not in row
         assert "Client Name" not in row
@@ -310,6 +314,7 @@ def test_parent_portal_usage_csv():
     assert "Therapist Name" in header
     assert "Login Status" in header
     assert "Last Login" in header
+    assert "Case Status" in header
     assert "Has Logged In" not in header
     assert "Last Seen" not in header
 

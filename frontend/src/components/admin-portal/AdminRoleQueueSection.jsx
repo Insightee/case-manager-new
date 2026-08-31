@@ -8,7 +8,7 @@ const WIDGET_META = {
   observations: { icon: '☑', tone: 'teal', hint: 'Submitted checklists' },
   reschedules: { icon: '↻', tone: 'amber', hint: 'Therapist approval needed' },
   status_requests: { icon: '↔', tone: 'amber', hint: 'Pause or close requests' },
-  billing: { icon: '₹', tone: 'rose', hint: 'Invoices & payouts' },
+  billing: { icon: '₹', tone: 'rose', hint: 'Therapist payouts in review' },
   client_claims: { icon: '◎', tone: 'rose', hint: 'Payment verification' },
   tickets: { icon: '✉', tone: 'slate', hint: 'Open support threads' },
 }

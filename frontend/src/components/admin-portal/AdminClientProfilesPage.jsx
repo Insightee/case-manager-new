@@ -229,9 +229,9 @@ function downloadCsvTemplate() {
     '1000',
     '',
     '',
-    'PERCENTAGE',
+    'FIXED_LUMP',
     '600',
-    '',
+    '600',
     'Notes',
     'therapist@demo.com'
   ];
@@ -447,7 +447,7 @@ export function AdminClientProfilesPage() {
                                 {r.billing_type === 'PACKAGE' && ` (${r.package_session_count} sess)`}
                               </div>
                               <div className="admin-muted" style={{ fontSize: '0.8rem' }}>
-                                Therapist Share: ₹{r.pay_share_amount_inr || '—'}
+                                Therapist pay: ₹{r.therapist_fixed_pay_inr || r.pay_share_amount_inr || '—'}
                               </div>
                             </>
                           ) : (

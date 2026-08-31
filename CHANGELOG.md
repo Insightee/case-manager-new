@@ -1,17 +1,41 @@
 ## [Unreleased]
 
 ### Added
+- Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
+- Expandable Description cells on People & HR report previews (parent support tickets + incident reports).
+- Meetings page: Export CSV/Excel, All-years filter, category (Admin/Case manager/Therapist) + multi-select people filter; HR reports Case manager filter is multi-select; inactive-clients adds Case/Therapist Status; parent-portal-usage adds Case Status and excludes only CLOSED/DEACTIVATED; silent parent portal auto-suspend/reactivate on case close/reopen.
+- HR case view redesign: `GET /api/v1/hr/caseload` therapist caseload lens with client/therapist/case id, pending-reassignment filter, 14-day slot fill, remuneration gated on `case.billing.update`, and inline status change for `case.status_manage`.
+- Admin Service profiles: soft-delete therapist listings (`DELETED` + restore), **Needs listing** / **Deleted** / **No logs 15d** filters and KPIs, audit backfill for historically hard-deleted profiles. Alembic `a8b9c0d1e2f3` → `j0merge2therapist`.
+- Cloud Agent dev environment config (`.cursor/environment.json` + `scripts/cloud-agent-install.sh`): reproducible SQLite-based local stack (no Docker/Postgres/Redis needed) that installs backend + frontend deps, seeds the demo database on first run, and starts the FastAPI API (`:8000`) and Vite dev server (`:5173`).
+- Shadow cases default to school venue (`SessionMode.SCHOOL`); existing shadow sessions with `HOME` are backfilled. Alembic `k1shadow2lumpsum3` → `k2pct2lumpfix` (leftover `PERCENTAGE` mode cleanup when fixed pay already set).
+- Parent Name column on remaining operational downloads (session logs XLSX/PDF, case session-log export, session-log PDF, monthly/observation PDF meta, payout preview, case records CSV, therapist invoice CSV).
 - HR report exports include **Child Name**, **Parent Name**, **Therapist Name**, and **Therapist ID** (with Case ID) on all case-linked reports so rows are readable without looking up IDs alone. Downloads are date-stamped (`report-key-YYYY-MM-DD`) and XLSX/PDF titles include the generation date.
 - Bulk attendance and monthly session summary split mid-month therapist replacements into separate case×assignment rows with **Assignment Start** / **Assignment End** (session metrics scoped to each window).
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Finance snapshot enabled on insighte.org: Railway `ENABLE_BILLING=true` (read-only tower routes); Vercel Production `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` + `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true`. Ledger writes remain off. Runbook: `docs/FINANCE_SNAPSHOT_PROD_CUTOVER.md`, script: `scripts/enable_finance_snapshot_prod.py`.
+- Finance therapist payout preview Excel/CSV columns aligned to lumpsum billing: **Billing Type**, **Client Amount (INR)** (was package-only `Lumpsum Amount`), **Therapist Pay (INR)**, **Therapist Unit Pay (INR)** — no share/% headers. Closed snapshots remap legacy headers on read. Postgres migration proof registry includes Alembic head `v6w7x8y9z0a1`.
+- Finance Reports UI uses a card catalog (all 10 report types) with clearer empty states instead of a single dropdown.
+- Therapist compensation is lumpsum-only (`FIXED_LUMP`): UI and writers no longer offer percentage; `resolve_therapist_pay` reads `therapist_fixed_pay_inr` with fallback to legacy `pay_share_amount_inr`. Existing PERCENTAGE rows are copy-migrated (amounts already INR — not re-multiplied).
+- Finance **Margin by case** report includes `marginPct` and flags rows where Insighte margin is under 30% (`LOW_MARGIN_BELOW_30`); UI highlights those rows.
+- Payout preview / HR billing snapshot columns use lumpsum labels (`Therapist Pay (INR)`, `Per Session Pay (INR)`) instead of legacy “share” / PERCENTAGE wording; closed-month snapshots remap old headers on read.
+- Admin Session Logs Sessions tab is card-first on ≤1024px with duration, venue, both status pills, and thumb-zone View/Flag actions.
+- Superadmin home billing widget links to **Therapist payouts** (`/admin/therapist-payouts?sub=queue`) — the count is `invoices` in `IN_REVIEW`, not client invoices.
+- Finance snapshot + Control Tower: non-production builds default the Stage 1 dashboard on when `VITE_ENABLE_FINANCE_DASHBOARD_V1` is unset; canonical production stays gated unless both that flag and `VITE_FINANCE_DASHBOARD_ALLOW_PROD` are true. Empty-state copy clarifies this is an environment gate, not a broken invoices screen.
 - HR report column label **Client Name** renamed to **Child Name** on case-linked operational and legacy exports for clearer identification (CSV/JSON column order also places Child/Parent/Therapist identity columns together near Case ID).
 - Therapist invoices and client period charges use the payout-report cycle engine (gross, no TDS). Homecare bills approved sessions at allotment rates; shadow/B2B bills the same calendar days as therapist pay. Transition pay is therapist-only. Build from ledger posts those period charges when the ledger is empty; finance composer payout matches the therapist invoice.
 - Finance workspace: **Client invoices** and **Therapist payouts** are parallel money-in / money-out screens for every admin with billing access (no separate Finance home). Client invoices bill system gross; optional TDS is recorded when the payer withholds it. Therapist payouts show gross → TDS → net, raise-on-behalf, notes, and month records. Finance reports stay in the sidebar.
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Outgoing Shadow/B2B calendar-day pay no longer treats an out-of-month last approved-log date as a day-of-the-pay-month (e.g. 3 July while computing June). The same day count feeds client gross; receivables and payables both move. Follow-up: [docs/finance/outgoing_calendar_day_clamp.md](docs/finance/outgoing_calendar_day_clamp.md).
+- Finance snapshot summary on production: extended control-tower summary fetch to 120s (prod aggregation can exceed the default 30s client timeout and looked like an API connectivity failure).
+- Therapist invoice breakdown uses stored payout snapshots (case + session lines) instead of rebuilding from live logs — fixes empty or ₹0 breakdowns on paid/in-review invoices when line items were missing.
+- Therapist invoice session breakdown on mobile: stacked session cards, full-height bottom sheets, and thumb-zone Done/Submit actions (no horizontal scroll table).
+- Support history KPI counts align with visible rows (search + needs-attention); ticket queue filters and badges use canonical open / in_progress / closed / escalated buckets.
+- Case billing forms always show client amount (including monthly); monthly client draft invoices no longer fall back to ₹0.01 MANUAL_FEE when only `client_monthly_rate_inr` is set.
+- Therapist pay cannot exceed client billing amount; homecare share under 20% of client amount routes to the low-margin approval queue.
 - Alembic dual head after finance TDS + case Zoho ID merge: empty merge revision `b95440cc4d91` joins `fn9tds0cl1nt` and `z1o2h3o4i5d6`; registered in Postgres migration proof; single-head test expects the merge tip.
 - Step 5 billing eligibility tests force a homecare per-session case so shadow/B2B calendar-day blocking does not skip SESSION ledger holds.
 - Therapist payout queue no longer auto-applies 10% TDS or treats pending approval as blocked. Finance enters TDS (0 if none), then approves and marks paid from the same workbench.

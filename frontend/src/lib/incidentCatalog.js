@@ -1,13 +1,13 @@
-/** Fallback labels when /incidents/meta is unavailable */
+/** Display labels collapse to the four canonical buckets (open / escalated / closed). */
 export const INCIDENT_STATUS_META = {
-  REPORTED: { label: 'Reported', bg: '#fef3c7', color: '#b45309' },
-  IN_REVIEW: { label: 'In review', bg: '#dbeafe', color: '#1d4ed8' },
-  ACTION_TAKEN: { label: 'Action taken', bg: '#d1fae5', color: '#047857' },
+  REPORTED: { label: 'Open', bg: '#fef3c7', color: '#b45309' },
+  IN_REVIEW: { label: 'Escalated', bg: '#fee2e2', color: '#b91c1c' },
+  ACTION_TAKEN: { label: 'Closed', bg: '#d1fae5', color: '#047857' },
   ESCALATED: { label: 'Escalated', bg: '#fee2e2', color: '#b91c1c' },
   CLOSED: { label: 'Closed', bg: '#f1f5f9', color: '#64748b' },
-  OPEN: { label: 'Reported', bg: '#fef3c7', color: '#b45309' },
-  INVESTIGATING: { label: 'In review', bg: '#dbeafe', color: '#1d4ed8' },
-  RESOLVED: { label: 'Action taken', bg: '#d1fae5', color: '#047857' },
+  OPEN: { label: 'Open', bg: '#fef3c7', color: '#b45309' },
+  INVESTIGATING: { label: 'Escalated', bg: '#fee2e2', color: '#b91c1c' },
+  RESOLVED: { label: 'Closed', bg: '#d1fae5', color: '#047857' },
 }
 
 export const PRIORITY_META = {

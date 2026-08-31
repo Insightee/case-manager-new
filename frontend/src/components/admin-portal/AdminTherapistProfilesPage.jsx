@@ -140,10 +140,36 @@ function ProfileChangesSection({ profile, categories }) {
   )
 }
 
-const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
+const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT', 'DELETED', 'NEEDS_LISTING']
+
+const ACTIVITY_FILTERS = [
+  { value: '', label: 'All activity' },
+  { value: 'no_sessions_15d', label: 'No session logs (15 days)' },
+]
+
+function statusFilterLabel(value) {
+  if (value === 'ALL') return 'All statuses'
+  if (value === 'NEEDS_LISTING') return 'Needs listing'
+  if (value === 'DELETED') return 'Deleted'
+  return value.charAt(0) + value.slice(1).toLowerCase()
+}
+
+function profileRowKey(profile) {
+  return profile.id != null ? String(profile.id) : `user-${profile.user_id}`
+}
+
+function formatLastSessionLog(profile) {
+  if (profile.last_session_log_at) {
+    const d = new Date(profile.last_session_log_at)
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  if (profile.days_since_last_session_log == null) return 'Never'
+  return 'Never'
+}
 
 /** Badge/filter status: approved listings with unreviewed edits count as Pending. */
 function profileDisplayStatus(profile) {
+  if (profile?.status === 'NEEDS_LISTING' || profile?.status === 'DELETED') return profile.status
   if (profile?.has_pending_changes) return 'PENDING'
   return profile?.status || 'DRAFT'
 }
@@ -165,6 +191,7 @@ export function AdminTherapistProfilesPage() {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const urlStatus = searchParams.get('status') || 'ALL'
+  const urlActivity = searchParams.get('activity') || ''
   const urlUserId = searchParams.get('user_id')
   const canEditProfiles = canManageUsers || (user?.roles || []).includes('SUPER_ADMIN')
 
@@ -179,6 +206,7 @@ export function AdminTherapistProfilesPage() {
   const [categories, setCategories] = useState([])
   const [summary, setSummary] = useState(null)
   const [statusFilter, setStatusFilter] = useState(urlStatus)
+  const [activityFilter, setActivityFilter] = useState(urlActivity)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
@@ -196,9 +224,12 @@ export function AdminTherapistProfilesPage() {
   async function load(selectProfileId = null) {
     setLoading(true)
     try {
-      const q = statusFilter !== 'ALL' ? `?status=${statusFilter}` : ''
+      const params = new URLSearchParams()
+      if (statusFilter !== 'ALL') params.set('status', statusFilter)
+      if (activityFilter) params.set('activity', activityFilter)
+      const qs = params.toString()
       const [rows, cats, sum] = await Promise.all([
-        apiFetch(`/api/v1/admin/therapist-profiles${q}`),
+        apiFetch(`/api/v1/admin/therapist-profiles${qs ? `?${qs}` : ''}`),
         apiFetch('/api/v1/therapist/service-categories'),
         apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
       ])
@@ -218,11 +249,15 @@ export function AdminTherapistProfilesPage() {
 
   useEffect(() => {
     load()
-  }, [statusFilter])
+  }, [statusFilter, activityFilter])
 
   useEffect(() => {
     setStatusFilter(urlStatus)
   }, [urlStatus])
+
+  useEffect(() => {
+    setActivityFilter(urlActivity)
+  }, [urlActivity])
 
   useEffect(() => {
     if (!urlUserId || loading || profiles.length === 0) return
@@ -238,6 +273,16 @@ export function AdminTherapistProfilesPage() {
     else nextParams.status = next
     setSearchParams(nextParams, { replace: true })
   }
+
+  function setActivityFilterAndUrl(next) {
+    setActivityFilter(next)
+    const nextParams = { ...Object.fromEntries(searchParams.entries()) }
+    if (!next) delete nextParams.activity
+    else nextParams.activity = next
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  const showLastLogColumn = activityFilter === 'no_sessions_15d'
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -314,6 +359,29 @@ export function AdminTherapistProfilesPage() {
     } catch (err) {
       setError(err.message || 'Delete failed')
     }
+  }
+
+  async function handleRestore(profileId) {
+    setError('')
+    setSuccess('')
+    try {
+      await apiFetch(`/api/v1/admin/therapist-profiles/${profileId}/restore`, { method: 'POST' })
+      setSelected(null)
+      setSuccess('Profile restored as paused.')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Restore failed')
+    }
+  }
+
+  function openNeedsListingCreate(profile) {
+    setForm({
+      ...EMPTY_FORM,
+      user_id: String(profile.user_id),
+      display_name: profile.full_name || profile.display_name || '',
+    })
+    setShowCreate(true)
+    setSelected(null)
   }
 
   async function saveSupervisorMentor(profileId) {
@@ -421,7 +489,21 @@ export function AdminTherapistProfilesPage() {
           <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
           <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
           <AdminStatCard title="Paused" value={summary.PAUSED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('PAUSED')} />
-          <AdminStatCard title="No profile" value={summary.no_profile ?? 0} tone="indigo" hint="Therapists without listing" />
+          <AdminStatCard title="Deleted" value={summary.DELETED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('DELETED')} />
+          <AdminStatCard
+            title="Needs listing"
+            value={summary.needs_listing ?? summary.no_profile ?? 0}
+            tone="indigo"
+            hint="Therapist accounts without a service profile yet"
+            onClick={() => setStatusFilterAndUrl('NEEDS_LISTING')}
+          />
+          <AdminStatCard
+            title="No logs 15d"
+            value={summary.no_sessions_15d ?? 0}
+            tone="amber"
+            hint="Listed therapists with no submitted session logs in 15 days"
+            onClick={() => setActivityFilterAndUrl('no_sessions_15d')}
+          />
         </div>
       ) : null}
 
@@ -432,8 +514,14 @@ export function AdminTherapistProfilesPage() {
           onChange={(e) => setStatusFilterAndUrl(e.target.value)}
           options={STATUS_FILTERS.map((s) => ({
             value: s,
-            label: s === 'ALL' ? 'All statuses' : s.charAt(0) + s.slice(1).toLowerCase(),
+            label: statusFilterLabel(s),
           }))}
+        />
+        <FilterSelect
+          label="Activity"
+          value={activityFilter}
+          onChange={(e) => setActivityFilterAndUrl(e.target.value)}
+          options={ACTIVITY_FILTERS}
         />
         <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
       </AdminStickyFilterRow>
@@ -444,7 +532,19 @@ export function AdminTherapistProfilesPage() {
           <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
           <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
           <AdminStatCard title="Paused" value={summary.PAUSED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('PAUSED')} />
-          <AdminStatCard title="No profile" value={summary.no_profile ?? 0} tone="indigo" />
+          <AdminStatCard title="Deleted" value={summary.DELETED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('DELETED')} />
+          <AdminStatCard
+            title="Needs listing"
+            value={summary.needs_listing ?? summary.no_profile ?? 0}
+            tone="indigo"
+            onClick={() => setStatusFilterAndUrl('NEEDS_LISTING')}
+          />
+          <AdminStatCard
+            title="No logs 15d"
+            value={summary.no_sessions_15d ?? 0}
+            tone="amber"
+            onClick={() => setActivityFilterAndUrl('no_sessions_15d')}
+          />
         </div>
       ) : null}
 
@@ -509,8 +609,8 @@ export function AdminTherapistProfilesPage() {
           <div className="admin-desktop-only">
             <AdminCollapsibleFilters
               quickSearch={<AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />}
-              activeChips={[statusFilter !== 'ALL' ? statusFilter : null, search.trim()].filter(Boolean)}
-              activeCount={[statusFilter !== 'ALL', search.trim()].filter(Boolean).length}
+              activeChips={[statusFilter !== 'ALL' ? statusFilterLabel(statusFilter) : null, activityFilter ? ACTIVITY_FILTERS.find((f) => f.value === activityFilter)?.label : null, search.trim()].filter(Boolean)}
+              activeCount={[statusFilter !== 'ALL', activityFilter, search.trim()].filter(Boolean).length}
             >
               <AdminToolbar className="admin-toolbar--mobile-compact">
                 <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
@@ -520,8 +620,14 @@ export function AdminTherapistProfilesPage() {
                   onChange={(e) => setStatusFilterAndUrl(e.target.value)}
                   options={STATUS_FILTERS.map((s) => ({
                     value: s,
-                    label: s === 'ALL' ? 'All statuses' : s.charAt(0) + s.slice(1).toLowerCase(),
+                    label: statusFilterLabel(s),
                   }))}
+                />
+                <FilterSelect
+                  label="Activity"
+                  value={activityFilter}
+                  onChange={(e) => setActivityFilterAndUrl(e.target.value)}
+                  options={ACTIVITY_FILTERS}
                 />
               </AdminToolbar>
             </AdminCollapsibleFilters>
@@ -541,13 +647,14 @@ export function AdminTherapistProfilesPage() {
                         <th>Therapist</th>
                         <th>Services</th>
                         <th>Primary CM</th>
+                        {showLastLogColumn ? <th>Last session log</th> : null}
                         <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((p) => (
-                        <tr key={p.id}>
+                        <tr key={profileRowKey(p)}>
                           <td>
                             <span className="admin-table__primary">{p.display_name || p.full_name}</span>
                             <span className="admin-table__meta">{p.email}</span>
@@ -567,6 +674,9 @@ export function AdminTherapistProfilesPage() {
                               <span className="admin-table__meta">Mentor: {p.mentor_name}</span>
                             ) : null}
                           </td>
+                          {showLastLogColumn ? (
+                            <td>{formatLastSessionLog(p)}</td>
+                          ) : null}
                           <td><StatusBadge status={profileDisplayStatus(p)} /></td>
                           <td>
                             <button
@@ -578,7 +688,7 @@ export function AdminTherapistProfilesPage() {
                                 setEditingServices(false)
                               }}
                             >
-                              Review
+                              {p.status === 'NEEDS_LISTING' ? 'Create' : 'Review'}
                             </button>
                           </td>
                         </tr>
@@ -590,10 +700,10 @@ export function AdminTherapistProfilesPage() {
               mobile={
                 <ul className="admin-data-list__cards">
                   {filtered.map((p) => (
-                    <li key={p.id}>
+                    <li key={profileRowKey(p)}>
                       <AdminTaskCard
                         title={p.display_name || p.full_name}
-                        meta={p.email}
+                        meta={[p.email, showLastLogColumn ? `Last log: ${formatLastSessionLog(p)}` : null].filter(Boolean).join(' · ')}
                         badges={<StatusBadge status={profileDisplayStatus(p)} />}
                         actions={
                           <button
@@ -605,7 +715,7 @@ export function AdminTherapistProfilesPage() {
                               setEditingServices(false)
                             }}
                           >
-                            Review
+                            {p.status === 'NEEDS_LISTING' ? 'Create' : 'Review'}
                           </button>
                         }
                       >
@@ -651,6 +761,21 @@ export function AdminTherapistProfilesPage() {
             </header>
 
             <div className="therapist-profile-drawer__body">
+              {selected.status === 'NEEDS_LISTING' ? (
+                <section className="therapist-profile-drawer__section">
+                  <p className="therapist-profile-drawer__text">
+                    This therapist account does not have a service listing yet. Pending and deleted listings are tracked separately.
+                  </p>
+                  {canEditProfiles ? (
+                    <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => openNeedsListingCreate(selected)}>
+                      Create service profile
+                    </button>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {selected.status !== 'NEEDS_LISTING' ? (
+                <>
               <ProfileChangesSection profile={selected} categories={categories} />
 
               {(selected.short_bio || selected.academic_qualifications || (selected.professional_certificates || []).length) ? (
@@ -818,6 +943,11 @@ export function AdminTherapistProfilesPage() {
               </label>
 
               <div className="therapist-profile-drawer__footer">
+                {canEditProfiles && selected.status === 'DELETED' ? (
+                  <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => handleRestore(selected.id)}>
+                    Restore as paused
+                  </button>
+                ) : null}
                 {canEditProfiles && (selected.status === 'PENDING' || selected.has_pending_changes) ? (
                   <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
                     Approve
@@ -833,12 +963,14 @@ export function AdminTherapistProfilesPage() {
                     Resume
                   </button>
                 ) : null}
-                {canEditProfiles ? (
+                {canEditProfiles && selected.id && selected.status !== 'DELETED' && selected.status !== 'NEEDS_LISTING' ? (
                   <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => handleDelete(selected.id)}>
                     Delete
                   </button>
                 ) : null}
               </div>
+                </>
+              ) : null}
             </div>
           </div>
         </div>

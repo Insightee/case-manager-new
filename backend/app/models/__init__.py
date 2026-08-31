@@ -10,6 +10,7 @@ from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
 from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionDay
 from app.models.case_client_status_audit import CaseClientStatusAudit
+from app.models.case_billing_rate_change import CaseBillingRateChange
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.clinical_evidence import GoalEvidenceEvent, IepGoalCard, IepSupportPriority
 from app.models.clinical_report import (
@@ -25,6 +26,14 @@ from app.models.iep_identity import IepGoalItem, IepStrategyItem
 from app.models.iep_plan_suggestion import IepPlanSuggestion
 from app.models.session_evidence import SessionGoalEntry, StrategyUseEvent
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
+from app.models.calendar_availability import (
+    AvailabilityExceptionType,
+    CalendarProvider,
+    StaffAvailabilityException,
+    StaffAvailabilityRule,
+    StaffBookingPolicy,
+    UserCalendarConnection,
+)
 from app.models.meeting_action import MeetingAction
 from app.models.client_billing import (
     BillingDispute,
@@ -134,6 +143,7 @@ __all__ = [
     "BillingApprovalStatus",
     "Organisation",
     "Case",
+    "CaseBillingRateChange",
     "CaseClientStatusAudit",
     "CaseService",
     "CaseServiceStatus",
@@ -145,6 +155,12 @@ __all__ = [
     "MeetingAction",
     "MeetingType",
     "MeetingStatus",
+    "AvailabilityExceptionType",
+    "CalendarProvider",
+    "StaffAvailabilityRule",
+    "StaffAvailabilityException",
+    "StaffBookingPolicy",
+    "UserCalendarConnection",
     "CaseAssignment",
     "BookingMode",
     "CaseAppointmentUsage",

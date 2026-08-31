@@ -13,14 +13,20 @@ from app.models.case import BillingType, Case, CompensationMode
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.user import User
 from app.services.finance_payout_preview_service import (
+    DEMO_CALENDAR_SEED_MONTHS,
     SHADOW_MONTHLY_DAYS,
     apply_therapist_total_column,
     calendar_days_for_segment,
     calendar_days_from_start_day,
     calendar_days_incoming,
     calendar_days_outgoing,
+    classify_outgoing_calendar_day_segments,
     client_configured_share_inr,
     client_lumpsum_inr,
+    diff_calendar_day_clamp_snapshots,
+    freeze_outgoing_clamp_scope,
+    freeze_payout_identities,
+    is_demo_calendar_seed_month,
     pay_month_day,
     per_session_share_inr,
     predicted_client_amount_inr,
@@ -182,6 +188,164 @@ def test_calendar_days_replacement_incoming():
     assert days == 13
 
 
+def test_calendar_days_future_segment_end_uses_in_month_last_log():
+    """IC-2026-SS-029 repro: July segment_end must not zero June payout."""
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=date(2026, 6, 4),
+        last_log=date(2026, 6, 28),
+        assignment_start=date(2026, 6, 4),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 7, 3),
+    )
+    assert days == 25
+
+
+def test_calendar_days_future_segment_end_no_in_month_logs_returns_zero():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=None,
+        last_log=None,
+        assignment_start=date(2026, 6, 4),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 7, 3),
+    )
+    assert days == 0
+
+
+def test_calendar_days_segment_closed_before_billing_month_returns_zero():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=None,
+        last_log=None,
+        assignment_start=date(2026, 5, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 5, 20),
+    )
+    assert days == 0
+
+
+def test_calendar_days_genuine_june_exit_unchanged():
+    """In-month segment_end is a no-op for correctly-paid outgoing cases."""
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=date(2026, 6, 1),
+        last_log=date(2026, 6, 12),
+        assignment_start=date(2026, 6, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 6, 12),
+    )
+    assert days == 12
+
+
+def test_calendar_days_non_outgoing_ongoing_unchanged():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=False,
+        first_log=date(2026, 6, 1),
+        last_log=date(2026, 6, 28),
+        assignment_start=date(2026, 6, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=None,
+    )
+    assert days == 30
+
+
+def test_calendar_days_never_exceeds_first_log_through_month_end():
+    month_start = date(2026, 6, 1)
+    month_end = date(2026, 6, 30)
+    first_log = date(2026, 6, 4)
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=first_log,
+        last_log=date(2026, 6, 28),
+        assignment_start=date(2026, 6, 4),
+        employment_start=None,
+        month_start=month_start,
+        month_end=month_end,
+        segment_end=date(2026, 7, 3),
+    )
+    assert days <= calendar_days_from_start_day(pay_month_day(first_log))
+
+
+def test_calendar_days_outgoing_july_last_log_in_june_month_is_zero():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=date(2026, 7, 1),
+        last_log=date(2026, 7, 3),
+        assignment_start=date(2026, 5, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 7, 15),
+    )
+    assert days == 0
+    assert calendar_days_outgoing(last_log=date(2026, 7, 3), segment_start_day=1) == 3
+
+
+def test_calendar_days_outgoing_future_end_last_log_before_month_is_zero():
+    days = calendar_days_for_segment(
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+        first_log=date(2026, 5, 10),
+        last_log=date(2026, 5, 28),
+        assignment_start=date(2026, 5, 1),
+        employment_start=None,
+        month_start=date(2026, 6, 1),
+        month_end=date(2026, 6, 30),
+        segment_end=date(2026, 7, 3),
+    )
+    assert days == 0
+
+
+def test_calendar_days_out_of_month_end_cannot_increase_vs_in_month_evidence():
+    month_start = date(2026, 6, 1)
+    month_end = date(2026, 6, 30)
+    for last_day in (1, 10, 15, 20, 30):
+        last_log = date(2026, 6, last_day)
+        kwargs = dict(
+            is_incoming_replacement=False,
+            is_outgoing_replacement=True,
+            first_log=date(2026, 6, 1),
+            last_log=last_log,
+            assignment_start=date(2026, 5, 1),
+            employment_start=None,
+            month_start=month_start,
+            month_end=month_end,
+        )
+        in_month_days = calendar_days_for_segment(**kwargs, segment_end=last_log)
+        stretched = calendar_days_for_segment(**kwargs, segment_end=date(2026, 7, 3))
+        assert stretched <= in_month_days
+        assert stretched == last_day
+
+
+def test_homecare_per_session_pay_ignores_calendar_days():
+    case = _case(
+        billing_type=BillingType.PER_SESSION,
+        compensation_mode=CompensationMode.PERCENTAGE,
+        pay_share_amount_inr=800,
+    )
+    short = predicted_subtotal_inr(case, approved_sessions=5, calendar_days=3)
+    full = predicted_subtotal_inr(case, approved_sessions=5, calendar_days=30)
+    assert short == full == 4000
+
+
 def test_calendar_days_new_hire_employment_start():
     days = calendar_days_for_segment(
         is_incoming_replacement=False,
@@ -218,6 +382,28 @@ def test_homecare_package_divides_by_session_count():
     assert client_lumpsum_inr(case) == 25000
     assert per_session_share_inr(case) == 750
     assert predicted_subtotal_inr(case, approved_sessions=8, calendar_days=30, unpaid_leaves=2) == 6000
+
+
+def test_client_lumpsum_fills_per_session_and_monthly():
+    """Client Amount (INR) must not be blank for non-package billing."""
+    per_session = _case(
+        billing_type=BillingType.PER_SESSION,
+        compensation_mode=CompensationMode.FIXED_LUMP,
+        client_rate_per_session_inr=1200,
+        therapist_fixed_pay_inr=840,
+    )
+    assert client_lumpsum_inr(per_session) == 1200
+
+    monthly = _case(
+        billing_type=BillingType.MONTHLY_FIXED,
+        compensation_mode=CompensationMode.FIXED_LUMP,
+        client_monthly_rate_inr=18000,
+        therapist_fixed_pay_inr=9000,
+    )
+    assert client_lumpsum_inr(monthly) == 18000
+
+    empty = _case(billing_type=BillingType.PER_SESSION, client_rate_per_session_inr=None)
+    assert client_lumpsum_inr(empty) is None
 
 
 def test_shadow_uses_calendar_days_minus_unpaid_leaves():
@@ -334,6 +520,27 @@ def test_apply_therapist_total_column_first_row_only():
     assert list(result[0].keys())[-1] == "Therapist Total"
 
 
+def test_normalize_legacy_share_column_headers():
+    from app.services.finance_payout_preview_service import normalize_payout_preview_row
+
+    row = normalize_payout_preview_row(
+        {
+            "Therapist Share": 4500,
+            "Per Session Share": 150,
+            "Lumpsum Amount": 12000,
+            "Predicted Total": 4500,
+            "Therapist ID": "T9",
+        }
+    )
+    assert row["Therapist Pay (INR)"] == 4500
+    assert row["Therapist Unit Pay (INR)"] == 150
+    assert row["Client Amount (INR)"] == 12000
+    assert "Therapist Share" not in row
+    assert "Per Session Share" not in row
+    assert "Lumpsum Amount" not in row
+    assert "Per Session Pay (INR)" not in row
+
+
 def test_finance_payout_preview_report_json():
     headers = _headers("finance@demo.com")
     r = client.get(
@@ -350,6 +557,10 @@ def test_finance_payout_preview_report_json():
     if body["rows"]:
         row = body["rows"][0]
         assert "Case ID" in row
+        assert "Client Name" in row
+        assert "Parent Name" in row
+        keys = list(row.keys())
+        assert keys.index("Parent Name") == keys.index("Client Name") + 1
         assert "Therapist Start Date" in row
         assert "Case Start Date" in row
         assert "Case End Date" in row
@@ -359,8 +570,19 @@ def test_finance_payout_preview_report_json():
         assert "Transition Day Type" in row
         assert "Transition Days Total Amount" in row
         assert "Predicted Total" in row
-        assert "Per Session Share" in row
+        assert "Billing Type" in row
+        assert "Client Amount (INR)" in row
+        assert "Therapist Pay (INR)" in row
+        assert "Therapist Unit Pay (INR)" in row
+        assert "Lumpsum Amount" not in row
+        assert "Therapist Share" not in row
+        assert "Per Session Share" not in row
+        assert "Per Session Pay (INR)" not in row
         assert "Therapist Total" in row
+        # Homecare per-session must carry client amount (not blank package-only lumpsum)
+        per_session_rows = [r for r in body["rows"] if r.get("Billing Type") == "PER_SESSION"]
+        if per_session_rows:
+            assert any(r.get("Client Amount (INR)") not in (None, "") for r in per_session_rows)
 
 
 def test_finance_payout_preview_report_csv():
@@ -381,3 +603,147 @@ def test_finance_payout_preview_report_xlsx():
     )
     assert r.status_code == 200
     assert "spreadsheetml" in r.headers.get("content-type", "")
+
+
+def test_demo_seed_months_are_not_live_clamp_merge_gate():
+    assert is_demo_calendar_seed_month("2026-06")
+    assert "2026-05" in DEMO_CALENDAR_SEED_MONTHS
+    assert "2026-07" in DEMO_CALENDAR_SEED_MONTHS
+    assert not is_demo_calendar_seed_month("2026-08")
+
+
+def test_classify_outgoing_calendar_day_segments_id_only():
+    db = SessionLocal()
+    try:
+        rows = classify_outgoing_calendar_day_segments(db, "2026-06")
+        forbidden = {"Client Name", "Parent Name", "Therapist Name", "child_name"}
+        for row in rows:
+            assert forbidden.isdisjoint(row.keys())
+            assert "case_id" in row
+            assert "therapist_user_id" in row
+            assert row["class"] in {
+                "out_of_month_end",
+                "pre_month_closed",
+                "control",
+                "unbounded_outgoing",
+            }
+        freeze = freeze_outgoing_clamp_scope(rows)
+        identities = freeze_payout_identities(rows)
+        assert len(identities) == len(freeze)
+        for row in freeze:
+            assert row["class"] in {"out_of_month_end", "pre_month_closed"}
+            assert row["is_demo_seed_month"] is True
+    finally:
+        db.close()
+
+
+def test_diff_calendar_day_clamp_snapshots_bounds_columns_and_rows():
+    identity = ("12", "4", "2026-05-01", "2026-07-03")
+    before = {
+        "payout_rows": [
+            {
+                "case_id": 12,
+                "therapist_user_id": 4,
+                "segment_start": "2026-05-01",
+                "segment_end": "2026-07-03",
+                "calendar_days": 3,
+                "approved_sessions": 8,
+                "therapist_gross_inr": 600.0,
+                "client_amount_inr": 1000.0,
+                "billing_type": "PACKAGE",
+                "uses_calendar_day_pay": True,
+            },
+            {
+                "case_id": 99,
+                "therapist_user_id": 8,
+                "segment_start": "2026-06-01",
+                "segment_end": "",
+                "calendar_days": 30,
+                "approved_sessions": 20,
+                "therapist_gross_inr": 15000.0,
+                "client_amount_inr": 30000.0,
+                "billing_type": "PACKAGE",
+                "uses_calendar_day_pay": True,
+            },
+        ],
+        "client_rows": [
+            {
+                "case_id": 12,
+                "billing_type": "PACKAGE",
+                "uses_calendar_day_pay": True,
+                "client_gross_inr": 1000.0,
+                "calendar_days": 3,
+                "approved_sessions": 8,
+                "package_amount_inr": 30000,
+            },
+            {
+                "case_id": 99,
+                "billing_type": "PACKAGE",
+                "uses_calendar_day_pay": True,
+                "client_gross_inr": 30000.0,
+                "calendar_days": 30,
+                "approved_sessions": 20,
+                "package_amount_inr": 30000,
+            },
+            {
+                "case_id": 50,
+                "billing_type": "PER_SESSION",
+                "uses_calendar_day_pay": False,
+                "client_gross_inr": 6000.0,
+                "calendar_days": 0,
+                "approved_sessions": 5,
+                "client_rate_per_session_inr": 1200,
+            },
+        ],
+    }
+    after = {
+        "payout_rows": [
+            {
+                **before["payout_rows"][0],
+                "calendar_days": 20,
+                "therapist_gross_inr": 4000.0,
+                "client_amount_inr": 6666.67,
+            },
+            dict(before["payout_rows"][1]),
+        ],
+        "client_rows": [
+            {
+                **before["client_rows"][0],
+                "client_gross_inr": 6666.67,
+                "calendar_days": 20,
+            },
+            dict(before["client_rows"][1]),
+            dict(before["client_rows"][2]),
+        ],
+    }
+    ok = diff_calendar_day_clamp_snapshots(before, after, frozen_identities={identity})
+    assert ok["ok"] is True
+
+    leaked = {
+        "payout_rows": [
+            before["payout_rows"][0],
+            {
+                **before["payout_rows"][1],
+                "calendar_days": 21,
+                "therapist_gross_inr": 10500.0,
+            },
+        ],
+        "client_rows": before["client_rows"],
+    }
+    bad = diff_calendar_day_clamp_snapshots(before, leaked, frozen_identities={identity})
+    assert bad["ok"] is False
+    assert bad["unexpected_payout"]
+
+    homecare_drift = {
+        "payout_rows": before["payout_rows"],
+        "client_rows": [
+            before["client_rows"][0],
+            before["client_rows"][1],
+            {**before["client_rows"][2], "approved_sessions": 9},
+        ],
+    }
+    hc = diff_calendar_day_clamp_snapshots(
+        before, homecare_drift, frozen_identities={identity}
+    )
+    assert hc["ok"] is False
+    assert hc["unexpected_client"]

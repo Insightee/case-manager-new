@@ -113,8 +113,8 @@ def _seed_iep(db, case_id: int, author_id: int) -> IepPlan:
 def test_alembic_single_head_is_goal_repository_repair():
     cfg = Config(str(_BACKEND / "alembic.ini"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    # Current tip: integration principals migration (parents merge of prior heads).
-    assert heads == ["i1integr2api3layer"]
+    # Current tip: shadow school default + lumpsum billing backfill.
+    assert heads == ["v6w7x8y9z0a1"]
 
 
 def test_structured_evidence_revision_upgrade_and_downgrade(tmp_path):

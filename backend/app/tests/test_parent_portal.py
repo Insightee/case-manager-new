@@ -97,9 +97,35 @@ def test_parent_cases_hide_closed_and_suspended():
     )
     assert activate.status_code == 200, activate.text
 
+    # Second active case keeps parent portal login after the first case closes.
+    allot_b = client.post(
+        "/api/v1/admin/cases/allot",
+        headers=admin_headers,
+        json={
+            "child_id": child_id,
+            "service_type": "Shadow support",
+            "product_module": "shadow_support",
+            "billing_type": "PER_SESSION",
+            "compensation_mode": "PERCENTAGE",
+            "client_billing_mode": "POSTPAID",
+            "client_rate_per_session_inr": 900,
+            "pay_share_amount_inr": 540,
+            "therapist_user_id": therapist_id,
+            "day_type": "HALF_DAY",
+        },
+    )
+    assert allot_b.status_code == 201, allot_b.text
+    case_id_b = allot_b.json()["case"]["id"]
+    activate_b = client.post(
+        f"/api/v1/admin/cases/{case_id_b}/activate-allotment",
+        headers=admin_headers,
+    )
+    assert activate_b.status_code == 200, activate_b.text
+
     parent = _login(parent_email, parent_password)
     visible_before = client.get("/api/v1/parent/cases", headers=parent).json()
     assert any(row["id"] == case_id for row in visible_before)
+    assert any(row["id"] == case_id_b for row in visible_before)
 
     close = client.post(
         f"/api/v1/cases/{case_id}/client-status",
@@ -114,9 +140,11 @@ def test_parent_cases_hide_closed_and_suspended():
 
     visible = client.get("/api/v1/parent/cases", headers=parent).json()
     assert all(row["id"] != case_id for row in visible)
+    assert any(row["id"] == case_id_b for row in visible)
 
     home = client.get("/api/v1/parent/home", headers=parent).json()
     assert all(row["id"] != case_id for row in home["cases"])
+    assert any(row["id"] == case_id_b for row in home["cases"])
     assert home["stats"]["case_count"] == len(visible)
 
     detail = client.get(f"/api/v1/parent/cases/{case_id}", headers=parent)

@@ -9,6 +9,7 @@ from sqlalchemy import select
 logger = logging.getLogger("insightcase.appointment_booking")
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.session_defaults import default_session_mode_for_case
 from app.models.case import Case
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
@@ -69,12 +70,14 @@ def sync_session_for_slot(db: Session, slot: TherapistSlot) -> TherapySession | 
         db.flush()
         return orphan
 
+    case = db.get(Case, slot.case_id) if slot.case_id else None
     sess = TherapySession(
         case_id=slot.case_id,
         therapist_user_id=slot.therapist_user_id,
         scheduled_date=slot.slot_date,
         start_time=slot.start_time,
         end_time=slot.end_time,
+        mode=default_session_mode_for_case(case),
         status=SessionStatus.SCHEDULED,
         slot_id=slot.id,
         slot_duration_minutes=slot.slot_duration_minutes,

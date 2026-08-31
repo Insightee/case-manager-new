@@ -248,7 +248,8 @@ def test_enqueue_dedupe_within_cooldown():
                 entity_id=1,
             )
         assert first is not None
-        assert second is None or second == first
+        assert second is None
+        assert bg.add_task.call_count == 1
     finally:
         db.close()
 

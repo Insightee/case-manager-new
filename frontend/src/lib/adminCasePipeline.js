@@ -97,6 +97,16 @@ export function sortPipelineRows(rows, sort = 'priority') {
   })
 }
 
+/** First day of current month through today (ISO dates). */
+export function defaultOpenedRange(referenceDate = new Date()) {
+  const today = new Date(referenceDate)
+  today.setHours(0, 0, 0, 0)
+  const start = new Date(today.getFullYear(), today.getMonth(), 1)
+  return { from: isoDay(start), to: isoDay(today) }
+}
+
+const DEFAULT_OPENED = defaultOpenedRange()
+
 const EMPTY_FILTERS = {
   queue: 'all',
   search: '',
@@ -105,12 +115,46 @@ const EMPTY_FILTERS = {
   caseManagerId: 'all',
   therapistId: 'all',
   childId: 'all',
-  openedPreset: 'all',
-  dateFrom: '',
-  dateTo: '',
+  openedPreset: 'custom',
+  openedMonth: 'all',
+  openedYear: 'all',
+  dateFrom: DEFAULT_OPENED.from,
+  dateTo: DEFAULT_OPENED.to,
   operationalStage: 'all',
   unassignedCmOnly: false,
   unassignedTherapistOnly: false,
+}
+
+/** Month options for the opened-date filter (value is a zero-padded month number). */
+export const OPENED_MONTH_OPTIONS = [
+  { value: 'all', label: 'All months' },
+  { value: '01', label: 'January' },
+  { value: '02', label: 'February' },
+  { value: '03', label: 'March' },
+  { value: '04', label: 'April' },
+  { value: '05', label: 'May' },
+  { value: '06', label: 'June' },
+  { value: '07', label: 'July' },
+  { value: '08', label: 'August' },
+  { value: '09', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' },
+]
+
+/** Distinct opened years (from case created_at), newest first, for the year filter. */
+export function deriveOpenedYearOptions(rows = []) {
+  const years = new Set()
+  for (const r of rows) {
+    if (r.created_at) years.add(String(r.created_at).slice(0, 4))
+  }
+  return [
+    { value: 'all', label: 'All years' },
+    ...[...years]
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))
+      .map((y) => ({ value: y, label: y })),
+  ]
 }
 
 export function normalizeCaseState(caseState) {
@@ -180,7 +224,10 @@ export function matchesCaseState(row, caseState) {
 }
 
 function isoDay(d) {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function openedDateBounds(preset, dateFrom, dateTo) {
@@ -287,6 +334,19 @@ export function filterPipelineRows(rows, filters = {}, { viewerUserId } = {}) {
     })
   }
 
+  if (f.openedYear && f.openedYear !== 'all') {
+    list = list.filter((r) => {
+      const d = rowCreatedDay(r)
+      return d && d.slice(0, 4) === f.openedYear
+    })
+  }
+  if (f.openedMonth && f.openedMonth !== 'all') {
+    list = list.filter((r) => {
+      const d = rowCreatedDay(r)
+      return d && d.slice(5, 7) === f.openedMonth
+    })
+  }
+
   if (f.unassignedCmOnly) {
     list = list.filter((r) => !r.case_manager_user_id)
   }
@@ -319,7 +379,7 @@ export function filterPipelineRows(rows, filters = {}, { viewerUserId } = {}) {
   if (f.queue === 'needs_action') {
     list = list.filter((r) => r.pipeline_column !== 'closed' && r.pipeline_column !== 'active')
   } else if (f.queue === 'allotment') {
-    list = list.filter((r) => r.pipeline_column === 'pending_allotment')
+    list = list.filter((r) => ['pending_allotment', 'needs_therapist'].includes(r.pipeline_column))
   } else if (f.queue === 'assignment') {
     list = list.filter((r) => ['needs_therapist', 'reassignment'].includes(r.pipeline_column))
   } else if (f.queue === 'review') {
@@ -343,7 +403,16 @@ export function countActivePipelineFilters(filters = {}) {
   if (f.caseManagerId !== 'all') n += 1
   if (f.therapistId !== 'all') n += 1
   if (f.childId !== 'all') n += 1
-  if (f.openedPreset !== 'all') n += 1
+  const defaultRange = defaultOpenedRange()
+  if (f.openedPreset === 'all') {
+    n += 1
+  } else if (f.openedPreset === 'custom') {
+    if (f.dateFrom !== defaultRange.from || f.dateTo !== defaultRange.to) n += 1
+  } else if (f.openedPreset !== 'this_month') {
+    n += 1
+  }
+  if (f.openedMonth !== 'all') n += 1
+  if (f.openedYear !== 'all') n += 1
   if (f.operationalStage !== 'all') n += 1
   if (f.unassignedCmOnly) n += 1
   if (f.unassignedTherapistOnly) n += 1
@@ -376,7 +445,7 @@ export function pipelineQueueCounts(rows) {
   }
   for (const r of rows) {
     if (r.pipeline_column !== 'closed' && r.pipeline_column !== 'active') counts.needs_action += 1
-    if (r.pipeline_column === 'pending_allotment') counts.allotment += 1
+    if (r.pipeline_column === 'pending_allotment' || r.pipeline_column === 'needs_therapist') counts.allotment += 1
     if (['needs_therapist', 'reassignment'].includes(r.pipeline_column)) counts.assignment += 1
     if (['reports_logs', 'iep'].includes(r.pipeline_column)) counts.review += 1
     if (r.pipeline_column === 'compliance') counts.compliance += 1
@@ -480,10 +549,6 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
 
   actions.push({ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` })
-
-  if (writeCase && col !== 'closed') {
-    actions.push({ id: 'close', label: 'Close', variant: 'danger' })
-  }
 
   return actions
 }

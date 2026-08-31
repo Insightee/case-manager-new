@@ -60,3 +60,19 @@ export function buildMeetingsAvailabilityQuery({
   }
   return params.toString()
 }
+
+export function buildSharedAvailabilityQuery({
+  targetDate,
+  durationMinutes,
+  userIds = [],
+}) {
+  const params = new URLSearchParams()
+  params.set('date_from', targetDate)
+  params.set('date_to', targetDate)
+  params.set('duration_minutes', String(durationMinutes || 30))
+  const ids = userIds.map((id) => Number(id)).filter(Boolean)
+  if (ids.length > 0) {
+    params.set('user_ids', ids.join(','))
+  }
+  return params.toString()
+}

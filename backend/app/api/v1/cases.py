@@ -136,6 +136,7 @@ def create_case(
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     product_module = data.get("product_module", "homecare")
@@ -219,6 +220,7 @@ def update_case(
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: updates.pop(k) for k in list(updates.keys()) if k in _SERVICE_ADDRESS_KEYS}
     for k, v in updates.items():

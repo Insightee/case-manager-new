@@ -181,6 +181,105 @@ def ensure_active_case_assignment(
     db.flush()
 
 
+def _seed_therapist_invoice_from_preview(db, therapist, month_label: str, status: InvoiceStatus, **invoice_kwargs):
+    """Create therapist invoice with persisted case + session lines from live preview."""
+    from app.services import invoice_billing_service as ibs
+
+    preview = ibs.build_month_preview(db, therapist.id, month_label)
+    inv = Invoice(
+        therapist_user_id=therapist.id,
+        month=preview["month_label"],
+        amount_inr=preview["net_amount_inr"],
+        subtotal_inr=preview["subtotal_inr"],
+        leave_deduction_inr=preview.get("leave_deduction_inr") or 0,
+        sessions_count=preview["total_sessions"],
+        status=status,
+        **invoice_kwargs,
+    )
+    db.add(inv)
+    db.flush()
+    ibs._replace_invoice_lines_from_preview(db, inv, preview)
+    return inv
+
+
+def _seed_therapist_invoice_synthetic(
+    db,
+    therapist,
+    case1: Case,
+    case2: Case,
+    *,
+    month: str,
+    subtotal_inr: float,
+    leave_deduction_inr: float,
+    amount_inr: float,
+    sessions_count: int,
+    status: InvoiceStatus,
+    **invoice_kwargs,
+):
+    """Historical paid invoices: header totals plus representative session lines."""
+    from app.core.billing_validation import case_billing_dict
+    from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, SessionLineSource, SessionLineType
+    from app.services import invoice_billing_service as ibs
+
+    inv = Invoice(
+        therapist_user_id=therapist.id,
+        month=month,
+        amount_inr=amount_inr,
+        subtotal_inr=subtotal_inr,
+        leave_deduction_inr=leave_deduction_inr,
+        sessions_count=sessions_count,
+        status=status,
+        **invoice_kwargs,
+    )
+    db.add(inv)
+    db.flush()
+
+    year, month_num, _ = ibs.parse_month(month)
+    first_share = round(subtotal_inr * 0.4, 2)
+    splits = [
+        (case1, first_share, max(int(sessions_count * 0.4), 1)),
+        (case2, round(subtotal_inr - first_share, 2), max(sessions_count - int(sessions_count * 0.4), 1)),
+    ]
+    for case, share, n_sessions in splits:
+        billing = case_billing_dict(case)
+        line_type = (
+            SessionLineType.PER_SESSION
+            if case.billing_type == BillingType.PER_SESSION
+            else SessionLineType.INCLUDED
+        )
+        cl = InvoiceCaseLine(
+            invoice_id=inv.id,
+            case_id=case.id,
+            case_code=case.case_code,
+            billing_type=case.billing_type.value if case.billing_type else BillingType.PER_SESSION.value,
+            included_sessions=n_sessions,
+            additional_sessions=0,
+            therapist_share_inr=share,
+            billing_snapshot=billing,
+        )
+        db.add(cl)
+        db.flush()
+        per_session = round(share / n_sessions, 2)
+        remainder = share
+        for i in range(n_sessions):
+            amt = per_session if i < n_sessions - 1 else round(remainder, 2)
+            remainder = round(remainder - amt, 2)
+            day = min(1 + i, 28)
+            db.add(
+                InvoiceSessionLine(
+                    invoice_case_line_id=cl.id,
+                    session_date=date(year, month_num, day),
+                    duration_minutes=60,
+                    line_type=line_type,
+                    amount_inr=amt,
+                    source=SessionLineSource.LOG,
+                    included=True,
+                )
+            )
+    db.flush()
+    return inv
+
+
 def run():
     ensure_sqlite_schema_patches()
     Base.metadata.create_all(bind=engine)
@@ -372,7 +471,8 @@ def run():
             db.add(case1)
         case1.billing_type = BillingType.PER_SESSION
         case1.client_rate_per_session_inr = 1000
-        case1.compensation_mode = CompensationMode.PERCENTAGE
+        case1.compensation_mode = CompensationMode.FIXED_LUMP
+        case1.therapist_fixed_pay_inr = 600
         case1.pay_share_amount_inr = 600
         case1.case_manager_user_id = shadow_cm.id
 
@@ -391,7 +491,8 @@ def run():
         case2.billing_type = BillingType.PACKAGE
         case2.package_session_count = 20
         case2.package_amount_inr = 25000
-        case2.compensation_mode = CompensationMode.PERCENTAGE
+        case2.compensation_mode = CompensationMode.FIXED_LUMP
+        case2.therapist_fixed_pay_inr = 15000
         case2.pay_share_amount_inr = 15000
         therapist.home_address_line1 = "42 Therapist Colony, 5th Block"
         therapist.home_city = "Bangalore"
@@ -664,52 +765,54 @@ def run():
                 )
             )
 
-        if not db.scalars(select(Invoice).where(Invoice.therapist_user_id == therapist.id)).first():
-            therapist.external_employee_id = therapist.external_employee_id or "1406"
-            therapist.job_title = therapist.job_title or "Senior Therapist"
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="Jul 2026",
-                    amount_inr=42500,
-                    subtotal_inr=45000,
-                    leave_deduction_inr=2500,
-                    sessions_count=32,
-                    status=InvoiceStatus.PAID,
-                    paid_amount_inr=42500,
-                )
-            )
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="Jun 2026",
-                    amount_inr=38000,
-                    subtotal_inr=40000,
-                    leave_deduction_inr=2000,
-                    sessions_count=28,
-                    status=InvoiceStatus.PAID,
-                    paid_amount_inr=38000,
-                )
-            )
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="May 2026",
-                    amount_inr=36000,
-                    subtotal_inr=36000,
-                    sessions_count=26,
-                    status=InvoiceStatus.APPROVED,
-                )
-            )
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="Apr 2026",
-                    amount_inr=42500,
-                    sessions_count=32,
-                    status=InvoiceStatus.IN_REVIEW,
-                )
-            )
+        existing_invoices = list(
+            db.scalars(select(Invoice).where(Invoice.therapist_user_id == therapist.id)).all()
+        )
+        if existing_invoices:
+            for inv in existing_invoices:
+                db.delete(inv)
+            db.flush()
+
+        therapist.external_employee_id = therapist.external_employee_id or "1406"
+        therapist.job_title = therapist.job_title or "Senior Therapist"
+        _seed_therapist_invoice_synthetic(
+            db,
+            therapist,
+            case1,
+            case2,
+            month="Jul 2026",
+            subtotal_inr=45000,
+            leave_deduction_inr=2500,
+            amount_inr=42500,
+            sessions_count=32,
+            status=InvoiceStatus.PAID,
+            paid_amount_inr=42500,
+        )
+        _seed_therapist_invoice_synthetic(
+            db,
+            therapist,
+            case1,
+            case2,
+            month="Jun 2026",
+            subtotal_inr=40000,
+            leave_deduction_inr=2000,
+            amount_inr=38000,
+            sessions_count=28,
+            status=InvoiceStatus.PAID,
+            paid_amount_inr=38000,
+        )
+        _seed_therapist_invoice_from_preview(
+            db,
+            therapist,
+            "May 2026",
+            InvoiceStatus.APPROVED,
+        )
+        _seed_therapist_invoice_from_preview(
+            db,
+            therapist,
+            "Apr 2026",
+            InvoiceStatus.IN_REVIEW,
+        )
 
         if not db.scalars(
             select(Attachment).where(Attachment.case_id == case1.id, Attachment.entity_type == "iep")

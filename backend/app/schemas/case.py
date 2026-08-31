@@ -13,6 +13,7 @@ from app.schemas.billing import CaseBillingFields
 
 
 class CaseServiceAddressFields(BaseModel):
+    service_location_type: Optional[str] = None
     service_address_line1: Optional[str] = None
     service_address_line2: Optional[str] = None
     service_city: Optional[str] = None
@@ -21,6 +22,12 @@ class CaseServiceAddressFields(BaseModel):
     service_landmark: Optional[str] = None
     service_latitude: Optional[float] = None
     service_longitude: Optional[float] = None
+
+
+class CaseContactRead(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
@@ -67,6 +74,8 @@ class CaseRead(CaseBillingFields):
     case_manager_name: Optional[str] = None
     case_manager_email: Optional[str] = None
     access_as_mentor: bool = False
+    parent_contact: Optional[CaseContactRead] = None
+    therapist_contact: Optional[CaseContactRead] = None
     notes: Optional[str] = None
     region: Optional[str]
     operational_stage: Optional[str]

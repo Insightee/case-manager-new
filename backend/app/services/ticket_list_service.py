@@ -16,6 +16,7 @@ from app.models.support_ticket import SupportTicket, TicketCategory, TicketStatu
 from app.models.ticket_attachment import TicketAttachment
 from app.models.user import User
 from app.services import case_service, ticket_escalation_service as ticket_esc
+from app.core.support_status import canonical_ticket_status, ticket_status_predicate
 from app.services.support_access_service import (
     is_team_scoped_support_user,
     may_read_support_ticket,
@@ -92,6 +93,7 @@ def list_tickets_for_user(
     category: Optional[TicketCategory] = None,
     product_module: Optional[str] = None,
     status: Optional[TicketStatus] = None,
+    canonical_status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
@@ -105,7 +107,11 @@ def list_tickets_for_user(
         stmt = stmt.where(SupportTicket.category == category)
     if product_module:
         stmt = stmt.where(SupportTicket.product_module == product_module)
-    if status:
+    if canonical_status:
+        predicate = ticket_status_predicate(canonical_status)
+        if predicate is not None:
+            stmt = stmt.where(predicate)
+    elif status:
         stmt = stmt.where(SupportTicket.status == status)
     stmt = _apply_ticket_search(stmt, search)
 
@@ -221,6 +227,9 @@ def _ticket_row(
         "topic": t.topic.value if t.topic else "OTHER",
         "topic_label": ticket_esc.TOPIC_LABELS.get(t.topic, "Other") if t.topic else "Other",
         "status": t.status.value,
+        "canonical_status": canonical_ticket_status(
+            t.status, escalated_to_department=getattr(t, "escalated_to_department", None)
+        ),
         "assigned_to_user_id": t.assigned_to_user_id,
         "assigned_to_name": assignee.full_name if assignee else None,
         "assignee_role_labels": role_labels(list(assignee.role_names)) if assignee else [],

@@ -103,7 +103,7 @@ Resolve IDs first:
 
 **Optional `case_code`:** must be unique. Auto format: `IC-{year}-{HC|SS}-{seq}` (`HC` = homecare, `SS` = shadow_support).
 
-Set **billing at allot**: `billing_type` (`PER_SESSION` | `PACKAGE`), rates, `compensation_mode`, `pay_share_pct`, `client_billing_mode`, etc.
+Set **billing at allot**: `billing_type` (`PER_SESSION` | `PACKAGE` | `MONTHLY_FIXED`), client rates, `compensation_mode=FIXED_LUMP`, `therapist_fixed_pay_inr` (and/or `pay_share_amount_inr` as the same INR lumpsum), `client_billing_mode`, etc. Percentage of client rate is no longer accepted — convert once to an INR amount before import.
 
 **Optional `zoho_id`:** Zoho client billing identifier (e.g. `INS-697`, `CUS-00753`). Stored on the case; not used for payments yet. Can also be set later on case detail or via bulk upload.
 
@@ -150,10 +150,10 @@ Use this in Excel/Sheets to drive API calls or a future import script. Columns a
 
 ### Sheet: cases
 
-| legacy_case_ref | case_code | product_module | service_type | child_first | child_last | parent_email | therapist_email | cm_email | billing_type | client_rate_per_session_inr | package_session_count | package_amount_inr | compensation_mode | pay_share_pct | therapist_fixed_pay_inr | client_billing_mode |
-|-----------------|-----------|----------------|--------------|-------------|------------|--------------|-----------------|----------|--------------|----------------------------|----------------------|-------------------|-------------------|---------------|-------------------------|---------------------|
-| OLD-99 | IC-2024-HC-099 | homecare | Occupational therapy | Asha | Kumar | parent@example.com | t1@company.com | cm@company.com | PER_SESSION | 1500 | | | PERCENTAGE | 70 | | POSTPAID |
-| | | homecare | Speech therapy | Ravi | Singh | ravi.parent@example.com | t2@company.com | cm@company.com | PACKAGE | | 20 | 25000 | PERCENTAGE | 65 | | PREPAID |
+| legacy_case_ref | case_code | product_module | service_type | child_first | child_last | parent_email | therapist_email | cm_email | billing_type | client_rate_per_session_inr | package_session_count | package_amount_inr | compensation_mode | therapist_fixed_pay_inr | client_billing_mode |
+|-----------------|-----------|----------------|--------------|-------------|------------|--------------|-----------------|----------|--------------|----------------------------|----------------------|-------------------|-------------------|-------------------------|---------------------|
+| OLD-99 | IC-2024-HC-099 | homecare | Occupational therapy | Asha | Kumar | parent@example.com | t1@company.com | cm@company.com | PER_SESSION | 1500 | | | FIXED_LUMP | 1050 | POSTPAID |
+| | | homecare | Speech therapy | Ravi | Singh | ravi.parent@example.com | t2@company.com | cm@company.com | PACKAGE | | 20 | 25000 | FIXED_LUMP | 16250 | PREPAID |
 
 Leave `case_code` blank to auto-generate. `product_module`: `homecare` or `shadow_support`.
 

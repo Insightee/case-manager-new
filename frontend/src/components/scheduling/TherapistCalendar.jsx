@@ -20,6 +20,7 @@ export function TherapistCalendar({
   caseId,
   apiPrefix = '/api/v1/scheduling',
   mode = 'therapist',
+  calendarFeed = 'legacy',
   onSlotClick,
   onCellClick,
   selectedSlotId,
@@ -86,7 +87,7 @@ export function TherapistCalendar({
       setLoading(false)
       return
     }
-    const cacheParams = { apiPrefix, therapistId, caseId, fromDate, toDate }
+    const cacheParams = { apiPrefix, therapistId, caseId, fromDate, toDate, calendarFeed }
     const cached = getScheduleCache(cacheParams)
     if (refreshKey) {
       clearScheduleCache()
@@ -102,10 +103,16 @@ export function TherapistCalendar({
       setLoading(true)
     }
     setError('')
-    const tid = therapistId ? `&therapist_id=${therapistId}` : ''
-    const cid = caseId ? `&case_id=${caseId}` : ''
     try {
-      const data = await apiFetch(`${apiPrefix}/calendar?from_date=${fromDate}&to_date=${toDate}${tid}${cid}`)
+      const data = calendarFeed === 'unified'
+        ? await apiFetch(
+            `/api/v1/calendar/events?from=${fromDate}&to=${toDate}${therapistId ? `&user_ids=${therapistId}` : ''}`,
+          )
+        : await apiFetch(
+            `${apiPrefix}/calendar?from_date=${fromDate}&to_date=${toDate}${
+              therapistId ? `&therapist_id=${therapistId}` : ''
+            }${caseId ? `&case_id=${caseId}` : ''}`,
+          )
       setCalendar(data)
       setScheduleCache(cacheParams, data)
       onCalendarLoad?.(data)
@@ -115,7 +122,7 @@ export function TherapistCalendar({
     } finally {
       setLoading(false)
     }
-  }, [fromDate, toDate, therapistId, caseId, apiPrefix, refreshKey, onCalendarLoad])
+  }, [fromDate, toDate, therapistId, caseId, apiPrefix, calendarFeed, refreshKey, onCalendarLoad])
 
   useEffect(() => {
     load()

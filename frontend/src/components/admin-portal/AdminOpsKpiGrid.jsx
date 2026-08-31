@@ -30,7 +30,7 @@ export function buildAdminKpis({ summary, role, canNavigate, can }) {
         'Needs therapist assignment',
         'amber',
         '◎',
-        can('case.create') ? '/admin/cases?allot=1' : '/admin/cases',
+        can('case.create') ? '/admin/cases?allot=1' : '/admin/cases?queue=allotment',
       ),
     )
   }

@@ -94,6 +94,7 @@ def allot_case(
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     client_mode = data.pop("client_billing_mode", None)
@@ -325,6 +326,10 @@ def build_allotment_preview(db: Session, case_id: int, *, session_limit: int = 1
             "client_monthly_rate_inr": case_read.get("client_monthly_rate_inr"),
             "package_session_count": case_read.get("package_session_count"),
             "package_amount_inr": case_read.get("package_amount_inr"),
-            "pay_share_pct": case_read.get("pay_share_pct"),
+            "compensation_mode": case_read.get("compensation_mode"),
+            "pay_share_amount_inr": case_read.get("pay_share_amount_inr"),
+            "therapist_fixed_pay_inr": case_read.get("therapist_fixed_pay_inr"),
+            "therapist_pay_inr": case_read.get("therapist_fixed_pay_inr")
+            or case_read.get("pay_share_amount_inr"),
         },
     }

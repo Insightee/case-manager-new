@@ -1,16 +1,25 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import RoleName
 from app.core.therapist_services import get_service_categories, validate_service_ids
+from app.core.timezone import today_ist
+from app.models.daily_log import DailyLog
+from app.models.role import Role
+from app.models.session import Session as TherapySession
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
+from app.services.reports_export_helpers import days_since
+from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
+
+NO_SESSIONS_INACTIVITY_DAYS = 15
+NEEDS_LISTING_STATUS = "NEEDS_LISTING"
 
 
 def _normalize_certs(certs: list[str] | None) -> list[str]:
@@ -84,7 +93,53 @@ def apply_pending_submission(profile: TherapistProfile) -> None:
     profile.pending_submission = None
 
 
-def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict:
+def last_session_log_dates(db: Session, user_ids: list[int]) -> dict[int, datetime]:
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(TherapySession.therapist_user_id, func.max(DailyLog.submitted_at))
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.therapist_user_id.in_(user_ids),
+            DailyLog.submitted_at.is_not(None),
+        )
+        .group_by(TherapySession.therapist_user_id)
+    ).all()
+    return {int(uid): ts for uid, ts in rows if uid is not None and ts is not None}
+
+
+def inactive_therapist_user_ids(db: Session, *, days: int = NO_SESSIONS_INACTIVITY_DAYS) -> set[int]:
+    cutoff = today_ist() - timedelta(days=days)
+    listed_user_ids = {
+        int(uid)
+        for uid in db.scalars(
+            select(TherapistProfile.user_id).where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+        ).all()
+        if uid is not None
+    }
+    if not listed_user_ids:
+        return set()
+
+    last_logs = last_session_log_dates(db, list(listed_user_ids))
+    inactive: set[int] = set()
+    for uid in listed_user_ids:
+        last_at = last_logs.get(uid)
+        if last_at is None:
+            inactive.add(uid)
+            continue
+        last_day = last_at.date() if hasattr(last_at, "date") else last_at
+        if last_day < cutoff:
+            inactive.add(uid)
+    return inactive
+
+
+def profile_to_dict(
+    profile: TherapistProfile,
+    user: User | None = None,
+    *,
+    last_session_log_at: datetime | None = None,
+    days_since_last_session_log: int | None = None,
+) -> dict:
     u = user or profile.user
     supervisor_name = None
     mentor_name = None
@@ -96,6 +151,7 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         men = getattr(profile, "mentor", None)
         if men:
             mentor_name = men.full_name
+    status_value = profile.status.value if profile.status else TherapistProfileStatus.DRAFT.value
     return {
         "id": profile.id,
         "user_id": profile.user_id,
@@ -104,10 +160,11 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "academic_qualifications": profile.academic_qualifications,
         "professional_certificates": profile.professional_certificates or [],
         "services_offered": profile.services_offered or [],
-        "status": profile.status.value,
+        "status": status_value,
         "admin_note": profile.admin_note,
         "submitted_at": profile.submitted_at,
         "reviewed_at": profile.reviewed_at,
+        "deleted_at": profile.deleted_at,
         "email": u.email if u else None,
         "full_name": u.full_name if u else None,
         "supervisor_user_id": getattr(profile, "supervisor_user_id", None),
@@ -122,7 +179,58 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "approved_snapshot": profile.approved_snapshot,
         "pending_submission": profile.pending_submission,
         "has_pending_changes": has_pending_submission(profile),
+        "last_session_log_at": last_session_log_at,
+        "days_since_last_session_log": days_since_last_session_log,
     }
+
+
+def needs_listing_to_dict(user: User) -> dict:
+    return {
+        "id": None,
+        "user_id": user.id,
+        "display_name": user.full_name,
+        "short_bio": None,
+        "academic_qualifications": None,
+        "professional_certificates": [],
+        "services_offered": [],
+        "status": NEEDS_LISTING_STATUS,
+        "admin_note": None,
+        "submitted_at": None,
+        "reviewed_at": None,
+        "deleted_at": None,
+        "email": user.email,
+        "full_name": user.full_name,
+        "supervisor_user_id": None,
+        "mentor_user_id": None,
+        "supervisor_name": None,
+        "mentor_name": None,
+        "employment_start_date": None,
+        "leave_balance_year": None,
+        "leave_paid_days_backfill": 0,
+        "leave_carry_forward_days_backfill": 0,
+        "leave_backfill_note": None,
+        "approved_snapshot": None,
+        "pending_submission": None,
+        "has_pending_changes": False,
+        "last_session_log_at": None,
+        "days_since_last_session_log": None,
+    }
+
+
+def enrich_profile_dicts(db: Session, items: list[dict]) -> list[dict]:
+    user_ids = [int(item["user_id"]) for item in items if item.get("user_id")]
+    last_logs = last_session_log_dates(db, user_ids)
+    today = today_ist()
+    for item in items:
+        uid = item.get("user_id")
+        last_at = last_logs.get(int(uid)) if uid is not None else None
+        item["last_session_log_at"] = last_at
+        if last_at is None:
+            item["days_since_last_session_log"] = None
+        else:
+            last_day = last_at.date() if hasattr(last_at, "date") else last_at
+            item["days_since_last_session_log"] = days_since(last_day, as_of=today)
+    return items
 
 
 def get_or_create_profile(db: Session, user_id: int) -> TherapistProfile:
@@ -223,6 +331,11 @@ def therapist_submit_profile(db: Session, user: User, data: dict) -> TherapistPr
     profile = get_or_create_profile(db, user.id)
     if profile.status == TherapistProfileStatus.PAUSED:
         raise HTTPException(status_code=400, detail="Profile is paused")
+    if profile.status == TherapistProfileStatus.DELETED:
+        raise HTTPException(
+            status_code=400,
+            detail="This service listing was removed. Contact your case manager to restore it.",
+        )
 
     submission = _validate_submission_payload(data, user, db)
     if not submission["display_name"]:
@@ -258,29 +371,86 @@ def admin_approve_profile(profile: TherapistProfile, admin_note: str | None = No
     capture_approved_snapshot(profile)
 
 
-def list_profiles(db: Session, status: TherapistProfileStatus | None = None) -> list[TherapistProfile]:
+def soft_delete_profile(profile: TherapistProfile) -> None:
+    profile.status = TherapistProfileStatus.DELETED
+    profile.deleted_at = datetime.now(timezone.utc)
+
+
+def restore_profile(profile: TherapistProfile) -> None:
+    profile.status = TherapistProfileStatus.PAUSED
+    profile.deleted_at = None
+
+
+def list_active_profiles(db: Session) -> list[TherapistProfile]:
+    return list(
+        db.scalars(
+            select(TherapistProfile)
+            .where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+            .order_by(TherapistProfile.updated_at.desc())
+        ).all()
+    )
+
+
+def list_profiles(
+    db: Session,
+    status: TherapistProfileStatus | str | None = None,
+    *,
+    activity: str | None = None,
+) -> list[TherapistProfile]:
+    if status == NEEDS_LISTING_STATUS:
+        return []
+
+    if status == TherapistProfileStatus.DELETED:
+        backfill_deleted_profiles_from_audit(db)
+
     stmt = select(TherapistProfile).order_by(TherapistProfile.updated_at.desc())
+
     if status == TherapistProfileStatus.PENDING:
-        # Review queue: first submissions + approved listings with unreviewed edits.
         stmt = stmt.where(
+            TherapistProfile.status != TherapistProfileStatus.DELETED,
             or_(
                 TherapistProfile.status == TherapistProfileStatus.PENDING,
                 TherapistProfile.pending_submission.isnot(None),
-            )
+            ),
         )
     elif status == TherapistProfileStatus.APPROVED:
-        # Match summary counts: pending edits belong in PENDING, not APPROVED.
         stmt = stmt.where(
             TherapistProfile.status == TherapistProfileStatus.APPROVED,
             TherapistProfile.pending_submission.is_(None),
         )
-    elif status:
+    elif status == TherapistProfileStatus.DELETED:
+        stmt = stmt.where(TherapistProfile.status == TherapistProfileStatus.DELETED)
+    elif status and status != TherapistProfileStatus.DELETED:
         stmt = stmt.where(TherapistProfile.status == status)
-    return list(db.scalars(stmt).all())
+    else:
+        stmt = stmt.where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+
+    profiles = list(db.scalars(stmt).all())
+
+    if activity == "no_sessions_15d":
+        inactive_ids = inactive_therapist_user_ids(db)
+        profiles = [p for p in profiles if p.user_id in inactive_ids]
+
+    return profiles
 
 
-def profile_summary_counts(profiles: list[TherapistProfile]) -> dict[str, int]:
-    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0}
+def list_needs_listing_users(db: Session) -> list[User]:
+    therapist_ids = set(
+        db.scalars(
+            select(User.id).join(User.roles).where(Role.name == RoleName.THERAPIST.value, User.is_active.is_(True))
+        ).all()
+    )
+    profile_user_ids = set(db.scalars(select(TherapistProfile.user_id)).all())
+    missing_ids = sorted(therapist_ids - profile_user_ids)
+    if not missing_ids:
+        return []
+    return list(db.scalars(select(User).where(User.id.in_(missing_ids)).order_by(User.full_name)).all())
+
+
+def profile_summary_counts(db: Session, profiles: list[TherapistProfile] | None = None) -> dict[str, int]:
+    if profiles is None:
+        profiles = list_active_profiles(db)
+    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0, "DELETED": 0}
     for profile in profiles:
         if has_pending_submission(profile):
             counts["PENDING"] += 1
@@ -288,6 +458,19 @@ def profile_summary_counts(profiles: list[TherapistProfile]) -> dict[str, int]:
         key = profile.status.value if hasattr(profile.status, "value") else str(profile.status)
         if key in counts:
             counts[key] += 1
+
+    deleted_extra = db.scalar(
+        select(func.count())
+        .select_from(TherapistProfile)
+        .where(TherapistProfile.status == TherapistProfileStatus.DELETED)
+    )
+    counts["DELETED"] = int(deleted_extra or 0)
+
+    therapists = db.scalars(select(User.id).join(User.roles).where(Role.name == RoleName.THERAPIST.value)).all()
+    profile_user_ids = set(db.scalars(select(TherapistProfile.user_id)).all())
+    counts["needs_listing"] = len(set(therapists) - profile_user_ids)
+    counts["no_sessions_15d"] = len(inactive_therapist_user_ids(db))
+    counts["total"] = len(profiles)
     return counts
 
 

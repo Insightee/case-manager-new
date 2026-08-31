@@ -298,6 +298,57 @@ def _cm_meeting_invite(payload: dict[str, Any], *, locale: str = "en") -> tuple[
     return subject, text, html
 
 
+def _cm_meeting_reminder(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    full_name = payload.get("full_name", "there")
+    meeting_title = payload.get("meeting_title", "Case manager meeting")
+    when = payload.get("when", "")
+    child_name = payload.get("child_name")
+    case_code = payload.get("case_code")
+    meeting_url = (payload.get("meeting_url") or "").strip()
+    portal_url = (payload.get("portal_url") or "").strip()
+
+    case_line = ""
+    if child_name or case_code:
+        parts = [p for p in [child_name, f"({case_code})" if case_code else None] if p]
+        case_line = " · ".join(parts)
+
+    subject = f"Meeting reminder — {meeting_title}"
+    case_block = f"Case: {case_line}\n" if case_line else ""
+    when_block = f"When: {when}\n" if when else ""
+    join_block = f"Join meeting:\n{meeting_url}\n\n" if meeting_url else ""
+    portal_block = f"View in Insighte:\n{portal_url}\n\n" if portal_url else ""
+
+    text = (
+        f"Hi {full_name},\n\n"
+        f"Your case manager meeting starts soon.\n\n"
+        f"Meeting: {meeting_title}\n"
+        f"{case_block}"
+        f"{when_block}"
+        f"{join_block}"
+        f"{portal_block}"
+        "You will also see this meeting in your Insighte notifications.\n"
+    )
+
+    case_html = f"<p><strong>Case:</strong> {escape(case_line)}</p>" if case_line else ""
+    when_html = f"<p><strong>When:</strong> {escape(str(when))}</p>" if when else ""
+    join_html = _button(meeting_url, "Join meeting") if meeting_url else ""
+    portal_html = (
+        f'<p style="margin-top:16px;"><a href="{escape(portal_url, quote=True)}" '
+        f'style="color:#2563eb;">Open meeting in Insighte</a></p>'
+        if portal_url
+        else ""
+    )
+    body = (
+        f"<p>Hi {escape(str(full_name))},</p>"
+        f"<p>Your <strong>{escape(str(meeting_title))}</strong> starts soon.</p>"
+        f"{case_html}{when_html}"
+        f"{join_html}{portal_html}"
+        '<p style="color:#6b7280;font-size:14px;">You will also see this in your Insighte notifications.</p>'
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
 def _session_log_submitted(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
     parent_name = payload.get("parent_name", "there")
     child_name = payload.get("child_name", "your child")

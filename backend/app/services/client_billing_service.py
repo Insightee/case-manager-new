@@ -1844,11 +1844,21 @@ def create_draft_from_case_defaults(
     gst_rate = float(rule.gst_rate_percent or 0) if rule else 0.0
 
     amount = 0.0
+    from app.services import billing_rate_history_service
+    from app.services.reports_export_helpers import month_bounds as _month_bounds
+
+    _ms, month_end = _month_bounds(ym)
+    as_of_amount = billing_rate_history_service.resolve_client_amount_as_of(db, case, month_end)
+
     if case.package_amount_inr and float(case.package_amount_inr) > 0:
-        amount = float(case.package_amount_inr)
+        amount = float(as_of_amount or case.package_amount_inr)
         line_type = "PACKAGE_CHARGE"
+    elif case.client_monthly_rate_inr and float(case.client_monthly_rate_inr) > 0:
+        amount = float(as_of_amount or case.client_monthly_rate_inr)
+        line_type = "MONTHLY_CHARGE"
+        invoice_type = "MONTHLY_FIXED"
     elif case.client_rate_per_session_inr and float(case.client_rate_per_session_inr) > 0:
-        amount = float(case.client_rate_per_session_inr)
+        amount = float(as_of_amount or case.client_rate_per_session_inr)
         line_type = "SESSION_CHARGE"
     else:
         warnings.append("no_default_rule")
