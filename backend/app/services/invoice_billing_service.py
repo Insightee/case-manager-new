@@ -23,7 +23,34 @@ from app.models.user import User
 from app.core.session_times import effective_session_datetimes
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_attendance_service as attendance
+from app.services import payout_settlement_service
 from app.services.reports_export_helpers import cases_by_ids, parent_by_child, case_people_export_fields
+
+
+def _normalize_next_month_plan(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {"notes": "", "sessions": []}
+    sessions_in = raw.get("sessions") or []
+    sessions: list[dict[str, Any]] = []
+    if isinstance(sessions_in, list):
+        for row in sessions_in[:60]:
+            if not isinstance(row, dict):
+                continue
+            d = str(row.get("date") or "").strip()
+            if not d:
+                continue
+            sessions.append(
+                {
+                    "date": d,
+                    "start_time": str(row.get("start_time") or "").strip() or None,
+                    "end_time": str(row.get("end_time") or "").strip() or None,
+                    "note": str(row.get("note") or "").strip() or None,
+                }
+            )
+    return {
+        "notes": str(raw.get("notes") or "").strip()[:2000],
+        "sessions": sessions,
+    }
 
 
 def parse_month(month: str) -> tuple[int, int, str]:
@@ -482,7 +509,11 @@ def create_late_session(
         line_type,
         included=False,
         source=SessionLineSource.MANUAL_LATE,
-        extra_flags={"added_late": True, "pending_approval": True},
+        extra_flags={
+            "added_late": True,
+            "pending_approval": True,
+            "pending_reason": "Added from invoice",
+        },
     )
     return {
         "session_id": session.id,
@@ -554,6 +585,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         case = bucket["case"]
         session_lines = bucket.get("session_lines") or []
         child_absence_lines = bucket.get("child_absence_lines") or []
+        leave_lines = bucket.get("leave_lines") or []
         pending_approval_lines = bucket.get("pending_approval_lines") or []
         case_attendance = bucket.get("attendance") or attendance._empty_attendance()
         has_activity = bucket.get("has_activity", False)
@@ -586,6 +618,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
             "child_name": case.child.full_name if case.child else None,
             "billing": case_billing_dict(case),
             "billing_profile": billing_profile,
+            "product_module": (case.product_module or "").strip().lower(),
             "has_activity": has_activity,
             "attendance": case_attendance,
             "included_sessions": included,
@@ -596,8 +629,10 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
             "pending_late_inr": pending_case_inr,
             "session_lines": session_lines,
             "child_absence_lines": child_absence_lines,
+            "leave_lines": leave_lines,
             "pending_approval_lines": pending_approval_lines,
             "pending_late_lines": pending_approval_lines,
+            "next_month_session_plan": {"notes": "", "sessions": []},
             "cycle": {
                 "calendarDays": segment.calendar_days if segment else 0,
                 "unpaidLeaves": segment.unpaid_leaves if segment else 0,
@@ -640,19 +675,31 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
     """Apply therapist edits: exclude approved sessions only. Leave deduction stays static."""
     excluded_ids = set(edits.get("exclude_session_ids") or [])
     static_leave_deduction = float(preview.get("leave_deduction_inr") or 0)
+    next_month_plans = edits.get("next_month_plans") or {}
 
     for case_group in preview["cases"]:
+        case_id = case_group.get("case_id")
+        if case_id is not None and str(case_id) in next_month_plans:
+            case_group["next_month_session_plan"] = _normalize_next_month_plan(next_month_plans[str(case_id)])
+        elif case_id is not None and case_id in next_month_plans:
+            case_group["next_month_session_plan"] = _normalize_next_month_plan(next_month_plans[case_id])
         for line in case_group.get("session_lines", []):
             sid = line.get("session_id")
             if sid and sid in excluded_ids:
                 line["included"] = False
                 line["flags"] = {**(line.get("flags") or {}), "excluded_by_therapist": True}
 
+    # If preview lacks case billing fields (plan-only patch), skip money recompute.
+    if not any((c.get("billing") or c.get("billing_snapshot")) for c in preview.get("cases") or []):
+        return preview
+
     subtotal = 0.0
     total_sessions = 0
     pending_approval_inr = 0.0
     pending_approval_count = 0
     for case_group in preview["cases"]:
+        if not (case_group.get("billing") or case_group.get("billing_snapshot")):
+            continue
         case = db_case_from_preview(case_group)
         cycle = case_group.get("cycle") or {}
         segment = None
@@ -715,10 +762,10 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
 
 def db_case_from_preview(case_group: dict) -> Case:
     """Minimal Case-like object for recomputation from preview billing dict."""
-    b = case_group.get("billing") or {}
+    b = case_group.get("billing") or case_group.get("billing_snapshot") or {}
     case = Case(
         id=case_group["case_id"],
-        case_code=case_group["case_code"],
+        case_code=case_group.get("case_code") or "",
         child_id=0,
         service_type=b.get("service_type") or "",
         product_module=b.get("product_module") or "",
@@ -799,12 +846,24 @@ def submit_invoice_from_preview(
         status=InvoiceStatus.IN_REVIEW,
         notes=combined_notes,
     )
+    # Prefill TDS from therapist profile rate (default 10%) so statements are complete.
+    try:
+        rate = payout_settlement_service.resolve_tds_rate_percent(db, therapist_user_id=therapist_user_id)
+        gross = float(preview.get("subtotal_inr") or preview.get("net_amount_inr") or 0)
+        leave = float(preview.get("leave_deduction_inr") or 0)
+        taxable = max(gross - leave, 0.0)
+        invoice.tds_inr = round(taxable * rate / 100.0, 2)
+    except Exception:
+        invoice.tds_inr = None
     db.add(invoice)
     db.flush()
 
     _replace_invoice_lines_from_preview(db, invoice, preview)
     invoice.status = InvoiceStatus.IN_REVIEW
     invoice.notes = combined_notes
+    if invoice.tds_inr is not None:
+        settlement = payout_settlement_service.compute_invoice_settlement(db, invoice)
+        payout_settlement_service.snapshot_settlement_on_invoice(db, invoice, settlement)
     return invoice
 
 
@@ -819,6 +878,10 @@ def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: 
     invoice.sessions_count = preview["total_sessions"]
 
     for case_group in preview["cases"]:
+        snapshot = dict(case_group.get("billing") or {})
+        plan = case_group.get("next_month_session_plan")
+        if plan:
+            snapshot["next_month_session_plan"] = _normalize_next_month_plan(plan)
         case_line = InvoiceCaseLine(
             invoice_id=invoice.id,
             case_id=case_group["case_id"],
@@ -827,7 +890,7 @@ def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: 
             included_sessions=case_group["included_sessions"],
             additional_sessions=case_group["additional_sessions"],
             therapist_share_inr=case_group["therapist_share_inr"],
-            billing_snapshot=case_group["billing"],
+            billing_snapshot=snapshot,
         )
         db.add(case_line)
         db.flush()
@@ -917,6 +980,7 @@ def _merge_case_with_attendance_facts(stored_case: dict, fact_case: dict | None)
         "has_activity",
         "billing_profile",
         "child_absence_lines",
+        "leave_lines",
         "pending_approval_lines",
         "pending_approval_inr",
     ):
@@ -969,6 +1033,8 @@ def _case_group_from_case_line(db: Session, cl: InvoiceCaseLine) -> tuple[dict, 
     case_row = db.get(Case, cl.case_id)
     if case_row and case_row.child:
         child_name = case_row.child.full_name
+    snapshot = cl.billing_snapshot if isinstance(cl.billing_snapshot, dict) else {}
+    plan = snapshot.get("next_month_session_plan") if isinstance(snapshot, dict) else None
     case_group = {
         "case_id": cl.case_id,
         "case_code": cl.case_code,
@@ -978,11 +1044,16 @@ def _case_group_from_case_line(db: Session, cl: InvoiceCaseLine) -> tuple[dict, 
         "additional_sessions": cl.additional_sessions,
         "therapist_share_inr": float(cl.therapist_share_inr),
         "billing_snapshot": cl.billing_snapshot,
+        "billing": cl.billing_snapshot,
+        "product_module": str(snapshot.get("product_module") or "").strip().lower(),
         "pending_approval_inr": round(pending_late_inr, 2),
         "pending_late_inr": round(pending_late_inr, 2),
         "session_lines": session_lines,
         "pending_approval_lines": pending_late_lines,
         "pending_late_lines": pending_late_lines,
+        "leave_lines": [],
+        "child_absence_lines": [],
+        "next_month_session_plan": _normalize_next_month_plan(plan or {}),
     }
     return case_group, pending_late_inr, pending_late_count
 

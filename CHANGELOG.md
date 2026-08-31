@@ -1,6 +1,8 @@
 ## [Unreleased]
 
 ### Added
+- Therapist invoice: clear **In this pay / Waiting on review / Doesn’t change pay** buckets; homecare **next-month session plan** box (saved on invoice, shown on PDF, not billed this month); consolidated session-wise PDF with Insighte Childcare letterhead (env `INVOICE_COMPANY_*`).
+- HR can set per-therapist **TDS rate %** on leave/profile panel; therapist invoice submit prefills TDS from profile (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
 - Expandable Description cells on People & HR report previews (parent support tickets + incident reports).
 - Meetings page: Export CSV/Excel, All-years filter, category (Admin/Case manager/Therapist) + multi-select people filter; HR reports Case manager filter is multi-select; inactive-clients adds Case/Therapist Status; parent-portal-usage adds Case Status and excludes only CLOSED/DEACTIVATED; silent parent portal auto-suspend/reactivate on case close/reopen.
@@ -14,6 +16,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Therapist invoice copy: pending means waiting on review only; homecare child away / leave show as **session cancelled — not billed** (no leave pay); shadow child away / paid leave stay **still paid**; unpaid leave deducted. Auto-stuffing cancelled absences into “pending / not billable” removed.
 - Finance snapshot enabled on insighte.org: Railway `ENABLE_BILLING=true` (read-only tower routes); Vercel Production `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` + `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true`. Ledger writes remain off. Runbook: `docs/FINANCE_SNAPSHOT_PROD_CUTOVER.md`, script: `scripts/enable_finance_snapshot_prod.py`.
 - Finance therapist payout preview Excel/CSV columns aligned to lumpsum billing: **Billing Type**, **Client Amount (INR)** (was package-only `Lumpsum Amount`), **Therapist Pay (INR)**, **Therapist Unit Pay (INR)** — no share/% headers. Closed snapshots remap legacy headers on read. Postgres migration proof registry includes Alembic head `v6w7x8y9z0a1`.
 - Finance Reports UI uses a card catalog (all 10 report types) with clearer empty states instead of a single dropdown.

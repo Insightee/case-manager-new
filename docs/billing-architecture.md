@@ -32,6 +32,15 @@ Therapist payout invoices (`invoices`, `invoice_case_lines`, `invoice_session_li
 
 **Therapist payouts:** unchanged; reconciliation API compares ledger billable totals vs `invoice_session_lines` per case/month.
 
+### Therapist invoice UX (InsighteCase statement)
+
+- One consolidated invoice per therapist per month (all cases).
+- Breakdown buckets: **In this pay** · **Waiting on review** (true pending only) · **Doesn’t change pay** (info).
+- **Homecare:** pay = approved sessions done; child away / leave = session cancelled — not billed. Therapists can add a **next-month session plan** (informational, stored on `billing_snapshot`, printed on PDF).
+- **Shadow:** monthly share; child away + paid leave still paid; unpaid leave deducted (`share/30`).
+- PDF: Insighte Childcare letterhead (`INVOICE_COMPANY_*`), session-wise rows, TDS from profile rate (default 10%), next-month plan block.
+- HR may edit `therapist_profiles.tds_rate_percent`.
+
 ## Invoice workflow
 
 ```mermaid

@@ -16,16 +16,19 @@ export function formatModalHeaderSummary(attendanceSummary) {
   const approved = attendanceSummary.approved_sessions ?? 0
   const pending = attendanceSummary.pending_sessions ?? 0
   const billableAbsence = attendanceSummary.billable_absence ?? 0
-  if (approved > 0) parts.push(`${approved} approved`)
-  if (pending > 0) parts.push(`${pending} pending`)
-  if (billableAbsence > 0) parts.push(`${billableAbsence} billable absence`)
+  if (approved > 0) parts.push(`${approved} in this pay`)
+  if (pending > 0) parts.push(`${pending} waiting on review`)
+  if (billableAbsence > 0) parts.push(`${billableAbsence} child away (still paid)`)
   if (attendanceSummary.leave_taken != null && attendanceSummary.leave_taken > 0) {
-    parts.push(`${attendanceSummary.leave_taken} leave taken`)
+    parts.push(`${attendanceSummary.leave_taken} cancelled for leave`)
   } else {
     const paid = attendanceSummary.paid_leaves ?? 0
     const unpaid = attendanceSummary.unpaid_leaves ?? 0
     if (paid > 0 || unpaid > 0) {
-      parts.push(`${paid} paid leave${paid === 1 ? '' : 's'} · ${unpaid} unpaid leave${unpaid === 1 ? '' : 's'}`)
+      const bits = []
+      if (paid > 0) bits.push(`${paid} paid leave`)
+      if (unpaid > 0) bits.push(`${unpaid} unpaid leave`)
+      parts.push(bits.join(' · '))
     }
   }
   return parts.length ? parts.join(' · ') : null
@@ -34,15 +37,18 @@ export function formatModalHeaderSummary(attendanceSummary) {
 export function formatCaseAttendanceStrip(attendance, billingProfile) {
   if (!attendance) return null
   const parts = []
-  if ((attendance.approved_sessions ?? 0) > 0) parts.push(`Approved: ${attendance.approved_sessions}`)
-  if ((attendance.pending_sessions ?? 0) > 0) parts.push(`Pending: ${attendance.pending_sessions}`)
-  if ((attendance.billable_absence ?? 0) > 0) parts.push(`Billable absence: ${attendance.billable_absence}`)
-  if ((attendance.pending_absence ?? 0) > 0) parts.push(`Pending absence: ${attendance.pending_absence}`)
-  if (billingProfile === 'session_based' && (attendance.leave_taken ?? 0) > 0) {
-    parts.push(`Leave taken: ${attendance.leave_taken}`)
-  } else if (billingProfile === 'calendar_day') {
-    if ((attendance.paid_leaves ?? 0) > 0) parts.push(`Paid leaves: ${attendance.paid_leaves}`)
-    if ((attendance.unpaid_leaves ?? 0) > 0) parts.push(`Unpaid leaves: ${attendance.unpaid_leaves}`)
+  if ((attendance.approved_sessions ?? 0) > 0) parts.push(`${attendance.approved_sessions} sessions in pay`)
+  if ((attendance.pending_sessions ?? 0) > 0) parts.push(`${attendance.pending_sessions} waiting on review`)
+  if (billingProfile === 'calendar_day') {
+    if ((attendance.billable_absence ?? 0) > 0 || (attendance.pending_absence ?? 0) > 0) {
+      const away = (attendance.billable_absence ?? 0) + (attendance.pending_absence ?? 0)
+      parts.push(`${away} child away`)
+    }
+    if ((attendance.paid_leaves ?? 0) > 0) parts.push(`${attendance.paid_leaves} paid leave`)
+    if ((attendance.unpaid_leaves ?? 0) > 0) parts.push(`${attendance.unpaid_leaves} unpaid leave`)
+  } else {
+    if ((attendance.pending_absence ?? 0) > 0) parts.push(`${attendance.pending_absence} child away waiting review`)
+    if ((attendance.leave_taken ?? 0) > 0) parts.push(`${attendance.leave_taken} cancelled for leave`)
   }
   return parts.length ? parts.join(' · ') : null
 }
@@ -195,7 +201,7 @@ export function statementLadder(data) {
 
   const leave = data.leave_deduction_inr ?? 0
   if (leave > 0) {
-    rows.push({ key: 'leave', label: 'Leave deduction', kind: 'deduction', amount: leave })
+    rows.push({ key: 'leave', label: 'Unpaid leave adjustment', kind: 'deduction', amount: leave })
   }
   if (data.adjustment_inr != null && data.adjustment_inr !== 0) {
     const adj = data.adjustment_inr
@@ -206,7 +212,12 @@ export function statementLadder(data) {
       amount: Math.abs(adj),
     })
   }
-  rows.push(placeholder('tds', 'TDS'))
+  const tds = data.tds_inr ?? data.tdsInr
+  if (tds != null) {
+    rows.push({ key: 'tds', label: 'TDS', kind: 'deduction', amount: Number(tds) })
+  } else {
+    rows.push(placeholder('tds', 'TDS'))
+  }
   rows.push(placeholder('holdback', 'Holdback'))
   rows.push({ key: 'net', label: 'Net payable', kind: 'net', amount: data.net_amount_inr ?? data.amount_inr ?? 0 })
   rows.push(placeholder('payment_date', 'Expected payment date'))

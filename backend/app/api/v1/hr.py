@@ -32,6 +32,7 @@ class TherapistLeaveBackfillUpdate(BaseModel):
     leave_carry_forward_days_backfill: int = Field(0, ge=0)
     leave_backfill_note: Optional[str] = None
     employment_start_date: Optional[date] = None
+    tds_rate_percent: Optional[float] = Field(None, ge=0, le=100)
 
 
 class MemoCreate(BaseModel):
@@ -189,6 +190,8 @@ def update_therapist_leave_backfill(
         employment_start_date=payload.employment_start_date,
         actor_user_id=user.id,
     )
+    if payload.tds_rate_percent is not None:
+        profile.tds_rate_percent = float(payload.tds_rate_percent)
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -202,6 +205,7 @@ def update_therapist_leave_backfill(
     return {
         "user_id": user_id,
         "leave_balance": policy.get_leave_balance(db, target, year=payload.year),
+        "tds_rate_percent": float(profile.tds_rate_percent) if profile.tds_rate_percent is not None else None,
     }
 
 

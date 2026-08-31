@@ -19,7 +19,10 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_billing_service as billing
+from app.services import therapist_invoice_labels as labels
 from app.services.reports_export_helpers import (
+    is_homecare_case,
+    is_shadow_case,
     leave_applies_to_case,
     leave_days_in_month,
     leave_days_in_month_for_case,
@@ -55,16 +58,23 @@ def _month_date_range(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, last)
 
 
-def _child_absence_ui_label(*, payable: bool, consumes_slot: bool) -> str:
+def _child_absence_ui_label(*, payable: bool, consumes_slot: bool, is_shadow: bool = False) -> str:
     if not payable:
-        return "Cancelled / not billable"
+        return labels.child_away_label(is_shadow=is_shadow, pending=False)
+    if is_shadow:
+        return labels.child_away_label(is_shadow=True, pending=False)
     if consumes_slot:
-        return "Child absence (uses package slot)"
-    return "Child absence (additional pay)"
+        return "Child away — counts toward package"
+    return "Child away — additional pay"
 
 
 def _pending_reason_tag(*, late: bool) -> str:
-    return "Added late" if late else "Awaiting log approval"
+    return labels.pending_reason_label(late=late)
+
+
+def _day_rate_inr(case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
+    share = payout_cycle.therapist_share_inr(case, db=db, as_of=as_of)
+    return payout_cycle.per_unit_from_share(case, share)
 
 
 def _empty_attendance() -> dict[str, int | None]:
@@ -263,6 +273,13 @@ def build_child_absence_line(
 ) -> dict[str, Any]:
     payable, consumes = _child_absence_policy(rule)
     as_of = session.scheduled_date
+    shadow = is_shadow_case(case) or payout_cycle.uses_calendar_day_pay(case)
+    # Homecare: pay is actual sessions only — child away is always cancelled / not billed.
+    if is_homecare_case(case) and not shadow:
+        payable = False
+        consumes = False
+    day_rate = _day_rate_inr(case, db=db, as_of=as_of)
+
     if req.status == SessionAbsenceStatus.APPROVED and payable:
         if case.billing_type == BillingType.PER_SESSION:
             line_type = SessionLineType.PER_SESSION
@@ -271,7 +288,7 @@ def build_child_absence_line(
         else:
             line_type = SessionLineType.ADDITIONAL
         amount = _child_absence_amount(case, line_type, db=db, as_of=as_of)
-        ui_label = _child_absence_ui_label(payable=True, consumes_slot=consumes)
+        ui_label = _child_absence_ui_label(payable=True, consumes_slot=consumes, is_shadow=shadow)
         return {
             "session_id": session.id,
             "absence_request_id": req.id,
@@ -279,37 +296,77 @@ def build_child_absence_line(
             "line_type": line_type.value,
             "ui_label": ui_label,
             "amount_inr": amount,
+            "display_amount_inr": amount,
             "included": True,
+            "affects_net": True,
+            "breakdown_bucket": labels.BUCKET_IN_PAY,
+            "status_tag": labels.STILL_PAID_TAG if shadow else None,
             "consumes_package_slot": consumes,
             "approval_status": req.status.value,
             "reason": req.reason,
+            "line_kind": "CHILD_AWAY",
         }
+
     if req.status == SessionAbsenceStatus.PENDING_APPROVAL:
-        amount = _child_absence_amount(case, SessionLineType.INCLUDED, db=db, as_of=as_of)
+        amount = day_rate if shadow else _child_absence_amount(case, SessionLineType.INCLUDED, db=db, as_of=as_of)
         return {
             "session_id": session.id,
             "absence_request_id": req.id,
             "session_date": session.scheduled_date.isoformat(),
             "line_type": SessionLineType.INCLUDED.value,
-            "ui_label": "Child absence (pending approval)",
+            "ui_label": labels.child_away_label(is_shadow=shadow, pending=True),
             "amount_inr": amount,
+            "display_amount_inr": amount,
             "included": False,
+            "affects_net": False,
+            "breakdown_bucket": labels.BUCKET_PENDING,
+            "status_tag": labels.PENDING_TAG,
             "consumes_package_slot": consumes,
             "approval_status": req.status.value,
             "reason": req.reason,
-            "pending_reason": "Awaiting absence approval",
+            "pending_reason": labels.PENDING_TAG,
+            "line_kind": "PENDING_ABSENCE",
+            "flags": {"pending_approval": True, "pending_reason": labels.PENDING_TAG},
+        }
+
+    # Approved non-payable, or other terminal states.
+    # Shadow: still paid via monthly share — show day rate for clarity, do not add to net.
+    # Homecare: session cancelled — not billed.
+    if shadow:
+        return {
+            "session_id": session.id,
+            "absence_request_id": req.id,
+            "session_date": session.scheduled_date.isoformat(),
+            "line_type": SessionLineType.INCLUDED.value,
+            "ui_label": labels.child_away_label(is_shadow=True, pending=False),
+            "amount_inr": 0.0,
+            "display_amount_inr": day_rate,
+            "included": False,
+            "affects_net": False,
+            "counts_toward_monthly": True,
+            "breakdown_bucket": labels.BUCKET_IN_PAY,
+            "status_tag": labels.STILL_PAID_TAG,
+            "consumes_package_slot": False,
+            "approval_status": req.status.value,
+            "reason": req.reason,
+            "line_kind": "CHILD_AWAY",
         }
     return {
         "session_id": session.id,
         "absence_request_id": req.id,
         "session_date": session.scheduled_date.isoformat(),
         "line_type": SessionLineType.INCLUDED.value,
-        "ui_label": _child_absence_ui_label(payable=False, consumes_slot=False),
+        "ui_label": labels.child_away_label(is_shadow=False, pending=False),
         "amount_inr": 0.0,
+        "display_amount_inr": 0.0,
         "included": False,
+        "affects_net": False,
+        "breakdown_bucket": labels.BUCKET_INFO,
+        "status_tag": labels.NOT_BILLED_TAG,
         "consumes_package_slot": False,
         "approval_status": req.status.value,
         "reason": req.reason,
+        "line_kind": "CHILD_AWAY",
     }
 
 
@@ -330,7 +387,8 @@ def build_pending_approval_line(
 ) -> dict[str, Any]:
     line_type = _line_type_for_package_index(case, package_index)
     late = bool(log.late_addition)
-    return billing.session_line_dict(
+    reason = _pending_reason_tag(late=late)
+    line = billing.session_line_dict(
         session,
         log,
         case,
@@ -340,10 +398,155 @@ def build_pending_approval_line(
         extra_flags={
             "added_late": late,
             "pending_approval": True,
-            "pending_reason": _pending_reason_tag(late=late),
+            "pending_reason": reason,
         },
         db=db,
     )
+    line["ui_label"] = labels.session_completed_label(line_type=line_type.value)
+    line["display_amount_inr"] = line.get("amount_inr")
+    line["affects_net"] = False
+    line["breakdown_bucket"] = labels.BUCKET_PENDING
+    line["status_tag"] = labels.PENDING_TAG
+    line["line_kind"] = "PENDING_LATE" if late else "PENDING_LOG"
+    line["pending_reason"] = reason
+    return line
+
+
+def _iter_leave_dates(leave: TherapistLeave, start: date, end: date) -> list[date]:
+    overlap_start = max(leave.start_date, start)
+    overlap_end = min(leave.end_date, end)
+    if overlap_end < overlap_start:
+        return []
+    out: list[date] = []
+    cur = overlap_start
+    while cur <= overlap_end:
+        out.append(cur)
+        cur = date.fromordinal(cur.toordinal() + 1)
+    return out
+
+
+def build_leave_lines_for_case(
+    db: Session,
+    *,
+    case: Case,
+    leaves: list[TherapistLeave],
+    month_start: date,
+    month_end: date,
+) -> list[dict[str, Any]]:
+    """Session-wise leave rows for invoice clarity.
+
+    Shadow: paid leave shows day rate (still paid); unpaid shows −day rate.
+    Homecare: informational only — session cancelled, not billed (no leave math).
+    """
+    shadow = is_shadow_case(case) or payout_cycle.uses_calendar_day_pay(case)
+    day_rate = _day_rate_inr(case, db=db, as_of=month_end)
+    lines: list[dict[str, Any]] = []
+
+    from app.services.leave_policy_service import _paid_unpaid_for_leave
+
+    for lv in leaves:
+        if lv.status == LeaveStatus.PENDING:
+            for d in _iter_leave_dates(lv, month_start, month_end):
+                lines.append(
+                    {
+                        "leave_id": lv.id,
+                        "session_date": d.isoformat(),
+                        "duration_minutes": 0,
+                        "line_type": SessionLineType.INCLUDED.value,
+                        "ui_label": labels.leave_label(is_shadow=shadow, paid=False, pending=True),
+                        "amount_inr": 0.0,
+                        "display_amount_inr": day_rate if shadow else 0.0,
+                        "included": False,
+                        "affects_net": False,
+                        "breakdown_bucket": labels.BUCKET_PENDING,
+                        "status_tag": labels.PENDING_TAG,
+                        "line_kind": "PENDING_LEAVE",
+                        "flags": {"pending_approval": True, "pending_reason": labels.PENDING_TAG},
+                    }
+                )
+            continue
+        if lv.status != LeaveStatus.APPROVED:
+            continue
+
+        year = month_start.year
+        paid_days, unpaid_days = _paid_unpaid_for_leave(db, lv, year)
+        total = max(leave_service_day_count(lv), 1)
+        dates = _iter_leave_dates(lv, month_start, month_end)
+        if not dates:
+            continue
+
+        # Distribute paid/unpaid across overlapping dates proportionally.
+        paid_left = round(paid_days * (len(dates) / total)) if total else 0
+        unpaid_left = len(dates) - paid_left
+        if not shadow:
+            for d in dates:
+                lines.append(
+                    {
+                        "leave_id": lv.id,
+                        "session_date": d.isoformat(),
+                        "duration_minutes": 0,
+                        "line_type": SessionLineType.INCLUDED.value,
+                        "ui_label": labels.leave_label(is_shadow=False, paid=False),
+                        "amount_inr": 0.0,
+                        "display_amount_inr": 0.0,
+                        "included": False,
+                        "affects_net": False,
+                        "breakdown_bucket": labels.BUCKET_INFO,
+                        "status_tag": labels.NOT_BILLED_TAG,
+                        "line_kind": "LEAVE_CANCELLED",
+                        "flags": {"homecare_leave": True},
+                    }
+                )
+            continue
+
+        for idx, d in enumerate(dates):
+            is_paid = idx < paid_left
+            if is_paid:
+                lines.append(
+                    {
+                        "leave_id": lv.id,
+                        "session_date": d.isoformat(),
+                        "duration_minutes": 0,
+                        "line_type": SessionLineType.INCLUDED.value,
+                        "ui_label": labels.leave_label(is_shadow=True, paid=True),
+                        "amount_inr": 0.0,
+                        "display_amount_inr": day_rate,
+                        "included": False,
+                        "affects_net": False,
+                        "counts_toward_monthly": True,
+                        "breakdown_bucket": labels.BUCKET_IN_PAY,
+                        "status_tag": labels.STILL_PAID_TAG,
+                        "line_kind": "PAID_LEAVE",
+                        "flags": {"paid_leave": True},
+                    }
+                )
+            else:
+                lines.append(
+                    {
+                        "leave_id": lv.id,
+                        "session_date": d.isoformat(),
+                        "duration_minutes": 0,
+                        "line_type": SessionLineType.INCLUDED.value,
+                        "ui_label": labels.leave_label(is_shadow=True, paid=False),
+                        "amount_inr": -day_rate,
+                        "display_amount_inr": -day_rate,
+                        "included": False,
+                        "affects_net": True,
+                        "breakdown_bucket": labels.BUCKET_IN_PAY,
+                        "status_tag": labels.DEDUCTED_TAG,
+                        "line_kind": "UNPAID_LEAVE",
+                        "flags": {"unpaid_leave": True},
+                    }
+                )
+            if not is_paid:
+                unpaid_left = max(unpaid_left - 1, 0)
+    return lines
+
+
+def leave_service_day_count(leave: TherapistLeave) -> int:
+    from app.services import leave_service
+
+    return leave_service.leave_day_count(leave.start_date, leave.end_date) or 0
 
 
 def compute_leave_deduction_inr(
@@ -504,6 +707,11 @@ def month_attendance_facts(
             key=lambda x: _sort_key_session(x[1]),
         )
         payable, consumes_policy = _child_absence_policy(rule)
+        # Homecare never pays or consumes slots for child away — actual sessions only.
+        if is_homecare_case(case_row) and not (
+            is_shadow_case(case_row) or payout_cycle.uses_calendar_day_pay(case_row)
+        ):
+            payable, consumes_policy = False, False
         package_slot_index = 0
         for req, session in approved_absence_sorted:
             if payable and consumes_policy:
@@ -512,20 +720,8 @@ def month_attendance_facts(
                 )
                 package_slot_index += 1
                 consuming_absences.append((session.scheduled_date, session.start_time))
-            elif payable:
-                line = build_child_absence_line(req, session, case_row, rule, db=db)
             else:
                 line = build_child_absence_line(req, session, case_row, rule, db=db)
-                rejected_notes.append(
-                    {
-                        "type": "child_absence",
-                        "date": session.scheduled_date.isoformat(),
-                        "case_code": case_row.case_code,
-                        "child_name": case_row.child.full_name if case_row.child else None,
-                        "reason": req.reason,
-                        "status": "not billable",
-                    }
-                )
             child_absence_lines.append(line)
             if line.get("included"):
                 attendance["billable_absence"] += 1
@@ -546,6 +742,15 @@ def month_attendance_facts(
                         "status": req.status.value,
                     }
                 )
+
+        leave_lines = build_leave_lines_for_case(
+            db,
+            case=case_row,
+            leaves=case_leaves,
+            month_start=start,
+            month_end=end,
+        )
+        # Pending leave days also count toward pending_leaves (already set).
 
         all_pending = sorted(
             case_pending_late + case_pending_submitted,
@@ -574,15 +779,23 @@ def month_attendance_facts(
             for idx, (session, log) in enumerate(regular_items):
                 offset = _slot_consuming_before(consuming_absences, session)
                 line_type = _line_type_for_package_index(case_row, idx + offset)
-                session_lines.append(
-                    billing.session_line_dict(session, log, case_row, line_type, db=db)
-                )
+                line = billing.session_line_dict(session, log, case_row, line_type, db=db)
+                line["ui_label"] = labels.session_completed_label(line_type=line_type.value)
+                line["display_amount_inr"] = line.get("amount_inr")
+                line["affects_net"] = True
+                line["breakdown_bucket"] = labels.BUCKET_IN_PAY
+                line["line_kind"] = "SESSION"
+                session_lines.append(line)
             for session, log in transition_items:
-                session_lines.append(
-                    billing.session_line_dict(
-                        session, log, case_row, SessionLineType.PER_SESSION, db=db
-                    )
+                line = billing.session_line_dict(
+                    session, log, case_row, SessionLineType.PER_SESSION, db=db
                 )
+                line["ui_label"] = labels.session_completed_label(line_type=SessionLineType.PER_SESSION.value)
+                line["display_amount_inr"] = line.get("amount_inr")
+                line["affects_net"] = True
+                line["breakdown_bucket"] = labels.BUCKET_IN_PAY
+                line["line_kind"] = "SESSION"
+                session_lines.append(line)
 
         attendance["approved_sessions"] = len([l for l in session_lines if l.get("included", True)])
         attendance["pending_sessions"] = len(pending_approval_lines)
@@ -600,6 +813,7 @@ def month_attendance_facts(
                 "attendance": attendance,
                 "pending_approval_lines": pending_approval_lines,
                 "child_absence_lines": child_absence_lines,
+                "leave_lines": leave_lines,
                 "session_lines": session_lines,
                 "consuming_absences": consuming_absences,
             }
