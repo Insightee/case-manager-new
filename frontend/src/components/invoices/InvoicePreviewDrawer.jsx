@@ -9,6 +9,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
   const [serverPreview, setServerPreview] = useState(initialPreview)
   const [preview, setPreview] = useState(initialPreview)
   const [excludeIds, setExcludeIds] = useState([])
+  const [nextMonthPlans, setNextMonthPlans] = useState({})
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -32,16 +33,23 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
     if (initialPreview) {
       setServerPreview(initialPreview)
       setExcludeIds([])
+      setNextMonthPlans({})
       setNotes('')
       setError('')
     }
   }, [initialPreview, open])
 
   useEffect(() => {
-    if (serverPreview) {
-      setPreview(applyLocalExcludes(serverPreview, excludeIds))
+    if (!serverPreview) return
+    const next = applyLocalExcludes(serverPreview, excludeIds)
+    if (Object.keys(nextMonthPlans).length) {
+      next.cases = (next.cases || []).map((cg) => {
+        const plan = nextMonthPlans[cg.case_id] ?? nextMonthPlans[String(cg.case_id)]
+        return plan ? { ...cg, next_month_session_plan: plan } : cg
+      })
     }
-  }, [serverPreview, excludeIds])
+    setPreview(next)
+  }, [serverPreview, excludeIds, nextMonthPlans])
 
   if (!open || !preview) return null
 
@@ -68,12 +76,19 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
     setSubmitting(true)
     setError('')
     try {
+      const plansPayload = {}
+      for (const [k, v] of Object.entries(nextMonthPlans)) {
+        plansPayload[String(k)] = v
+      }
       const inv = await apiFetch('/api/v1/invoices/submit', {
         method: 'POST',
         body: JSON.stringify({
           month,
           notes: notes.trim() || null,
-          edits: excludeIds.length ? { exclude_session_ids: excludeIds } : null,
+          edits: {
+            ...(excludeIds.length ? { exclude_session_ids: excludeIds } : {}),
+            ...(Object.keys(plansPayload).length ? { next_month_plans: plansPayload } : {}),
+          },
         }),
       })
       onSubmitted?.(inv)
@@ -83,6 +98,10 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function handleNextMonthPlanChange(caseId, plan) {
+    setNextMonthPlans((prev) => ({ ...prev, [caseId]: plan }))
   }
 
   return (
@@ -130,6 +149,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
               onToggleSession={handleToggle}
               onRefresh={refetchPreview}
               onRemoveLateSession={handleRemoveLate}
+              onNextMonthPlanChange={handleNextMonthPlanChange}
             />
           </div>
           <div className="mt-6">

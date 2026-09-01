@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
 - Expandable Description cells on People & HR report previews (parent support tickets + incident reports).
 - Meetings page: Export CSV/Excel, All-years filter, category (Admin/Case manager/Therapist) + multi-select people filter; HR reports Case manager filter is multi-select; inactive-clients adds Case/Therapist Status; parent-portal-usage adds Case Status and excludes only CLOSED/DEACTIVATED; silent parent portal auto-suspend/reactivate on case close/reopen.
@@ -14,6 +15,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Therapist invoice labels: `Session cancelled` / `Paid leave` / `Unpaid leave` (no extra Still paid / Not billed chips); shadow may choose unpaid while credits remain (paid default); parent invoice lines use the same cancelled wording and show planned next-month session count when present.
 - Finance snapshot enabled on insighte.org: Railway `ENABLE_BILLING=true` (read-only tower routes); Vercel Production `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` + `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true`. Ledger writes remain off. Runbook: `docs/FINANCE_SNAPSHOT_PROD_CUTOVER.md`, script: `scripts/enable_finance_snapshot_prod.py`.
 - Finance therapist payout preview Excel/CSV columns aligned to lumpsum billing: **Billing Type**, **Client Amount (INR)** (was package-only `Lumpsum Amount`), **Therapist Pay (INR)**, **Therapist Unit Pay (INR)** — no share/% headers. Closed snapshots remap legacy headers on read. Postgres migration proof registry includes Alembic head `v6w7x8y9z0a1`.
 - Finance Reports UI uses a card catalog (all 10 report types) with clearer empty states instead of a single dropdown.
@@ -29,6 +31,9 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Therapist session-log submit no longer stops on the duration warning: the banner still prompts a time review, but the first Submit posts the log. Scheduled visits warn only outside a ±15 minute window (not exact scheduled minutes). Session start/end payloads now include `product_module` and `day_type`; therapist home/workspace serialize `day_type` even when Postgres returns a plain string.
+- Starting a session when a previous visit still needs a log opens that pending log form first (same Submit) instead of only showing an error. Portal install control is a dropdown with both **Install** and **Refresh**; the primary icon is Install in the browser and Refresh in the installed dock/PWA. Production service workers apply waiting updates automatically.
+- Therapist session-log form drops the stacked instructional banners: one short duration line (plus Edit times), a one-line late-reason hint, and a tighter session summary.
 - Outgoing Shadow/B2B calendar-day pay no longer treats an out-of-month last approved-log date as a day-of-the-pay-month (e.g. 3 July while computing June). The same day count feeds client gross; receivables and payables both move. Follow-up: [docs/finance/outgoing_calendar_day_clamp.md](docs/finance/outgoing_calendar_day_clamp.md).
 - Finance snapshot summary on production: extended control-tower summary fetch to 120s (prod aggregation can exceed the default 30s client timeout and looked like an API connectivity failure).
 - Therapist invoice breakdown uses stored payout snapshots (case + session lines) instead of rebuilding from live logs — fixes empty or ₹0 breakdowns on paid/in-review invoices when line items were missing.
