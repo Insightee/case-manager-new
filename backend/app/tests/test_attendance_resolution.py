@@ -186,7 +186,71 @@ def test_leave_cancel_after_approve_reinstates_sessions():
         db.close()
 
 
+def test_cancelled_session_cleared_when_sibling_has_log_same_day():
+    """Mistaken-start cancel does not need a disposition if another session that day is logged."""
+    from app.models.daily_log import DailyLog, LogApprovalStatus
+
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assignment = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.therapist_user_id == therapist.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        case = db.get(Case, assignment.case_id)
+        day = today_ist() - timedelta(days=4)
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+
+        mistaken = TherapySession(
+            case_id=case.id,
+            therapist_user_id=therapist.id,
+            scheduled_date=day,
+            start_time=time(9, 0),
+            end_time=time(9, 30),
+            mode=SessionMode.HOME,
+            status=SessionStatus.CANCELLED,
+            cancellation_reason="accidental_start",
+        )
+        real = TherapySession(
+            case_id=case.id,
+            therapist_user_id=therapist.id,
+            scheduled_date=day,
+            start_time=time(10, 0),
+            end_time=time(11, 0),
+            mode=SessionMode.HOME,
+            status=SessionStatus.COMPLETED,
+        )
+        db.add_all([mistaken, real])
+        db.flush()
+        db.add(
+            DailyLog(
+                session_id=real.id,
+                attendance_status="PRESENT",
+                approval_status=LogApprovalStatus.APPROVED,
+                observations="Sibling disposition covers the day",
+            )
+        )
+        db.commit()
+        db.refresh(mistaken)
+
+        rows = attendance_resolution.list_unresolved_attendance_days(
+            db, therapist_user_id=therapist.id, from_date=day, to_date=day
+        )
+        assert not any(r["session_id"] == mistaken.id for r in rows)
+        assert not any(
+            r["case_id"] == case.id and r["date"] == day.isoformat() and r["reason"] == "session_cancelled"
+            for r in rows
+        )
+    finally:
+        db.close()
+
+
 def test_unexplained_cancelled_session_surfaces_on_preview():
+    from app.models.daily_log import DailyLog
+
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
@@ -200,6 +264,21 @@ def test_unexplained_cancelled_session_surfaces_on_preview():
         day = today_ist() - timedelta(days=3)
         while day.weekday() >= 5:
             day -= timedelta(days=1)
+
+        # Isolate the day: remove any sibling sessions/logs that would cover case×day.
+        siblings = db.scalars(
+            select(TherapySession).where(
+                TherapySession.case_id == case.id,
+                TherapySession.scheduled_date == day,
+            )
+        ).all()
+        for sib in siblings:
+            log = db.scalars(select(DailyLog).where(DailyLog.session_id == sib.id)).first()
+            if log is not None:
+                db.delete(log)
+            db.delete(sib)
+        db.commit()
+
         session = TherapySession(
             case_id=case.id,
             therapist_user_id=therapist.id,

@@ -59,33 +59,44 @@ def list_unresolved_attendance_days(
     to_date: date | None = None,
     lookback_days: int = 60,
 ) -> list[dict[str, Any]]:
-    """Return structured unresolved attendance rows for a therapist."""
+    """Return structured unresolved attendance rows for a therapist.
+
+    Resolution is **case × day**, not per cancelled row: if that case already has a
+    pending/approved session log, child absence, or open leave on the day, a
+    mistaken-start cancel (or leftover scheduled slot) does not need another entry.
+    """
     today = today_ist()
     end = to_date or today
     start = from_date or (end - timedelta(days=max(lookback_days, 1)))
     if end < start:
         return []
 
-    sessions = db.scalars(
+    # All sessions in range — siblings (COMPLETED + log, etc.) clear the day.
+    all_sessions = db.scalars(
         select(TherapySession)
         .where(
             TherapySession.therapist_user_id == therapist_user_id,
             TherapySession.scheduled_date >= start,
             TherapySession.scheduled_date <= end,
-            TherapySession.status.in_(_CANDIDATE_SESSION),
         )
         .options(selectinload(TherapySession.case).selectinload(Case.child))
         .order_by(TherapySession.scheduled_date, TherapySession.id)
     ).all()
-    if not sessions:
+    if not all_sessions:
         return []
 
-    session_ids = [s.id for s in sessions]
-    case_ids = {s.case_id for s in sessions}
+    all_ids = [s.id for s in all_sessions]
+    candidates = [
+        s
+        for s in all_sessions
+        if s.status in _CANDIDATE_SESSION and s.scheduled_date <= today
+    ]
+    if not candidates:
+        return []
 
     logs = db.scalars(
         select(DailyLog).where(
-            DailyLog.session_id.in_(session_ids),
+            DailyLog.session_id.in_(all_ids),
             DailyLog.approval_status.in_(_OPEN_LOG),
         )
     ).all()
@@ -93,7 +104,7 @@ def list_unresolved_attendance_days(
 
     absences = db.scalars(
         select(SessionAbsenceRequest).where(
-            SessionAbsenceRequest.session_id.in_(session_ids),
+            SessionAbsenceRequest.session_id.in_(all_ids),
             SessionAbsenceRequest.absence_type == SessionAbsenceType.CLIENT_ABSENT,
             SessionAbsenceRequest.status.in_(_OPEN_ABSENCE),
         )
@@ -108,14 +119,22 @@ def list_unresolved_attendance_days(
         )
     ).all()
 
+    # case_id → ISO dates already disposed via a sibling session log or child absence.
+    covered_days: dict[int, set[str]] = {}
+    for session in all_sessions:
+        day_key = session.scheduled_date.isoformat()
+        if session.id in logged_session_ids or session.id in absence_session_ids:
+            covered_days.setdefault(session.case_id, set()).add(day_key)
+
     out: list[dict[str, Any]] = []
-    seen: set[tuple[int, str, int | None]] = set()
-    for session in sessions:
-        if session.scheduled_date > today:
+    seen_days: set[tuple[int, str]] = set()
+    for session in candidates:
+        day_key = session.scheduled_date.isoformat()
+        # Same case×day already has a log or absence on another session — mistaken
+        # start / cancel does not need its own disposition entry.
+        if day_key in covered_days.get(session.case_id, set()):
             continue
-        if session.id in logged_session_ids:
-            continue
-        if session.id in absence_session_ids:
+        if session.id in logged_session_ids or session.id in absence_session_ids:
             continue
 
         open_leave = next(
@@ -130,6 +149,12 @@ def list_unresolved_attendance_days(
         )
         if open_leave:
             continue
+
+        # One attention row per case×day (not one per mistaken-start cancel).
+        day_seen_key = (session.case_id, day_key)
+        if day_seen_key in seen_days:
+            continue
+        seen_days.add(day_seen_key)
 
         terminal_leave = next(
             (
@@ -150,18 +175,13 @@ def list_unresolved_attendance_days(
         else:
             reason = REASON_NO_DISPOSITION
 
-        key = (session.case_id, session.scheduled_date.isoformat(), session.id)
-        if key in seen:
-            continue
-        seen.add(key)
-
         case = session.case
         out.append(
             {
                 "case_id": session.case_id,
                 "case_code": case.case_code if case else None,
                 "child_name": case.child.full_name if case and case.child else None,
-                "date": session.scheduled_date.isoformat(),
+                "date": day_key,
                 "session_id": session.id,
                 "session_status": session.status.value
                 if hasattr(session.status, "value")
