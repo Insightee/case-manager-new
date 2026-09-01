@@ -19,6 +19,7 @@ import {
 } from './invoiceUtils.js'
 import { AddLateSessionForm } from './AddLateSessionForm.jsx'
 import { NextMonthSessionPlanEditor } from './NextMonthSessionPlanEditor.jsx'
+import { AttendanceDispositionBanner } from '../therapist/AttendanceDispositionBanner.jsx'
 
 function lineKey(line, idx) {
   return line.session_id ?? line.id ?? line.absence_request_id ?? line.leave_id ?? `line-${idx}`
@@ -41,10 +42,16 @@ function StatusChip({ tag, tone = 'amber' }) {
 
 function SessionLineTags({ line }) {
   const tag = lineStatusTag(line)
+  const hint = line.pending_reason || line.flags?.pending_reason
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1">
-      <span className="text-xs text-slate-600">{line.ui_label || lineTypeLabel(line.line_type)}</span>
-      {tag ? <StatusChip tag={tag} tone="amber" /> : null}
+    <div className="mt-1 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-xs text-slate-600">{line.ui_label || lineTypeLabel(line.line_type)}</span>
+        {tag ? <StatusChip tag={tag} tone="amber" /> : null}
+      </div>
+      {hint && line.flags?.needs_disposition ? (
+        <p className="text-[11px] leading-snug text-amber-900/80">{hint}</p>
+      ) : null}
     </div>
   )
 }
@@ -360,9 +367,13 @@ export function InvoiceBreakdownView({
   const leaveBalance = data.leave_balance
   const rejectedNotes = data.rejected_notes || []
   const hasShadowCase = (data.cases || []).some(isShadowCaseGroup)
+  const unresolvedDays = data.unresolved_attendance_days || []
+  const unresolvedCount = data.unresolved_attendance_count ?? unresolvedDays.length
 
   return (
     <div className="space-y-6">
+      <AttendanceDispositionBanner count={unresolvedCount} days={unresolvedDays} compact />
+
       {leaveBalance && hasShadowCase ? (
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-700">
           <p className="text-xs font-semibold uppercase text-indigo-700">Leave credits ({leaveBalance.year})</p>

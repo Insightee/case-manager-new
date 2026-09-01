@@ -55,6 +55,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
 
   const attendanceGist = formatModalHeaderSummary(preview.attendance_summary)
   const pendingCount = preview.pending_approval_count ?? preview.pending_late_count ?? 0
+  const unresolvedCount = preview.unresolved_attendance_count ?? preview.unresolved_attendance_days?.length ?? 0
 
   function handleToggle(_caseId, line) {
     if (!line.session_id) return
@@ -124,6 +125,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
               {pendingCount > 0
                 ? ` · ${pendingCount} pending (${formatInr(preview.pending_approval_inr ?? preview.pending_late_inr)})`
                 : null}
+              {unresolvedCount > 0 ? ` · ${unresolvedCount} need a log or absence` : null}
               {refreshing ? ' · Updating…' : null}
             </p>
           </div>

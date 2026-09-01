@@ -8,6 +8,7 @@ import { isLeaveBalanceUpdated, leaveCreditPendingLabel, unpaidBreakdownLabel } 
 import { migrationBannerMessage } from '../../lib/leaveMigration.js'
 import { categoryLabel } from '../../lib/leaveFormUtils.js'
 import { HIDE_THERAPIST_LEAVE_CREDITS_UI } from '../../lib/productFeatureFlags.js'
+import { AttendanceDispositionBanner } from './AttendanceDispositionBanner.jsx'
 import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
 import { MigrationBackfillBanner } from './MigrationBackfillBanner.jsx'
 import './therapist-leave.css'
@@ -78,21 +79,24 @@ export function TherapistLeavePage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [unresolvedAttendance, setUnresolvedAttendance] = useState({ count: 0, days: [] })
 
   const loadLeaves = useCallback(async () => {
     setLoading(true)
     setLoadError('')
     try {
-      const [data, sum, bal, migration] = await Promise.all([
+      const [data, sum, bal, migration, unresolved] = await Promise.all([
         apiFetch('/api/v1/leave'),
         apiFetch(`/api/v1/leave/summary?year=${calYear}`),
         apiFetch(`/api/v1/leave/balance?year=${calYear}`).catch(() => null),
         apiFetch('/api/v1/leave/migration-info').catch(() => null),
+        apiFetch('/api/v1/leave/unresolved-attendance').catch(() => ({ count: 0, days: [] })),
       ])
       setLeaves(Array.isArray(data) ? data : [])
       setSummary(sum)
       setBalance(bal || sum?.leave_balance || null)
       setMigrationInfo(migration)
+      setUnresolvedAttendance(unresolved || { count: 0, days: [] })
     } catch (err) {
       setLeaves([])
       setSummary(null)
@@ -310,6 +314,13 @@ export function TherapistLeavePage() {
       {migrationBanner ? (
         <MigrationBackfillBanner migrationInfo={migrationInfo} />
       ) : null}
+
+      <div className="mb-4">
+        <AttendanceDispositionBanner
+          count={unresolvedAttendance.count}
+          days={unresolvedAttendance.days}
+        />
+      </div>
 
       <div className="therapist-leave-page__stats">
         {hideCreditUi ? (

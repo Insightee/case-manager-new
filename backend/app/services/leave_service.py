@@ -242,6 +242,12 @@ def create_therapist_leave_request(
     if RoleName.THERAPIST.value not in therapist.role_names:
         raise ValueError("Target user is not a therapist")
 
+    # Soft gate: resolve orphaned past days before filing another leave.
+    if not auto_approve:
+        from app.services import attendance_resolution_service as attendance_resolution
+
+        attendance_resolution.assert_no_unresolved_for_new_leave(db, therapist_user_id=therapist.id)
+
     # Lock therapist User row for update to serialize concurrent leave requests for this therapist.
     db.scalars(select(User).where(User.id == therapist.id).with_for_update()).first()
     

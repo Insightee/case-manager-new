@@ -136,7 +136,7 @@ def cancel_booking_with_reason(
         raise ValueError("Access denied")
     if slot.status != SlotStatus.BOOKED:
         raise ValueError("Slot is not booked")
-    appt_booking.cancel_session_for_slot(db, slot)
+    appt_booking.cancel_session_for_slot(db, slot, cancellation_reason=reason)
     slot.status = SlotStatus.CANCELLED
     slot.case_id = None
     slot.booked_by_user_id = None

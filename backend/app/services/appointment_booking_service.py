@@ -89,7 +89,9 @@ def sync_session_for_slot(db: Session, slot: TherapistSlot) -> TherapySession | 
     return sess
 
 
-def cancel_session_for_slot(db: Session, slot: TherapistSlot) -> None:
+def cancel_session_for_slot(
+    db: Session, slot: TherapistSlot, *, cancellation_reason: str | None = None
+) -> None:
     if slot.session_id:
         sess = db.get(TherapySession, slot.session_id)
         if sess:
@@ -102,6 +104,8 @@ def cancel_session_for_slot(db: Session, slot: TherapistSlot) -> None:
                 return
             if sess.status == SessionStatus.SCHEDULED:
                 sess.status = SessionStatus.CANCELLED
+                if cancellation_reason:
+                    sess.cancellation_reason = cancellation_reason[:64]
     slot.session_id = None
     db.flush()
 

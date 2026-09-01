@@ -790,6 +790,45 @@ def month_attendance_facts(
             }
         )
 
+    from app.services import attendance_resolution_service as attendance_resolution
+
+    unresolved_rows = attendance_resolution.list_unresolved_attendance_days(
+        db,
+        therapist_user_id=therapist_user_id,
+        from_date=start,
+        to_date=end,
+    )
+    unresolved_by_case = attendance_resolution.group_unresolved_by_case(unresolved_rows)
+    payload_by_case = {p["case_id"]: p for p in case_payloads}
+    for case_id, rows in unresolved_by_case.items():
+        payload = payload_by_case.get(case_id)
+        if not payload:
+            case_row = by_case_id.get(case_id) or db.get(Case, case_id)
+            if not case_row or not case_row.billing_type:
+                continue
+            profile = billing_profile_for_case(case_row)
+            payload = {
+                "case_id": case_id,
+                "billing_profile": profile.value,
+                "has_activity": True,
+                "attendance": _empty_attendance(),
+                "pending_approval_lines": [],
+                "child_absence_lines": [],
+                "leave_lines": [],
+                "session_lines": [],
+                "consuming_absences": [],
+            }
+            case_payloads.append(payload)
+            payload_by_case[case_id] = payload
+        for row in rows:
+            line = attendance_resolution.build_unresolved_invoice_line(row)
+            payload["pending_approval_lines"].append(line)
+            payload["has_activity"] = True
+            payload["attendance"]["pending_sessions"] = int(
+                payload["attendance"].get("pending_sessions") or 0
+            ) + 1
+            summary["pending_sessions"] = int(summary.get("pending_sessions") or 0) + 1
+
     has_calendar = any(billing_profile_for_case(c) == BillingProfile.CALENDAR_DAY for c in by_case_id.values())
     has_session = any(billing_profile_for_case(c) == BillingProfile.SESSION_BASED for c in by_case_id.values())
     if not has_calendar:
@@ -814,5 +853,6 @@ def month_attendance_facts(
         "attendance_summary": summary,
         "leave_deduction_inr": leave_deduction_inr,
         "rejected_notes": rejected_notes,
+        "unresolved_attendance_days": unresolved_rows,
         "cases": case_payloads,
     }

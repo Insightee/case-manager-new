@@ -10,6 +10,7 @@ import { SummaryCard } from './SummaryCard.jsx'
 import { computeSummaryFromInvoices, formatInr, mapInvoiceForCard } from './invoiceUtils.js'
 import { StatementLedger } from './StatementLedger.jsx'
 import { earningsTrendFromLedger } from '../../lib/ledgerUtils.js'
+import { AttendanceDispositionBanner } from '../therapist/AttendanceDispositionBanner.jsx'
 
 function Toast({ message, visible, onDismiss }) {
   if (!visible) return null
@@ -64,6 +65,7 @@ export function InvoicesPage() {
   const [ledgerLoading, setLedgerLoading] = useState(true)
   const [toast, setToast] = useState({ visible: false, message: '' })
   const [downloadingId, setDownloadingId] = useState(null)
+  const [unresolvedAttendance, setUnresolvedAttendance] = useState({ count: 0, days: [] })
 
   const loadInvoices = useCallback(async () => {
     setLoading(true)
@@ -91,9 +93,18 @@ export function InvoicesPage() {
     }
   }, [])
 
+  const loadUnresolved = useCallback(async () => {
+    try {
+      const payload = await apiFetch('/api/v1/leave/unresolved-attendance')
+      setUnresolvedAttendance(payload || { count: 0, days: [] })
+    } catch {
+      setUnresolvedAttendance({ count: 0, days: [] })
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadInvoices(), loadLedger()])
-  }, [loadInvoices, loadLedger])
+    await Promise.all([loadInvoices(), loadLedger(), loadUnresolved()])
+  }, [loadInvoices, loadLedger, loadUnresolved])
 
   useEffect(() => {
     refreshAll()
@@ -175,6 +186,11 @@ export function InvoicesPage() {
         message={toast.message}
         visible={toast.visible}
         onDismiss={() => setToast((t) => ({ ...t, visible: false }))}
+      />
+
+      <AttendanceDispositionBanner
+        count={unresolvedAttendance.count}
+        days={unresolvedAttendance.days}
       />
 
       <GenerateInvoiceModal

@@ -640,6 +640,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
 
     leave_deduction_inr = float(facts.get("leave_deduction_inr") or 0)
     net = round(max(subtotal - leave_deduction_inr, 0), 2)
+    unresolved = list(facts.get("unresolved_attendance_days") or [])
 
     return {
         "month": ym,
@@ -656,6 +657,8 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         "leave_balance": leave_balance,
         "attendance_summary": facts.get("attendance_summary") or {},
         "rejected_notes": facts.get("rejected_notes") or [],
+        "unresolved_attendance_days": unresolved,
+        "unresolved_attendance_count": len(unresolved),
         "net_amount_inr": net,
         "cases": case_groups,
     }
@@ -812,6 +815,13 @@ def submit_invoice_from_preview(
         raise ValueError(
             "No billable payout for this month yet — add approved session logs or check your case billing setup."
         )
+
+    from app.services import attendance_resolution_service as attendance_resolution
+
+    year, month_num, _label = parse_month(preview.get("month") or preview.get("month_label") or "")
+    attendance_resolution.assert_no_unresolved_for_invoice_month(
+        db, therapist_user_id=therapist_user_id, year=year, month=month_num
+    )
 
     pending_count = int(preview.get("pending_approval_count") or preview.get("pending_late_count") or 0)
     pending_inr = float(preview.get("pending_approval_inr") or preview.get("pending_late_inr") or 0)

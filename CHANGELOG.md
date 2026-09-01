@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Attendance disposition queue: past cancelled / leave-rejected days without a log or absence surface as **Needs log or absence** on invoice preview; soft banners on Leave + Invoices; new leave and month invoice submit are gated until those days are resolved (session log, child absence, or fresh leave). Cancel-after-approve leave reinstates leave-cancelled sessions.
 - Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
 - Expandable Description cells on People & HR report previews (parent support tickets + incident reports).
@@ -31,6 +32,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Leave cancel after approval now **reinstates** leave-cancelled sessions to scheduled (and rebooks the slot); unexplained cancelled/undisposed past days surface on invoice preview and soft-gate new leave + month invoice submit until a log, child absence, or leave is filed.
 - Outgoing Shadow/B2B calendar-day pay no longer treats an out-of-month last approved-log date as a day-of-the-pay-month (e.g. 3 July while computing June). The same day count feeds client gross; receivables and payables both move. Follow-up: [docs/finance/outgoing_calendar_day_clamp.md](docs/finance/outgoing_calendar_day_clamp.md).
 - Finance snapshot summary on production: extended control-tower summary fetch to 120s (prod aggregation can exceed the default 30s client timeout and looked like an API connectivity failure).
 - Therapist invoice breakdown uses stored payout snapshots (case + session lines) instead of rebuilding from live logs — fixes empty or ₹0 breakdowns on paid/in-review invoices when line items were missing.

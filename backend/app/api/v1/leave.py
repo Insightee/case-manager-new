@@ -102,6 +102,24 @@ def _split_response(suggestion: policy.LeaveSplitSuggestion) -> dict:
     }
 
 
+@router.get("/unresolved-attendance")
+def unresolved_attendance(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Past/today sessions that still need a log, child absence, or leave before new leave/invoice."""
+    from app.services import attendance_resolution_service as attendance_resolution
+
+    if RoleName.THERAPIST.value not in user.role_names and not user_has_permission(user, "leave.manage"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    therapist_id = user.id
+    if user_has_permission(user, "leave.manage") and RoleName.THERAPIST.value not in user.role_names:
+        # Managers can inspect their own queue only via therapist portal; keep therapist-scoped.
+        therapist_id = user.id
+    rows = attendance_resolution.list_unresolved_attendance_days(db, therapist_user_id=therapist_id)
+    return {"count": len(rows), "days": rows}
+
+
 @router.get("")
 def list_leave(
     therapist_id: Optional[int] = None,

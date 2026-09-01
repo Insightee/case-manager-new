@@ -14,7 +14,7 @@ from app.models.leave import TherapistLeave
 from app.models.parent import ParentGuardian
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
-from app.models.slot import SlotStatus, TherapistSlot
+from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.services import appointment_booking_service as appt_booking
@@ -114,6 +114,61 @@ def _parent_pending_leave_body(therapist: User, date_range: str, cases: list[Cas
         + (f" This affects case(s) {case_codes}" if case_codes else "")
         + (f" for {child_names}." if child_names else ".")
     )
+
+
+def leave_cancel_reason(leave_id: int) -> str:
+    """Stable tag so cancel-after-approve can reinstate only leave-cancelled sessions."""
+    return f"leave:{int(leave_id)}"
+
+
+def reinstate_sessions_for_cancelled_leave(db: Session, leave: TherapistLeave) -> list[TherapySession]:
+    """Restore sessions cancelled by this leave approval back to SCHEDULED when safe.
+
+    Safe = no daily log yet. Also re-books the linked slot when it was leave-cancelled.
+    """
+    from app.models.daily_log import DailyLog
+
+    reason = leave_cancel_reason(leave.id)
+    scope = leave_service._leave_scope_ids(leave)
+    scope_case_ids = None if scope is None else scope
+
+    cancelled_sessions = db.scalars(
+        select(TherapySession)
+        .where(
+            TherapySession.therapist_user_id == leave.therapist_user_id,
+            TherapySession.scheduled_date >= leave.start_date,
+            TherapySession.scheduled_date <= leave.end_date,
+            TherapySession.status == SessionStatus.CANCELLED,
+            TherapySession.cancellation_reason == reason,
+        )
+        .options(selectinload(TherapySession.case).selectinload(Case.child))
+    ).all()
+
+    reinstated: list[TherapySession] = []
+    for session in cancelled_sessions:
+        if scope_case_ids is not None and session.case_id not in scope_case_ids:
+            continue
+        has_log = db.scalars(select(DailyLog.id).where(DailyLog.session_id == session.id).limit(1)).first()
+        if has_log:
+            continue
+        session.status = SessionStatus.SCHEDULED
+        session.cancellation_reason = None
+        if session.slot_id:
+            slot = db.get(TherapistSlot, session.slot_id)
+            if slot and slot.status == SlotStatus.CANCELLED:
+                slot_reason = (slot.cancellation_reason or "").strip()
+                if slot_reason == reason or not slot.case_id:
+                    slot.status = SlotStatus.BOOKED
+                    slot.case_id = session.case_id
+                    slot.session_id = session.id
+                    slot.booking_source = BookingSource.SYSTEM
+                    slot.cancellation_reason = None
+                    slot.cancelled_at = None
+                    slot.cancelled_by_user_id = None
+                    slot.leave_block_leave_id = None
+        reinstated.append(session)
+    db.flush()
+    return reinstated
 
 
 def unblock_slots_for_leave(db: Session, leave_id: int) -> int:
@@ -240,21 +295,26 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         .options(selectinload(TherapistSlot.case).selectinload(Case.child))
     ).all()
 
+    leave_reason = leave_cancel_reason(leave.id)
     cancelled_by_parent: dict[int, list[str]] = defaultdict(list)
     for slot in booked_slots:
         if not slot.case_id or not _slot_in_leave_scope(slot, scope):
             continue
+        case_for_line = slot.case
+        case_id_for_parents = slot.case_id
         try:
-            appt_booking.cancel_booking_with_session(db, slot.id)
+            appt_booking.cancel_booking_with_session(db, slot.id, reason=leave_reason)
         except ValueError:
             continue
+        if not case_for_line:
+            continue
         line = (
-            f"{slot.case.case_code}: {slot.slot_date.isoformat()} "
+            f"{case_for_line.case_code}: {slot.slot_date.isoformat()} "
             f"{slot.start_time.strftime('%H:%M')}–{slot.end_time.strftime('%H:%M')}"
         )
-        if slot.case.child:
-            line = f"{slot.case.child.full_name} — {line}"
-        for parent_user_id in _parents_for_case(db, slot.case_id):
+        if case_for_line.child:
+            line = f"{case_for_line.child.full_name} — {line}"
+        for parent_user_id in _parents_for_case(db, case_id_for_parents):
             cancelled_by_parent[parent_user_id].append(line)
 
     avail_slots = db.scalars(
@@ -416,28 +476,14 @@ def notify_leave_withdrawn(db: Session, leave: TherapistLeave, therapist: User) 
 
 
 def notify_leave_cancelled_after_approval(db: Session, leave: TherapistLeave, therapist: User) -> int:
-    """Approved leave was cancelled — parents receive email about session reinstatement."""
+    """Approved leave was cancelled — reinstate leave-cancelled sessions and notify parents."""
     date_range = _format_date_range(leave.start_date, leave.end_date)
     count = 0
     portal = f"{settings.frontend_url}/parent/book"
-    scope = leave_service._leave_scope_ids(leave)
-    scope_case_ids = None if scope is None else scope
 
-    cancelled_sessions = db.scalars(
-        select(TherapySession)
-        .where(
-            TherapySession.therapist_user_id == leave.therapist_user_id,
-            TherapySession.scheduled_date >= leave.start_date,
-            TherapySession.scheduled_date <= leave.end_date,
-            TherapySession.status == SessionStatus.CANCELLED,
-        )
-        .options(selectinload(TherapySession.case).selectinload(Case.child))
-    ).all()
-
+    reinstated = reinstate_sessions_for_cancelled_leave(db, leave)
     reinstated_by_parent: dict[int, list[str]] = defaultdict(list)
-    for session in cancelled_sessions:
-        if scope_case_ids is not None and session.case_id not in scope_case_ids:
-            continue
+    for session in reinstated:
         line = session.scheduled_date.isoformat()
         if session.start_time and session.end_time:
             line += (
@@ -448,11 +494,17 @@ def notify_leave_cancelled_after_approval(db: Session, leave: TherapistLeave, th
         for parent_user_id in _parents_for_case(db, session.case_id):
             reinstated_by_parent[parent_user_id].append(line)
 
+    therapist_body = f"Your approved leave for {date_range} was cancelled."
+    if reinstated:
+        therapist_body += (
+            f" {len(reinstated)} session(s) were put back on the schedule — "
+            "please complete a session log, file child absence, or re-request leave for those days."
+        )
     notification_service.create_notification(
         db,
         user_id=therapist.id,
-        title="Leave cancelled",
-        body=f"Your approved leave for {date_range} was cancelled.",
+        title="Leave cancelled — sessions reinstated",
+        body=therapist_body,
         entity_type="leave",
         entity_id=leave.id,
     )
@@ -473,5 +525,22 @@ def notify_leave_cancelled_after_approval(db: Session, leave: TherapistLeave, th
                 parent_name=u.full_name or u.email,
                 db=db,
             )
+        body = (
+            f"Leave for {therapist.full_name} ({date_range}) was cancelled. "
+            + (
+                "The following session(s) are back on the schedule:\n"
+                + "\n".join(f"• {ln}" for ln in lines)
+                if lines
+                else "Scheduled sessions for your case(s) remain as planned."
+            )
+        )
+        notification_service.create_notification(
+            db,
+            user_id=parent_user_id,
+            title="Leave cancelled — sessions reinstated",
+            body=body,
+            entity_type="leave",
+            entity_id=leave.id,
+        )
         count += 1
     return count

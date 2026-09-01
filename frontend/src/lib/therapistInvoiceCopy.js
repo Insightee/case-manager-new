@@ -78,6 +78,14 @@ export function partitionCaseLines(caseGroup) {
   const pushLine = (line) => {
     if (!line) return
     const bucket = line.breakdown_bucket
+    if (
+      line.flags?.needs_disposition ||
+      line.line_kind === 'SESSION_CANCELLED_UNEXPLAINED' ||
+      line.line_kind === 'ATTENDANCE_NEEDS_DISPOSITION'
+    ) {
+      pending.push(line)
+      return
+    }
     if (bucket === 'pending' || line.flags?.pending_approval) {
       pending.push(line)
       return
@@ -134,11 +142,15 @@ export function formatTherapistHeaderSummary(data) {
   const parts = []
   const approved = summary.approved_sessions ?? data.total_sessions ?? 0
   const pending = data.pending_approval_count ?? summary.pending_sessions ?? 0
+  const unresolved = data.unresolved_attendance_count ?? data.unresolved_attendance_days?.length ?? 0
   if (approved > 0) parts.push(`${approved} in this pay`)
   if (pending > 0) {
     parts.push(
       `${pending} waiting on review (${formatInr(data.pending_approval_inr ?? data.pending_late_inr)})`,
     )
+  }
+  if (unresolved > 0) {
+    parts.push(`${unresolved} need a log or absence`)
   }
   const paid = summary.paid_leaves ?? 0
   const unpaid = summary.unpaid_leaves ?? 0
