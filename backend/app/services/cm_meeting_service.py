@@ -20,6 +20,7 @@ from app.services import notification_service, parent_service
 from app.services.calendar_ics import meeting_ics_attachment
 from app.services.email.google_calendar import build_google_calendar_add_url
 from app.services.email.service import cm_meeting_invite_email, cm_meeting_reminder_email, send_email
+from app.services.parent_notification_preferences import parent_should_receive_email
 
 
 def parse_staff_attendee_ids(raw: str | None) -> list[int]:
@@ -477,6 +478,8 @@ def send_meeting_invite_emails(
         user = db.get(User, uid)
         if not user or not (user.email or "").strip():
             continue
+        if not parent_should_receive_email(user, "meetings"):
+            continue
         _send_one(
             to=user.email,
             full_name=user.full_name or user.email,
@@ -675,6 +678,8 @@ def _deliver_meeting_reminder(
         )
         addr = (user.email or "").strip()
         if not addr:
+            continue
+        if not parent_should_receive_email(user, "meetings"):
             continue
         cm_meeting_reminder_email(
             to=addr,

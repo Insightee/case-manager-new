@@ -426,3 +426,139 @@
   color: #15803d;
   border: 1px solid #bbf7d0;
 }
+
+.parent-profile__hint--flush {
+  margin-bottom: 0;
+}
+
+.parent-profile__email-prefs-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.parent-profile__email-prefs-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.parent-profile__email-prefs-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #4f46e5;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.parent-profile__email-prefs-link:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.parent-profile__email-prefs-divider {
+  color: #cbd5e1;
+  font-size: 0.8125rem;
+}
+
+.parent-profile__email-prefs-summary {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.parent-profile__email-prefs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.parent-profile__email-pref-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.parent-profile__email-pref-row.is-on {
+  border-color: #c7d2fe;
+  background: #fafaff;
+}
+
+.parent-profile__email-pref-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.parent-profile__email-pref-label input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #6366f1;
+  flex-shrink: 0;
+}
+
+.parent-profile__email-pref-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.parent-profile__email-pref-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.parent-profile__email-pref-desc {
+  font-size: 0.8125rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.parent-profile__email-pref-examples {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.parent-profile__email-prefs-footnote {
+  margin: 14px 0 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+@media (max-width: 520px) {
+  .parent-profile__email-prefs-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .parent-profile__email-pref-label {
+    padding: 12px;
+  }
+}

@@ -34,6 +34,7 @@ from app.models.user import User
 from app.core.config import settings
 from app.services import billing_composer_service, notification_service, parent_service, product_billing_rule_service
 from app.services.email.service import enqueue_parent_invoice_email, parent_invoice_ready_email
+from app.services.parent_notification_preferences import parent_wants_email
 
 logger = logging.getLogger("insightcase.client_billing")
 
@@ -726,10 +727,11 @@ def notify_parent_invoice_issued(
         is_overdue=is_overdue,
         payments_url=url,
     )
-    if background_tasks is not None:
-        enqueue_parent_invoice_email(background_tasks, db, **email_kwargs)
-    else:
-        parent_invoice_ready_email(**email_kwargs)
+    if parent_wants_email(parent, "billing"):
+        if background_tasks is not None:
+            enqueue_parent_invoice_email(background_tasks, db, **email_kwargs)
+        else:
+            parent_invoice_ready_email(**email_kwargs)
     now = datetime.now(timezone.utc)
     inv.sent_at = now
     if inv.status in (ClientInvoiceStatus.GENERATED, ClientInvoiceStatus.DRAFT):
@@ -2129,15 +2131,16 @@ def send_payment_reminder(
     )
     from app.services.email.service import send_payment_reminder_email
 
-    send_payment_reminder_email(
-        background_tasks,
-        db,
-        to=parent.email,
-        parent_name=parent.full_name or parent.email,
-        invoice_number=inv.invoice_number,
-        balance_inr=balance,
-        payments_url="/parent/billing",
-    )
+    if parent_wants_email(parent, "billing"):
+        send_payment_reminder_email(
+            background_tasks,
+            db,
+            to=parent.email,
+            parent_name=parent.full_name or parent.email,
+            invoice_number=inv.invoice_number,
+            balance_inr=balance,
+            payments_url="/parent/billing",
+        )
     db.flush()
     return {"status": "sent", "balanceInr": balance}
 

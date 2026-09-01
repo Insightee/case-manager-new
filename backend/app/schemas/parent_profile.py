@@ -43,6 +43,24 @@ class ParentHomecareCaseRead(BaseModel):
     service_address_summary: Optional[str] = None
 
 
+class ParentEmailPreferencesRead(BaseModel):
+    session_logs: bool = True
+    therapist_leave: bool = True
+    appointments: bool = True
+    billing: bool = True
+    reports: bool = True
+    meetings: bool = True
+
+
+class ParentEmailPreferencesUpdate(BaseModel):
+    session_logs: Optional[bool] = None
+    therapist_leave: Optional[bool] = None
+    appointments: Optional[bool] = None
+    billing: Optional[bool] = None
+    reports: Optional[bool] = None
+    meetings: Optional[bool] = None
+
+
 class ParentProfileRead(BaseModel):
     full_name: str
     email: str
@@ -55,6 +73,7 @@ class ParentProfileRead(BaseModel):
     children: list[ParentChildRead] = []
     services: list[ParentServiceRead] = []
     homecare_cases: list[ParentHomecareCaseRead] = []
+    email_preferences: ParentEmailPreferencesRead = Field(default_factory=ParentEmailPreferencesRead)
     receive_log_leave_emails: bool = True
 
 
@@ -87,4 +106,5 @@ class ParentProfileUpdate(BaseModel):
     address_type: Optional[VisitAddressType] = None
     children: Optional[list[ParentChildUpdate]] = None
     service_address: Optional[ParentServiceAddressPatch] = None
+    email_preferences: Optional[ParentEmailPreferencesUpdate] = None
     receive_log_leave_emails: Optional[bool] = None
