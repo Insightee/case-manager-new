@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import {
@@ -239,6 +239,7 @@ function CaseBreakdown({
 }) {
   const [dispositionFormDate, setDispositionFormDate] = useState(null)
   const [lateFormKey, setLateFormKey] = useState(0)
+  const lateFormAnchorRef = useRef(null)
   const homecare = isHomecareCaseGroup(caseGroup)
   const shadow = isShadowCaseGroup(caseGroup)
   const { inPay, pending, info } = partitionCaseLines(caseGroup)
@@ -258,9 +259,21 @@ function CaseBreakdown({
     : info
 
   function openDispositionForm(dateStr) {
-    setDispositionFormDate(dateStr)
+    const iso =
+      typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)
+        ? dateStr.slice(0, 10)
+        : dateStr
+          ? String(dateStr).slice(0, 10)
+          : null
+    if (!iso) return
+    setDispositionFormDate(iso)
     setLateFormKey((k) => k + 1)
   }
+
+  useEffect(() => {
+    if (!dispositionFormDate) return
+    lateFormAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [dispositionFormDate, lateFormKey])
 
   function handleLateAdded() {
     setDispositionFormDate(null)
@@ -327,6 +340,21 @@ function CaseBreakdown({
                   : undefined
               }
             />
+            {editable && month && dispositionFormDate ? (
+              <div ref={lateFormAnchorRef}>
+                <AddLateSessionForm
+                  key={`${caseGroup.case_id}-disp-${lateFormKey}-${dispositionFormDate}`}
+                  caseId={caseGroup.case_id}
+                  month={month}
+                  initialDate={dispositionFormDate}
+                  defaultOpen
+                  buttonLabel={`+ Add session for ${dispositionFormDate}`}
+                  formTitle={`Add session for ${dispositionFormDate} (awaits review — not in this pay yet)`}
+                  onAdded={handleLateAdded}
+                  onCancel={() => setDispositionFormDate(null)}
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -341,25 +369,12 @@ function CaseBreakdown({
           </details>
         ) : null}
 
-        {editable && month ? (
+        {editable && month && !dispositionFormDate ? (
           <AddLateSessionForm
-            key={`${caseGroup.case_id}-${lateFormKey}-${dispositionFormDate || 'default'}`}
+            key={`${caseGroup.case_id}-generic`}
             caseId={caseGroup.case_id}
             month={month}
-            initialDate={dispositionFormDate}
-            defaultOpen={Boolean(dispositionFormDate)}
-            buttonLabel={
-              dispositionFormDate
-                ? `+ Add session for ${dispositionFormDate}`
-                : '+ Add forgotten session'
-            }
-            formTitle={
-              dispositionFormDate
-                ? `Add session for ${dispositionFormDate} (awaits review — not in this pay yet)`
-                : 'Add session (requires admin approval)'
-            }
             onAdded={handleLateAdded}
-            onCancel={() => setDispositionFormDate(null)}
           />
         ) : null}
 
