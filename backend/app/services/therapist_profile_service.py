@@ -181,6 +181,9 @@ def profile_to_dict(
         "has_pending_changes": has_pending_submission(profile),
         "last_session_log_at": last_session_log_at,
         "days_since_last_session_log": days_since_last_session_log,
+        "tds_rate_percent": float(profile.tds_rate_percent)
+        if profile.tds_rate_percent is not None
+        else None,
     }
 
 
@@ -290,6 +293,9 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         profile.leave_carry_forward_days_backfill = int(data["leave_carry_forward_days_backfill"] or 0)
     if "leave_backfill_note" in data:
         profile.leave_backfill_note = (data["leave_backfill_note"] or "").strip() or None
+    if "tds_rate_percent" in data:
+        rate = data["tds_rate_percent"]
+        profile.tds_rate_percent = None if rate is None else float(rate)
 
 
 def apply_leave_backfill(

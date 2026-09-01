@@ -37,6 +37,7 @@ class LateSessionCreate(BaseModel):
 
 class InvoicePreviewEdit(BaseModel):
     exclude_session_ids: list[int] = []
+    next_month_plans: Optional[dict[str, dict]] = None
 
 
 class InvoiceSubmitRequest(BaseModel):

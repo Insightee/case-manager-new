@@ -95,7 +95,7 @@ def test_zero_leave_taken_omitted_from_summary():
     db = SessionLocal()
     try:
         therapist, _case = _therapist_and_case(db)
-        facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym="2026-07")
+        facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym="2026-03")
         assert facts["attendance_summary"].get("leave_taken") is None
         assert facts["attendance_summary"].get("paid_leaves") is None
         assert facts["attendance_summary"].get("unpaid_leaves") is None
@@ -215,7 +215,7 @@ def test_pending_submitted_log_in_pending_approval():
         case_facts = next(c for c in facts["cases"] if c["case_id"] == case.id)
         pending = case_facts["pending_approval_lines"]
         assert any(
-            p.get("flags", {}).get("pending_reason") == "Awaiting log approval" for p in pending
+            p.get("flags", {}).get("pending_reason") == "Waiting for log review" for p in pending
         )
 
         db.delete(log)
@@ -247,7 +247,7 @@ def test_forgotten_session_pending_then_approved():
         preview = billing.build_month_preview(db, therapist.id, ym)
         case_group = next(c for c in preview["cases"] if c["case_id"] == case.id)
         pending = case_group["pending_approval_lines"]
-        assert any(p.get("flags", {}).get("pending_reason") == "Added late" for p in pending)
+        assert any(p.get("flags", {}).get("pending_reason") == "Added from invoice" for p in pending)
 
         log = db.get(DailyLog, created["daily_log_id"])
         log.approval_status = LogApprovalStatus.APPROVED
@@ -332,7 +332,20 @@ def test_child_absence_not_payable_rejected_notes():
         db.commit()
 
         facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym=ym)
-        assert any(n["type"] == "child_absence" for n in facts["rejected_notes"])
+        case_facts = next(c for c in facts["cases"] if c["case_id"] == case.id)
+        info_lines = [
+            l
+            for l in case_facts["child_absence_lines"]
+            if l.get("breakdown_bucket") == "info"
+        ]
+        # Non-payable child away stays on the breakdown as Session cancelled — not as rejected_notes spam.
+        assert info_lines or any(
+            "cancelled" in (l.get("ui_label") or "").lower() for l in case_facts["child_absence_lines"]
+        )
+        assert not any(
+            n["type"] == "child_absence" and n.get("status") != "REJECTED"
+            for n in facts["rejected_notes"]
+        )
 
         db.delete(req)
         db.delete(session)
@@ -402,7 +415,8 @@ def test_zero_activity_case_has_activity_false():
         db.close()
 
 
-def test_child_absence_payable_consumes_package_slot():
+def test_homecare_child_absence_never_billed_even_if_rule_payable():
+    """Homecare pay is sessions-done only — child away cannot consume package pay."""
     db = SessionLocal()
     try:
         therapist, case = _therapist_and_case(db)
@@ -429,7 +443,6 @@ def test_child_absence_payable_consumes_package_slot():
             rule.package_consumes_on_child_absent = True
         db.commit()
 
-        per_session = round(float(case.pay_share_amount_inr) / int(case.package_session_count), 2)
         ym = "2026-01"
         absence_session = TherapySession(
             case_id=case.id,
@@ -454,10 +467,12 @@ def test_child_absence_payable_consumes_package_slot():
 
         facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym=ym)
         case_facts = next(c for c in facts["cases"] if c["case_id"] == case.id)
-        billable = [l for l in case_facts["child_absence_lines"] if l.get("included")]
-        assert billable
-        assert billable[0]["ui_label"] == "Child absence (uses package slot)"
-        assert billable[0]["amount_inr"] == pytest.approx(per_session, rel=0.01)
+        lines = case_facts["child_absence_lines"]
+        assert lines
+        assert lines[0]["included"] is False
+        assert lines[0]["breakdown_bucket"] == "info"
+        assert lines[0]["ui_label"] == "Session cancelled"
+        assert float(lines[0].get("amount_inr") or 0) == 0
 
         req = db.scalars(
             select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == absence_session.id)

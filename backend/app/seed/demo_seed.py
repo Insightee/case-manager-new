@@ -46,7 +46,8 @@ from app.models.report import ReportStatus
 from app.models.session import SessionMode, SessionStatus
 from app.models.schedule_template import TherapistScheduleTemplate, default_template_config
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
-from app.models.leave import LeaveType, LeaveStatus, TherapistLeave
+from app.models.leave import LeaveBillingCategory, LeaveType, LeaveStatus, TherapistLeave
+from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.core.permissions import get_active_assignment
 from app.services import case_service_service
@@ -619,6 +620,165 @@ def run():
             seed_session(case1, date(2026, 5, d), parent_visible=(d in (8, 15)))
         for d in [6, 13]:
             seed_session(case2, date(2026, 5, d), hour=10, parent_visible=True)
+
+        # --- Richer prod-like billing fixture (counselling + prepaid package + July sessions) ---
+        vihaan = db.scalars(select(Child).where(Child.first_name == "Vihaan", Child.last_name == "S.")).first()
+        if not vihaan:
+            vihaan = Child(first_name="Vihaan", last_name="S.")
+            db.add(vihaan)
+            db.flush()
+        anaya = db.scalars(select(Child).where(Child.first_name == "Anaya", Child.last_name == "R.")).first()
+        if not anaya:
+            anaya = Child(first_name="Anaya", last_name="R.")
+            db.add(anaya)
+            db.flush()
+        if pg:
+            for child in [vihaan, anaya]:
+                if child not in pg.children:
+                    pg.children.append(child)
+
+        case_counsel = db.scalars(select(Case).where(Case.case_code == "IC-2026-071")).first()
+        if not case_counsel:
+            case_counsel = Case(
+                case_code="IC-2026-071",
+                child_id=vihaan.id,
+                service_type="Counselling",
+                product_module="counselling",
+                status=CaseStatus.ACTIVE,
+                case_manager_user_id=case_mgr.id,
+                region="south",
+            )
+            db.add(case_counsel)
+        case_counsel.billing_type = BillingType.PER_SESSION
+        case_counsel.client_rate_per_session_inr = 1500
+        case_counsel.compensation_mode = CompensationMode.FIXED_LUMP
+        case_counsel.therapist_fixed_pay_inr = 900
+        case_counsel.pay_share_amount_inr = 900
+
+        case_pkg = db.scalars(select(Case).where(Case.case_code == "IC-2026-072")).first()
+        if not case_pkg:
+            case_pkg = Case(
+                case_code="IC-2026-072",
+                child_id=anaya.id,
+                service_type="Homecare",
+                product_module="homecare",
+                status=CaseStatus.ACTIVE,
+                case_manager_user_id=case_mgr.id,
+                region="south",
+            )
+            db.add(case_pkg)
+        case_pkg.billing_type = BillingType.PACKAGE
+        case_pkg.package_session_count = 12
+        case_pkg.package_amount_inr = 18000
+        case_pkg.compensation_mode = CompensationMode.FIXED_LUMP
+        case_pkg.therapist_fixed_pay_inr = 12000
+        case_pkg.pay_share_amount_inr = 12000
+        db.flush()
+
+        ensure_active_case_assignment(
+            db,
+            case_id=case_counsel.id,
+            therapist_user_id=therapist.id,
+            assigned_by_user_id=case_mgr.id,
+            start_date=date(2026, 3, 1),
+        )
+        ensure_active_case_assignment(
+            db,
+            case_id=case_pkg.id,
+            therapist_user_id=therapist.id,
+            assigned_by_user_id=case_mgr.id,
+            start_date=date(2026, 3, 1),
+        )
+
+        for d in [3, 10, 17, 24]:
+            seed_session(case_counsel, date(2026, 7, d), hour=16, parent_visible=True)
+        for d in [2, 4, 9, 11, 16, 18, 23, 25]:
+            seed_session(case_pkg, date(2026, 7, d), hour=11, parent_visible=True)
+        for d in [1, 3, 8, 10, 15]:
+            seed_session(case2, date(2026, 7, d), hour=10, parent_visible=True)
+        for d in [2, 7, 9, 14, 16, 21]:
+            seed_session(case1, date(2026, 7, d), hour=9, parent_visible=True)
+
+        # Child away on package case (cancelled ₹0 on therapist invoice)
+        absence_day = date(2026, 7, 30)
+        abs_sess = db.scalars(
+            select(TherapySession).where(
+                TherapySession.case_id == case_pkg.id,
+                TherapySession.scheduled_date == absence_day,
+            )
+        ).first()
+        if not abs_sess:
+            abs_sess = TherapySession(
+                case_id=case_pkg.id,
+                therapist_user_id=therapist.id,
+                scheduled_date=absence_day,
+                start_time=time(11, 0),
+                end_time=time(12, 0),
+                mode=SessionMode.HOME,
+                status=SessionStatus.CLIENT_ABSENT,
+            )
+            db.add(abs_sess)
+            db.flush()
+        if not db.scalars(
+            select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == abs_sess.id)
+        ).first():
+            db.add(
+                SessionAbsenceRequest(
+                    session_id=abs_sess.id,
+                    case_id=case_pkg.id,
+                    therapist_user_id=therapist.id,
+                    requested_by_user_id=therapist.id,
+                    absence_type=SessionAbsenceType.CLIENT_ABSENT,
+                    status=SessionAbsenceStatus.APPROVED,
+                    reason="Child unwell — family travel",
+                )
+            )
+
+        # Shadow paid leave day + unpaid leave day in July (for invoice leave lines)
+        if not db.scalars(
+            select(TherapistLeave).where(
+                TherapistLeave.therapist_user_id == therapist.id,
+                TherapistLeave.start_date == date(2026, 7, 28),
+            )
+        ).first():
+            db.add(
+                TherapistLeave(
+                    therapist_user_id=therapist.id,
+                    leave_type=LeaveType.ANNUAL,
+                    billing_category=LeaveBillingCategory.PAID,
+                    paid_days=1,
+                    unpaid_days=0,
+                    start_date=date(2026, 7, 28),
+                    end_date=date(2026, 7, 28),
+                    reason="Paid leave — personal",
+                    status=LeaveStatus.APPROVED,
+                    includes_shadow_cases=True,
+                    service_line="shadow_support",
+                    case_ids=[case1.id],
+                )
+            )
+        if not db.scalars(
+            select(TherapistLeave).where(
+                TherapistLeave.therapist_user_id == therapist.id,
+                TherapistLeave.start_date == date(2026, 7, 29),
+            )
+        ).first():
+            db.add(
+                TherapistLeave(
+                    therapist_user_id=therapist.id,
+                    leave_type=LeaveType.UNPAID,
+                    billing_category=LeaveBillingCategory.UNPAID,
+                    paid_days=0,
+                    unpaid_days=1,
+                    start_date=date(2026, 7, 29),
+                    end_date=date(2026, 7, 29),
+                    reason="Unpaid leave — extended",
+                    status=LeaveStatus.APPROVED,
+                    includes_shadow_cases=True,
+                    service_line="shadow_support",
+                    case_ids=[case1.id],
+                )
+            )
 
         def seed_scheduled(case, day, hour=14):
             existing = db.scalars(

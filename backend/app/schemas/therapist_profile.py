@@ -22,6 +22,7 @@ class TherapistProfileUpdate(TherapistProfileBase):
     leave_paid_days_backfill: Optional[int] = None
     leave_carry_forward_days_backfill: Optional[int] = None
     leave_backfill_note: Optional[str] = None
+    tds_rate_percent: Optional[float] = Field(None, ge=0, le=100)
 
 
 class TherapistProfileRead(TherapistProfileBase):
@@ -48,6 +49,7 @@ class TherapistProfileRead(TherapistProfileBase):
     has_pending_changes: bool = False
     last_session_log_at: Optional[datetime] = None
     days_since_last_session_log: Optional[int] = None
+    tds_rate_percent: Optional[float] = None
 
     model_config = {"from_attributes": True}
 
