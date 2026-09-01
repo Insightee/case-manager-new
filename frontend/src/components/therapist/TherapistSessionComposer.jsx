@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { patchCachesAfterAbsenceSubmit } from '../../lib/therapistSessionLogCache.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
+import { isAbsenceConflict, isPendingLogBlock, parsePendingLogBlock } from '../../lib/sessionStartRules.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { ExistingSessionForDateCard } from '../daily-logs/ExistingSessionForDateCard.jsx'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
@@ -46,6 +46,7 @@ export function TherapistSessionComposer({
   disabled = false,
   liveBlocked = false,
   pendingLogBlocked = false,
+  onPendingLogRequired,
   existingSessionConflict = null,
   walkInConflict = null,
   onExistingSessionAction,
@@ -158,6 +159,10 @@ export function TherapistSessionComposer({
       setLocalError('Choose a client first.')
       return
     }
+    if (pendingLogBlocked) {
+      onPendingLogRequired?.()
+      return
+    }
     if (busy) return
     setBusy(true)
     setLocalError('')
@@ -185,6 +190,10 @@ export function TherapistSessionComposer({
         })
       } catch (err) {
         if (err?.status === 409 && isPendingLogBlock(err.detail)) {
+          if (onPendingLogRequired) {
+            onPendingLogRequired(parsePendingLogBlock(err.detail))
+            return
+          }
           setLocalError(
             err.detail.message ||
               'This client\'s previous visit still needs a log before starting another session.',
@@ -226,6 +235,10 @@ export function TherapistSessionComposer({
         onSessionStarted?.()
       }
     } catch (err) {
+      if (isPendingLogBlock(err.detail) && onPendingLogRequired) {
+        onPendingLogRequired(parsePendingLogBlock(err.detail))
+        return
+      }
       const msg = err.message || 'Could not start walk-in session'
       setLocalError(msg)
     } finally {
@@ -407,8 +420,7 @@ export function TherapistSessionComposer({
 
           {pendingLogBlocked ? (
             <p className="ic-session-composer__live-blocked" role="status">
-              This client&apos;s previous visit still needs a log before you can start another session for them.
-              Choose another client above, complete the log in the banner, or use Forgot to log.
+              This client&apos;s previous visit still needs a log. Start session opens that log first — submit it, then start today&apos;s visit.
             </p>
           ) : null}
 
@@ -418,7 +430,7 @@ export function TherapistSessionComposer({
               onAction={onExistingSessionAction}
               onDismiss={onDismissWalkInConflict}
             />
-          ) : !pendingLogBlocked && selectedCaseId ? (
+          ) : selectedCaseId ? (
             <>
               <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
                 <p className="ic-session-composer__walkin-title">

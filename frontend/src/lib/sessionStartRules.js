@@ -134,3 +134,18 @@ export function getBlockingLogForCase(needsLogSessions, caseId) {
   if (caseId == null) return null
   return blockingLogByCase(needsLogSessions)[caseId] || null
 }
+
+/**
+ * Prefer the session id from a PENDING_LOG_REQUIRED payload, then the case's needs-log visit.
+ * @param {Array<{ id?: number, case_id?: number }>} needsLogSessions
+ * @param {{ blockingSessionId?: number } | null | undefined} pendingLog
+ * @param {number | string | null | undefined} caseId
+ */
+export function resolveBlockingLogSession(needsLogSessions, pendingLog, caseId) {
+  const blockingId = pendingLog?.blockingSessionId
+  if (blockingId != null) {
+    const match = (needsLogSessions || []).find((s) => Number(s.id) === Number(blockingId))
+    if (match) return match
+  }
+  return getBlockingLogForCase(needsLogSessions, caseId)
+}

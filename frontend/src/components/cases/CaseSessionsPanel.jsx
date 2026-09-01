@@ -394,6 +394,9 @@ export function CaseSessionsPanel({
           upcomingSessions={upcomingAll}
           disabled={!!active}
           pendingLogBlocked={pendingLogBlocked}
+          onPendingLogRequired={() => {
+            if (blockingLogSession) openLogForm(blockingLogSession, { required: true })
+          }}
           onSessionStarted={() => void load({ silent: true })}
           onManualSession={handleManual}
           onError={setError}
