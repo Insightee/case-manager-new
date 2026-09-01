@@ -44,6 +44,7 @@ test('getDurationComplianceWarning flags short homecare visit', () => {
   assert.ok(warning)
   assert.equal(warning.code, 'under_minimum')
   assert.equal(warning.actualMins, 45)
+  assert.equal(warning.message, '45 min — below homecare (1–4 hours).')
 })
 
 test('getDurationComplianceWarning skips absence logs', () => {
@@ -101,10 +102,12 @@ test('getDurationComplianceWarning flags outside scheduled ±15 min', () => {
   })
   assert.ok(under)
   assert.equal(under.code, 'under_minimum')
+  assert.equal(under.message, '70 min vs scheduled 90 min (±15).')
   const over = getDurationComplianceWarning({
     session: scheduledSession(110),
     attendanceStatus: 'PRESENT',
   })
   assert.ok(over)
   assert.equal(over.code, 'over_maximum')
+  assert.equal(over.message, '110 min vs scheduled 90 min (±15).')
 })

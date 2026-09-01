@@ -10,7 +10,7 @@ import {
   todayIsoIST,
   validateSessionLogForm,
 } from '../../lib/sessionLogUtils.js'
-import { formatDisplayDate, formatTimeIST } from '../../lib/datetime.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { getDurationComplianceWarning } from '../../lib/sessionDurationCompliance.js'
 import { SessionBrief } from './SessionBrief.jsx'
 import { SessionCancelConfirmDialog } from './SessionCancelConfirmDialog.jsx'
@@ -506,24 +506,11 @@ export function SubmitSessionLogForm({
           <h2 className="ic-session-log-panel__title">
             {isResubmit ? 'Review and resubmit' : isEdit ? 'Update visit details' : 'Complete session log'}
           </h2>
-          {required && session?.actual_end_at ? (
-            <p className="ic-session-log-panel__meta">
-              Session ended at {formatTimeIST(session.actual_end_at)}. Now complete the session log.
-            </p>
-          ) : (
-            <p className="ic-session-log-panel__meta">
-              <strong>{displayName}</strong>
-              {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
-              {timeRange ? <> · {timeRange}</> : null}
-            </p>
-          )}
-          {required && session?.actual_end_at ? (
-            <p className="ic-session-log-panel__meta">
-              <strong>{displayName}</strong>
-              {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
-              {timeRange ? <> · {timeRange}</> : null}
-            </p>
-          ) : null}
+          <p className="ic-session-log-panel__meta">
+            <strong>{displayName}</strong>
+            {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
+            {!showBrief && timeRange ? <> · {timeRange}</> : null}
+          </p>
         </div>
         {!required && onCancel ? (
           <button type="button" className="ic-btn ic-btn--ghost ic-session-log-panel__dismiss" onClick={onCancel}>
@@ -554,62 +541,32 @@ export function SubmitSessionLogForm({
         />
       ) : null}
 
-      {session?.auto_ended ? (
-        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn" style={{ borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', color: '#b45309', padding: '12px', margin: '0 0 16px 0', borderRadius: '4px' }}>
-          This session was auto-ended because it exceeded the expected duration. Please review actual start/end time before submitting the daily log.{' '}
-          {onEditTimes ? (
-            <button type="button" className="ic-btn ic-btn--link" onClick={onEditTimes} style={{ textDecoration: 'underline', cursor: 'pointer', padding: 0, border: 'none', background: 'none', color: '#d97706', fontWeight: 'bold' }}>
-              Edit times
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {durationComplianceWarning ? (
-        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn" role="status">
-          {durationComplianceWarning.message}{' '}
+      {durationComplianceWarning || (session?.auto_ended && !durationComplianceWarning) ? (
+        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--warn" role="status">
+          {durationComplianceWarning
+            ? durationComplianceWarning.message
+            : 'Timer auto-stopped — check times.'}{' '}
           {onEditTimes ? (
             <button type="button" className="ic-btn ic-btn--link" onClick={onEditTimes}>
               Edit times
             </button>
           ) : null}
-        </div>
+        </p>
       ) : null}
 
       {isResubmit && existingLog?.review_note ? (
-        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn">
-          <strong>Rejection feedback:</strong> {existingLog.review_note}
-        </div>
+        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--warn">
+          {existingLog.review_note}
+        </p>
       ) : null}
-
-      {required ? (
-        <p className="ic-session-log-panel__banner">
-          Your timer has stopped. Review the session summary above, then submit this log so the visit is recorded. Use{' '}
-          <strong>Save draft</strong> if you need to step away — the visit stays in <strong>Needs log</strong> until you
-          submit.
-        </p>
-      ) : isResubmit ? (
-        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
-          Update the log based on the feedback above. You can edit session times if needed, then resubmit for review.
-        </p>
-      ) : isEdit ? (
-        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
-          Use Save Draft to save without submitting.
-        </p>
-      ) : (
-        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
-          Capture what happened while it is fresh. Family-facing notes are shared after admin review.
-        </p>
-      )}
-
-      {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
 
       {isLateSession && (!isEdit || isResubmit) ? (
-        <p className="ic-session-log-panel__late-banner">
-          This visit is from a past day. You must add a <strong>late reason</strong> below before admin can approve
-          the log.
+        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted" role="status">
+          Add a late reason below.
         </p>
       ) : null}
+
+      {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
 
       <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
         <div className="ic-session-log-form__grid">

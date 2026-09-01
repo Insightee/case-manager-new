@@ -191,30 +191,18 @@ def duration_compliance_warning(
 
     if actual_mins < bounds.min_mins:
         code = "under_minimum"
-        if bounds.has_schedule:
-            message = (
-                f"This visit clocked {actual_mins} min — shorter than the "
-                f"{bounds.reference_label} (±{SCHEDULED_DURATION_TOLERANCE_MINS} min). "
-                "Review session times before submitting."
-            )
-        else:
-            message = (
-                f"This visit clocked {actual_mins} min — below the expected "
-                f"{bounds.reference_label}. Review session times before submitting."
-            )
+        message = (
+            f"{actual_mins} min vs {bounds.reference_label} (±{SCHEDULED_DURATION_TOLERANCE_MINS})."
+            if bounds.has_schedule
+            else f"{actual_mins} min — below {bounds.reference_label}."
+        )
     else:
         code = "over_maximum"
-        if bounds.has_schedule:
-            message = (
-                f"This visit clocked {actual_mins} min — longer than the "
-                f"{bounds.reference_label} (±{SCHEDULED_DURATION_TOLERANCE_MINS} min). "
-                "Review session times before submitting."
-            )
-        else:
-            message = (
-                f"This visit clocked {actual_mins} min — above the expected "
-                f"{bounds.reference_label}. Review session times before submitting."
-            )
+        message = (
+            f"{actual_mins} min vs {bounds.reference_label} (±{SCHEDULED_DURATION_TOLERANCE_MINS})."
+            if bounds.has_schedule
+            else f"{actual_mins} min — above {bounds.reference_label}."
+        )
 
     return {
         "code": code,

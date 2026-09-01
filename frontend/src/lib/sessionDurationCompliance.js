@@ -77,16 +77,9 @@ export function getDurationComplianceWarning({ session, log, attendanceStatus } 
   if (actualMins >= bounds.minMins && actualMins <= bounds.maxMins) return null
 
   const under = actualMins < bounds.minMins
-  let message
-  if (under) {
-    message = bounds.hasSchedule
-      ? `This visit clocked ${actualMins} min — shorter than the ${bounds.referenceLabel} (±${SCHEDULED_DURATION_TOLERANCE_MINS} min). Review session times before submitting.`
-      : `This visit clocked ${actualMins} min — below the expected ${bounds.referenceLabel}. Review session times before submitting.`
-  } else {
-    message = bounds.hasSchedule
-      ? `This visit clocked ${actualMins} min — longer than the ${bounds.referenceLabel} (±${SCHEDULED_DURATION_TOLERANCE_MINS} min). Review session times before submitting.`
-      : `This visit clocked ${actualMins} min — above the expected ${bounds.referenceLabel}. Review session times before submitting.`
-  }
+  const message = bounds.hasSchedule
+    ? `${actualMins} min vs ${bounds.referenceLabel} (±${SCHEDULED_DURATION_TOLERANCE_MINS}).`
+    : `${actualMins} min — ${under ? 'below' : 'above'} ${bounds.referenceLabel}.`
 
   return {
     code: under ? 'under_minimum' : 'over_maximum',
