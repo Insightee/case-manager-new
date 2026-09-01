@@ -443,8 +443,14 @@ def build_leave_lines_for_case(
         if not dates:
             continue
 
-        # Distribute paid/unpaid across overlapping dates proportionally.
-        paid_left = round(paid_days * (len(dates) / total)) if total else 0
+        # Distribute paid/unpaid across overlapping dates. Fully paid/unpaid
+        # leaves must not invent the opposite kind via rounding.
+        if unpaid_days <= 0:
+            paid_left = len(dates)
+        elif paid_days <= 0:
+            paid_left = 0
+        else:
+            paid_left = min(len(dates), max(0, round(paid_days * (len(dates) / total))))
         if not shadow:
             for d in dates:
                 lines.append(

@@ -836,25 +836,31 @@ def submit_invoice_from_preview(
         status=InvoiceStatus.IN_REVIEW,
         notes=combined_notes,
     )
-    # Prefill TDS from therapist profile rate (default 10%) so statements are complete.
-    try:
-        rate = payout_settlement_service.resolve_tds_rate_percent(db, therapist_user_id=therapist_user_id)
-        gross = float(preview.get("subtotal_inr") or preview.get("net_amount_inr") or 0)
-        leave = float(preview.get("leave_deduction_inr") or 0)
-        taxable = max(gross - leave, 0.0)
-        invoice.tds_inr = round(taxable * rate / 100.0, 2)
-    except Exception:
-        invoice.tds_inr = None
     db.add(invoice)
     db.flush()
 
     _replace_invoice_lines_from_preview(db, invoice, preview)
     invoice.status = InvoiceStatus.IN_REVIEW
     invoice.notes = combined_notes
+    _prefill_tds_and_snapshot_settlement(db, invoice, preview)
+    return invoice
+
+
+def _prefill_tds_and_snapshot_settlement(db: Session, invoice: Invoice, preview: dict) -> None:
+    """Prefill TDS from profile rate and freeze net_payable from settlement ladder."""
+    try:
+        rate = payout_settlement_service.resolve_tds_rate_percent(
+            db, therapist_user_id=invoice.therapist_user_id
+        )
+        gross = float(preview.get("subtotal_inr") or preview.get("net_amount_inr") or 0)
+        leave = float(preview.get("leave_deduction_inr") or 0)
+        taxable = max(gross - leave, 0.0)
+        invoice.tds_inr = round(taxable * rate / 100.0, 2)
+    except Exception:
+        invoice.tds_inr = None
     if invoice.tds_inr is not None:
         settlement = payout_settlement_service.compute_invoice_settlement(db, invoice)
         payout_settlement_service.snapshot_settlement_on_invoice(db, invoice, settlement)
-    return invoice
 
 
 def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: dict) -> None:
@@ -872,6 +878,9 @@ def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: 
         plan = case_group.get("next_month_session_plan")
         if plan:
             snapshot["next_month_session_plan"] = _normalize_next_month_plan(plan)
+        # Freeze leave / absence display with the submitted totals (avoid live drift).
+        snapshot["leave_lines"] = list(case_group.get("leave_lines") or [])
+        snapshot["child_absence_lines"] = list(case_group.get("child_absence_lines") or [])
         case_line = InvoiceCaseLine(
             invoice_id=invoice.id,
             case_id=case_group["case_id"],
@@ -970,11 +979,17 @@ def amend_invoice_from_preview(
     _replace_invoice_lines_from_preview(db, invoice, preview)
     invoice.status = InvoiceStatus.IN_REVIEW
     invoice.notes = combined_notes
+    _prefill_tds_and_snapshot_settlement(db, invoice, preview)
     return invoice
 
 
 def _merge_case_with_attendance_facts(stored_case: dict, fact_case: dict | None) -> dict:
-    """Overlay live attendance facts onto persisted invoice case rows."""
+    """Overlay live attendance facts onto persisted invoice case rows.
+
+    Leave / child-absence lines stay frozen from submit (billing_snapshot) so
+    they cannot diverge from stored leave_deduction_inr / net totals. Pending
+    approval lines remain live so therapists still see what needs review.
+    """
     if not fact_case:
         return stored_case
     merged = dict(stored_case)
@@ -982,8 +997,6 @@ def _merge_case_with_attendance_facts(stored_case: dict, fact_case: dict | None)
         "attendance",
         "has_activity",
         "billing_profile",
-        "child_absence_lines",
-        "leave_lines",
         "pending_approval_lines",
         "pending_approval_inr",
     ):
@@ -1065,8 +1078,10 @@ def _case_group_from_case_line(db: Session, cl: InvoiceCaseLine) -> tuple[dict, 
         "session_lines": session_lines,
         "pending_approval_lines": pending_late_lines,
         "pending_late_lines": pending_late_lines,
-        "leave_lines": [],
-        "child_absence_lines": [],
+        "leave_lines": list(snapshot.get("leave_lines") or []) if isinstance(snapshot, dict) else [],
+        "child_absence_lines": list(snapshot.get("child_absence_lines") or [])
+        if isinstance(snapshot, dict)
+        else [],
         "next_month_session_plan": _normalize_next_month_plan(plan or {}),
     }
     return case_group, pending_late_inr, pending_late_count
