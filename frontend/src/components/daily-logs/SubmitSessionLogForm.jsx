@@ -157,8 +157,6 @@ export function SubmitSessionLogForm({
   const [strategyItems, setStrategyItems] = useState([])
   const [goalTaps, setGoalTaps] = useState({})
   const [strategyTaps, setStrategyTaps] = useState({})
-  const [durationConfirmOpen, setDurationConfirmOpen] = useState(false)
-
   const durationComplianceWarning = useMemo(
     () => getDurationComplianceWarning({
       session,
@@ -167,10 +165,6 @@ export function SubmitSessionLogForm({
     }),
     [session, existingLog, form.attendance_status],
   )
-
-  useEffect(() => {
-    setDurationConfirmOpen(false)
-  }, [session?.id, session?.actual_start_at, session?.actual_end_at, session?.edited_start_at, session?.edited_end_at, form.attendance_status])
 
   useEffect(() => {
     let cancelled = false
@@ -335,17 +329,12 @@ export function SubmitSessionLogForm({
     }
   }, [isEdit, existingLog?.id, pendingEdit, dirtySinceServerSave, form, goalTaps, strategyTaps])
 
-  async function handleResubmit(e, { bypassDuration = false } = {}) {
+  async function handleResubmit(e) {
     e.preventDefault()
     if (!existingLog?.id) return
     const validationError = validateSessionLogForm(form, { isLateSession })
     if (validationError) {
       setError(validationError)
-      return
-    }
-    if (durationComplianceWarning && !bypassDuration) {
-      setDurationConfirmOpen(true)
-      setError('')
       return
     }
     setSubmitting(true)
@@ -365,7 +354,6 @@ export function SubmitSessionLogForm({
       setError(err.message || 'Could not resubmit log')
     } finally {
       setSubmitting(false)
-      setDurationConfirmOpen(false)
     }
   }
 
@@ -412,7 +400,7 @@ export function SubmitSessionLogForm({
     }
   }
 
-  async function handleSubmit(e, { bypassDuration = false } = {}) {
+  async function handleSubmit(e) {
     e.preventDefault()
     if (!isEdit && !session?.id) {
       setError('Session is missing — refresh the page and try again.')
@@ -433,11 +421,6 @@ export function SubmitSessionLogForm({
     const validationError = validateSessionLogForm(form, { isLateSession })
     if (validationError) {
       setError(validationError)
-      return
-    }
-    if (durationComplianceWarning && !bypassDuration) {
-      setDurationConfirmOpen(true)
-      setError('')
       return
     }
     setSubmitting(true)
@@ -477,7 +460,6 @@ export function SubmitSessionLogForm({
       setError(err.message || 'Could not save log')
     } finally {
       setSubmitting(false)
-      setDurationConfirmOpen(false)
     }
   }
 
@@ -591,37 +573,6 @@ export function SubmitSessionLogForm({
               Edit times
             </button>
           ) : null}
-        </div>
-      ) : null}
-
-      {durationConfirmOpen && durationComplianceWarning ? (
-        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn" role="status">
-          <p className="ic-session-log-panel__duration-copy">
-            Session time looks outside the expected window. Edit times if needed, or submit when the clock is correct.
-          </p>
-          <div className="ic-session-log-panel__duration-actions">
-            {onEditTimes ? (
-              <button type="button" className="ic-btn ic-btn--ghost" onClick={onEditTimes}>
-                Review times first
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="ic-btn ic-btn--primary"
-              onClick={() => {
-                if (isResubmit) {
-                  handleResubmit({ preventDefault: () => {} }, { bypassDuration: true })
-                } else {
-                  handleSubmit({ preventDefault: () => {} }, { bypassDuration: true })
-                }
-              }}
-            >
-              Submit anyway
-            </button>
-            <button type="button" className="ic-btn ic-btn--ghost" onClick={() => setDurationConfirmOpen(false)}>
-              Go back
-            </button>
-          </div>
         </div>
       ) : null}
 

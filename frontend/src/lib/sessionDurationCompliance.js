@@ -4,6 +4,7 @@ export const SHADOW_HALF_DAY_REFERENCE_MINS = 300
 export const SHADOW_FULL_DAY_REFERENCE_MINS = 600
 export const HOMECARE_MIN_MINS = 60
 export const HOMECARE_MAX_MINS = 240
+export const SCHEDULED_DURATION_TOLERANCE_MINS = 15
 
 const EXCLUDED_ATTENDANCE = new Set(['ABSENT', 'CLIENT_ABSENT', 'CLIENT_LEAVE', 'THERAPIST_LEAVE'])
 
@@ -27,8 +28,8 @@ export function expectedDurationBounds(session) {
   const schedMins = scheduledDurationMins(session)
   if (schedMins != null) {
     return {
-      minMins: schedMins,
-      maxMins: schedMins,
+      minMins: Math.max(1, schedMins - SCHEDULED_DURATION_TOLERANCE_MINS),
+      maxMins: schedMins + SCHEDULED_DURATION_TOLERANCE_MINS,
       referenceLabel: `scheduled ${schedMins} min`,
       hasSchedule: true,
     }
@@ -79,11 +80,11 @@ export function getDurationComplianceWarning({ session, log, attendanceStatus } 
   let message
   if (under) {
     message = bounds.hasSchedule
-      ? `This visit clocked ${actualMins} min — shorter than the scheduled ${bounds.minMins} min. Review session times before submitting.`
+      ? `This visit clocked ${actualMins} min — shorter than the ${bounds.referenceLabel} (±${SCHEDULED_DURATION_TOLERANCE_MINS} min). Review session times before submitting.`
       : `This visit clocked ${actualMins} min — below the expected ${bounds.referenceLabel}. Review session times before submitting.`
   } else {
     message = bounds.hasSchedule
-      ? `This visit clocked ${actualMins} min — longer than the scheduled ${bounds.maxMins} min. Review session times before submitting.`
+      ? `This visit clocked ${actualMins} min — longer than the ${bounds.referenceLabel} (±${SCHEDULED_DURATION_TOLERANCE_MINS} min). Review session times before submitting.`
       : `This visit clocked ${actualMins} min — above the expected ${bounds.referenceLabel}. Review session times before submitting.`
   }
 

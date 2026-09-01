@@ -100,11 +100,21 @@ def test_expected_bounds_scheduled():
     case, session, _ = _session_and_log()
     bounds = svc.expected_duration_bounds(case, session)
     assert bounds.has_schedule is True
-    assert bounds.min_mins == bounds.max_mins == 90
+    assert bounds.min_mins == 75
+    assert bounds.max_mins == 105
+    assert bounds.reference_label == "scheduled 90 min"
 
 
 def test_expected_bounds_shadow_half_day():
     case, session, _ = _session_and_log(product_module="shadow_support", day_type=CaseDayType.HALF_DAY)
+    session.start_time = None
+    session.end_time = None
+    bounds = svc.expected_duration_bounds(case, session)
+    assert bounds.min_mins == bounds.max_mins == 300
+
+
+def test_expected_bounds_shadow_half_day_string_enum():
+    case, session, _ = _session_and_log(product_module="shadow_support", day_type="HALF_DAY")
     session.start_time = None
     session.end_time = None
     bounds = svc.expected_duration_bounds(case, session)
@@ -133,3 +143,21 @@ def test_duration_compliance_warning_homecare_short():
 def test_duration_compliance_warning_none_when_in_range():
     case, session, log = _session_and_log(duration_mins=90)
     assert svc.duration_compliance_warning(case, session, log) is None
+
+
+def test_duration_compliance_warning_none_within_scheduled_tolerance():
+    case, session, log = _session_and_log(duration_mins=80)
+    assert svc.duration_compliance_warning(case, session, log) is None
+    case, session, log = _session_and_log(duration_mins=100)
+    assert svc.duration_compliance_warning(case, session, log) is None
+
+
+def test_duration_compliance_warning_outside_scheduled_tolerance():
+    case, session, log = _session_and_log(duration_mins=70)
+    warning = svc.duration_compliance_warning(case, session, log)
+    assert warning is not None
+    assert warning["code"] == "under_minimum"
+    case, session, log = _session_and_log(duration_mins=110)
+    warning = svc.duration_compliance_warning(case, session, log)
+    assert warning is not None
+    assert warning["code"] == "over_maximum"

@@ -5,6 +5,7 @@ import {
   getDurationComplianceWarning,
   HOMECARE_MAX_MINS,
   HOMECARE_MIN_MINS,
+  SCHEDULED_DURATION_TOLERANCE_MINS,
   SHADOW_HALF_DAY_REFERENCE_MINS,
 } from './sessionDurationCompliance.js'
 
@@ -15,9 +16,11 @@ test('expectedDurationBounds uses scheduled window', () => {
     end_time: '11:00:00',
     product_module: 'homecare',
   })
-  assert.equal(bounds.minMins, 90)
-  assert.equal(bounds.maxMins, 90)
+  assert.equal(bounds.minMins, 75)
+  assert.equal(bounds.maxMins, 105)
+  assert.equal(bounds.referenceLabel, 'scheduled 90 min')
   assert.equal(bounds.hasSchedule, true)
+  assert.equal(SCHEDULED_DURATION_TOLERANCE_MINS, 15)
 })
 
 test('expectedDurationBounds shadow half day', () => {
@@ -64,4 +67,44 @@ test('getDurationComplianceWarning none when in homecare range', () => {
   assert.equal(warning, null)
   assert.equal(HOMECARE_MIN_MINS, 60)
   assert.equal(HOMECARE_MAX_MINS, 240)
+})
+
+function scheduledSession(durationMins) {
+  const start = Date.parse('2026-08-05T04:00:00Z')
+  const end = new Date(start + durationMins * 60_000).toISOString()
+  return {
+    status: 'COMPLETED',
+    product_module: 'homecare',
+    scheduled_date: '2026-08-05',
+    start_time: '09:30:00',
+    end_time: '11:00:00',
+    actual_start_at: '2026-08-05T04:00:00Z',
+    actual_end_at: end,
+  }
+}
+
+test('getDurationComplianceWarning none within scheduled ±15 min', () => {
+  assert.equal(
+    getDurationComplianceWarning({ session: scheduledSession(80), attendanceStatus: 'PRESENT' }),
+    null,
+  )
+  assert.equal(
+    getDurationComplianceWarning({ session: scheduledSession(100), attendanceStatus: 'PRESENT' }),
+    null,
+  )
+})
+
+test('getDurationComplianceWarning flags outside scheduled ±15 min', () => {
+  const under = getDurationComplianceWarning({
+    session: scheduledSession(70),
+    attendanceStatus: 'PRESENT',
+  })
+  assert.ok(under)
+  assert.equal(under.code, 'under_minimum')
+  const over = getDurationComplianceWarning({
+    session: scheduledSession(110),
+    attendanceStatus: 'PRESENT',
+  })
+  assert.ok(over)
+  assert.equal(over.code, 'over_maximum')
 })
