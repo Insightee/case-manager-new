@@ -683,7 +683,7 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
 
     # If preview lacks case billing fields (plan-only patch), skip money recompute.
     if not any((c.get("billing") or c.get("billing_snapshot")) for c in preview.get("cases") or []):
-        return preview
+        return _reattach_estimated_tds(preview)
 
     subtotal = 0.0
     total_sessions = 0
