@@ -87,28 +87,48 @@ const STATEMENT = {
   subtotal_inr: 18000,
   leave_deduction_inr: 1500,
   net_amount_inr: 16500,
+  tds_rate_percent: 10,
+  tds_inr: 1650,
+  net_payable_inr: 14850,
   pending_late_count: 0,
   cases: [{ case_id: 1, therapist_share_inr: 18000 }],
 }
 
-test('statementLadder composes gross → leave → net from the engine payload', () => {
+test('statementLadder composes gross → leave → TDS → net from the engine payload', () => {
   const rows = statementLadder(STATEMENT)
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r]))
   assert.equal(byKey.gross.amount, 18000)
   assert.equal(byKey.leave.amount, 1500)
   assert.equal(byKey.leave.kind, 'deduction')
-  assert.equal(byKey.net.amount, 16500)
+  assert.equal(byKey.tds.amount, 1650)
+  assert.equal(byKey.tds.kind, 'deduction')
+  assert.equal(byKey.net.amount, 14850)
   assert.equal(byKey.net.kind, 'net')
 })
 
-test('statementLadder renders TDS / holdback / payment-date as placeholders', () => {
+test('statementLadder shows holdback / payment-date as placeholders; TDS when present', () => {
   const rows = statementLadder(STATEMENT)
-  for (const key of ['tds', 'holdback', 'payment_date']) {
+  const tds = rows.find((r) => r.key === 'tds')
+  assert.equal(tds.amount, 1650)
+  assert.equal(tds.kind, 'deduction')
+  for (const key of ['holdback', 'payment_date']) {
     const row = rows.find((r) => r.key === key)
     assert.ok(row, `${key} row present`)
     assert.equal(row.amount, null)
     assert.equal(row.note, STATEMENT_NOT_CONFIGURED)
   }
+})
+
+test('statementLadder falls back to TDS placeholder when rate not attached', () => {
+  const rows = statementLadder({
+    subtotal_inr: 10000,
+    leave_deduction_inr: 0,
+    net_amount_inr: 10000,
+  })
+  const tds = rows.find((r) => r.key === 'tds')
+  assert.equal(tds.amount, null)
+  assert.equal(tds.note, STATEMENT_NOT_CONFIGURED)
+  assert.equal(rows.find((r) => r.key === 'net').amount, 10000)
 })
 
 test('statementLadder omits leave line when there is no deduction', () => {

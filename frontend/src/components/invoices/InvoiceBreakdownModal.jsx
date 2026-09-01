@@ -127,7 +127,7 @@ export function InvoiceBreakdownModal({
             <h2 className="text-lg font-semibold text-slate-900">{title || 'Invoice breakdown'}</h2>
             {displayData ? (
               <p className="mt-1 text-sm leading-snug text-slate-500">
-                {displayData.month} · {formatInr(displayData.net_amount_inr ?? displayData.amount_inr)}
+                {displayData.month} · {formatInr(displayData.net_payable_inr ?? displayData.net_amount_inr ?? displayData.amount_inr)}
                 {attendanceGist ? ` · ${attendanceGist}` : ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'}`}
                 {refreshing ? ' · Updating…' : null}
               </p>

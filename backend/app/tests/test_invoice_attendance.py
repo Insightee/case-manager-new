@@ -103,7 +103,38 @@ def test_zero_leave_taken_omitted_from_summary():
         db.close()
 
 
-def test_invoice_breakdown_from_preview_net_matches_subtotal():
+def test_preview_attaches_default_therapist_tds():
+    """Preview ladder must include estimated TDS (default 10%), not leave it unset."""
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assert therapist is not None
+        preview = billing.build_month_preview(db, therapist.id, "2026-08")
+        assert preview.get("tds_rate_percent") == pytest.approx(10.0)
+        taxable = float(preview["net_amount_inr"])
+        expected_tds = round(taxable * 0.10, 2)
+        assert preview["tds_inr"] == pytest.approx(expected_tds)
+        assert preview["net_payable_inr"] == pytest.approx(round(taxable - expected_tds, 2))
+        assert preview.get("tds_estimated") is True
+    finally:
+        db.close()
+
+
+def test_apply_preview_edits_reattaches_tds():
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        preview = billing.build_month_preview(db, therapist.id, "2026-08")
+        if not preview.get("cases"):
+            pytest.skip("No cases in preview")
+        edited = billing.apply_preview_edits(preview, {"exclude_session_ids": []})
+        assert edited.get("tds_inr") is not None
+        taxable = float(edited["net_amount_inr"])
+        rate = float(edited.get("tds_rate_percent") or 10)
+        assert edited["tds_inr"] == pytest.approx(round(taxable * rate / 100.0, 2))
+        assert edited["net_payable_inr"] == pytest.approx(round(taxable - edited["tds_inr"], 2))
+    finally:
+        db.close()
     db = SessionLocal()
     try:
         from app.models.invoice import Invoice, InvoiceStatus

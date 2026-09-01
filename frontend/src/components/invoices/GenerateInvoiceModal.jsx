@@ -114,7 +114,7 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
                 </div>
                 <div className="flex justify-between gap-4 border-t border-indigo-100 pt-3">
                   <dt className="font-medium text-slate-600">Estimated payout</dt>
-                  <dd className="text-lg font-bold tabular-nums text-indigo-900">{formatInr(previewSummary.net_amount_inr)}</dd>
+                  <dd className="text-lg font-bold tabular-nums text-indigo-900">{formatInr(previewSummary.net_payable_inr ?? previewSummary.net_amount_inr)}</dd>
                 </div>
               </dl>
               {(previewSummary.leave_deduction_inr ?? 0) > 0 ? (

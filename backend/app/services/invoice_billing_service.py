@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.billing_validation import case_billing_dict, resolve_therapist_pay
+from app.core.config import settings
 from app.core.permissions import get_active_assignment
 from app.core.session_defaults import default_session_mode_for_case
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -641,7 +642,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
     leave_deduction_inr = float(facts.get("leave_deduction_inr") or 0)
     net = round(max(subtotal - leave_deduction_inr, 0), 2)
 
-    return {
+    preview = {
         "month": ym,
         "month_label": label,
         "therapist_user_id": therapist_user_id,
@@ -659,6 +660,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         "net_amount_inr": net,
         "cases": case_groups,
     }
+    return _attach_estimated_tds(db, preview)
 
 
 def apply_preview_edits(preview: dict, edits: dict) -> dict:
@@ -747,6 +749,49 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
     preview["pending_late_count"] = pending_approval_count
     preview["leave_deduction_inr"] = static_leave_deduction
     preview["net_amount_inr"] = round(max(subtotal - static_leave_deduction, 0), 2)
+    return _reattach_estimated_tds(preview)
+
+
+def _attach_estimated_tds(db: Session, preview: dict[str, Any]) -> dict[str, Any]:
+    """Attach default/profile TDS so preview ladder matches submit settlement.
+
+    Therapists default to ``finance_default_tds_rate_percent`` (10%) unless the
+    therapist profile sets an override. Preview is estimate-only — submit still
+    snapshots via ``_prefill_tds_and_snapshot_settlement``.
+    """
+    therapist_user_id = preview.get("therapist_user_id")
+    try:
+        tid = int(therapist_user_id) if therapist_user_id is not None else 0
+        rate = (
+            payout_settlement_service.resolve_tds_rate_percent(db, therapist_user_id=tid)
+            if tid
+            else float(settings.finance_default_tds_rate_percent)
+        )
+    except Exception:
+        rate = float(settings.finance_default_tds_rate_percent)
+    return _apply_tds_fields(preview, rate)
+
+
+def _reattach_estimated_tds(preview: dict[str, Any]) -> dict[str, Any]:
+    """Recompute TDS after local preview edits using the rate already on the payload."""
+    rate = preview.get("tds_rate_percent")
+    if rate is None:
+        rate = float(settings.finance_default_tds_rate_percent)
+    return _apply_tds_fields(preview, float(rate))
+
+
+def _apply_tds_fields(preview: dict[str, Any], rate: float) -> dict[str, Any]:
+    gross = float(preview.get("subtotal_inr") or 0)
+    leave = float(preview.get("leave_deduction_inr") or 0)
+    taxable = max(gross - leave, 0.0)
+    # Prefer explicit leave-adjusted net when present (same base submit uses).
+    if preview.get("net_amount_inr") is not None:
+        taxable = max(float(preview["net_amount_inr"]), 0.0)
+    tds = round(taxable * float(rate) / 100.0, 2)
+    preview["tds_rate_percent"] = float(rate)
+    preview["tds_inr"] = tds
+    preview["net_payable_inr"] = round(max(taxable - tds, 0.0), 2)
+    preview["tds_estimated"] = True
     return preview
 
 
@@ -1137,10 +1182,52 @@ def _synthetic_case_groups_from_stored_header(
     return groups
 
 
+def _settlement_fields_from_invoice_or_estimate(
+    db: Session, invoice: Invoice, *, taxable_net_inr: float, preview: dict | None = None
+) -> dict[str, Any]:
+    """Prefer snapshotted invoice TDS; otherwise estimate at profile/default rate."""
+    if invoice.tds_inr is not None:
+        tds = float(invoice.tds_inr)
+        net_payable = (
+            float(invoice.net_payable_inr)
+            if invoice.net_payable_inr is not None
+            else round(max(float(taxable_net_inr) - tds, 0.0), 2)
+        )
+        return {
+            "tds_inr": tds,
+            "net_payable_inr": net_payable,
+            "tds_estimated": False,
+        }
+    rate = None
+    if preview and preview.get("tds_rate_percent") is not None:
+        rate = float(preview["tds_rate_percent"])
+    else:
+        try:
+            rate = payout_settlement_service.resolve_tds_rate_percent(
+                db, therapist_user_id=invoice.therapist_user_id
+            )
+        except Exception:
+            rate = float(settings.finance_default_tds_rate_percent)
+    estimated = _apply_tds_fields(
+        {"net_amount_inr": float(taxable_net_inr), "subtotal_inr": float(taxable_net_inr)},
+        float(rate),
+    )
+    return {
+        "tds_inr": estimated["tds_inr"],
+        "tds_rate_percent": estimated["tds_rate_percent"],
+        "net_payable_inr": estimated["net_payable_inr"],
+        "tds_estimated": True,
+    }
+
+
 def _breakdown_from_live_preview(db: Session, invoice: Invoice) -> dict:
     preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
     subtotal, leave_ded, net = _stored_invoice_totals(invoice)
     use_stored = invoice.subtotal_inr is not None or invoice.amount_inr is not None
+    taxable = net if use_stored else float(preview["net_amount_inr"])
+    settlement = _settlement_fields_from_invoice_or_estimate(
+        db, invoice, taxable_net_inr=taxable, preview=preview
+    )
     return {
         "id": invoice.id,
         "therapist_user_id": invoice.therapist_user_id,
@@ -1164,6 +1251,7 @@ def _breakdown_from_live_preview(db: Session, invoice: Invoice) -> dict:
         "attendance_summary": preview.get("attendance_summary") or {},
         "rejected_notes": preview.get("rejected_notes") or [],
         "from_preview": True,
+        **settlement,
     }
 
 
@@ -1212,6 +1300,9 @@ def _breakdown_from_stored_header(db: Session, invoice: Invoice) -> dict:
         "rejected_notes": live_preview.get("rejected_notes") or [],
         "from_stored_header": True,
         "snapshot_incomplete": not any((c.get("session_lines") or []) for c in cases),
+        **_settlement_fields_from_invoice_or_estimate(
+            db, invoice, taxable_net_inr=net, preview=live_preview
+        ),
     }
 
 
@@ -1253,6 +1344,9 @@ def _breakdown_from_persisted_case_lines(db: Session, invoice: Invoice) -> dict:
         "rejected_notes": live_preview.get("rejected_notes") or [],
         "leave_balance": live_preview.get("leave_balance"),
         "snapshot_incomplete": not any((c.get("session_lines") or []) for c in cases),
+        **_settlement_fields_from_invoice_or_estimate(
+            db, invoice, taxable_net_inr=net, preview=live_preview
+        ),
     }
 
 
@@ -1293,6 +1387,9 @@ def _breakdown_from_persisted_lines(db: Session, invoice: Invoice) -> dict:
         "attendance_summary": live_preview.get("attendance_summary") or {},
         "rejected_notes": live_preview.get("rejected_notes") or [],
         "leave_balance": live_preview.get("leave_balance"),
+        **_settlement_fields_from_invoice_or_estimate(
+            db, invoice, taxable_net_inr=net, preview=live_preview
+        ),
     }
 
 

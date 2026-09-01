@@ -94,6 +94,12 @@ export function applyLocalExcludes(preview, excludeIds) {
   next.leave_deduction_inr = staticLeave
   next.net_amount_inr = Math.max(next.subtotal_inr - staticLeave, 0)
   next.amount_inr = next.net_amount_inr
+  const rate = next.tds_rate_percent != null ? Number(next.tds_rate_percent) : 10
+  const tds = Math.round(next.net_amount_inr * rate) / 100
+  next.tds_rate_percent = rate
+  next.tds_inr = Math.round(tds * 100) / 100
+  next.net_payable_inr = Math.round(Math.max(next.net_amount_inr - next.tds_inr, 0) * 100) / 100
+  next.tds_estimated = true
   return next
 }
 
@@ -184,9 +190,9 @@ export const STATEMENT_NOT_CONFIGURED = 'Not yet configured'
 /**
  * Compose the therapist's monthly statement ladder purely from the payout
  * engine payload — the therapist enters nothing. Reads therapist-side figures
- * only (subtotal / leave / adjustment / net); never touches client pricing.
- * TDS, holdback and expected payment date are placeholders until finance
- * supplies the rules.
+ * only (subtotal / leave / adjustment / TDS / net); never touches client pricing.
+ * Holdback and expected payment date stay placeholders until finance supplies them.
+ * TDS defaults to the org rate (typically 10%) on preview and submitted invoices.
  */
 export function statementLadder(data) {
   if (!data) return []
@@ -219,7 +225,9 @@ export function statementLadder(data) {
     rows.push(placeholder('tds', 'TDS'))
   }
   rows.push(placeholder('holdback', 'Holdback'))
-  rows.push({ key: 'net', label: 'Net payable', kind: 'net', amount: data.net_amount_inr ?? data.amount_inr ?? 0 })
+  const netPayable =
+    data.net_payable_inr ?? data.netPayableInr ?? data.net_amount_inr ?? data.amount_inr ?? 0
+  rows.push({ key: 'net', label: 'Net payable', kind: 'net', amount: netPayable })
   rows.push(placeholder('payment_date', 'Expected payment date'))
   return rows
 }

@@ -119,7 +119,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-slate-900">Invoice preview — {preview.month_label || month}</h2>
             <p className="mt-1 text-sm leading-snug text-slate-500">
-              {formatInr(preview.net_amount_inr)}
+              {formatInr(preview.net_payable_inr ?? preview.net_amount_inr)}
               {attendanceGist ? ` · ${attendanceGist}` : ` · ${preview.total_sessions ?? 0} approved`}
               {pendingCount > 0
                 ? ` · ${pendingCount} pending (${formatInr(preview.pending_approval_inr ?? preview.pending_late_inr)})`

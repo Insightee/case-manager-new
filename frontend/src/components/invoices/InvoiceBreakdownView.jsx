@@ -169,7 +169,7 @@ function AttendanceSummary({ data }) {
         ) : null}
         <div className="border-t border-[#E2E8F0] pt-3 sm:col-span-2">
           <p className="text-xs font-semibold uppercase text-indigo-600">Estimated pay</p>
-          <p className="text-2xl font-bold text-indigo-900">{formatInr(data.net_amount_inr ?? data.amount_inr)}</p>
+          <p className="text-2xl font-bold text-indigo-900">{formatInr(data.net_payable_inr ?? data.net_amount_inr ?? data.amount_inr)}</p>
         </div>
       </div>
     </div>
