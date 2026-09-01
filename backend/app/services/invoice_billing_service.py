@@ -852,9 +852,13 @@ def _prefill_tds_and_snapshot_settlement(db: Session, invoice: Invoice, preview:
         rate = payout_settlement_service.resolve_tds_rate_percent(
             db, therapist_user_id=invoice.therapist_user_id
         )
-        gross = float(preview.get("subtotal_inr") or preview.get("net_amount_inr") or 0)
-        leave = float(preview.get("leave_deduction_inr") or 0)
-        taxable = max(gross - leave, 0.0)
+        if preview.get("subtotal_inr") is not None:
+            gross = float(preview["subtotal_inr"])
+            leave = float(preview.get("leave_deduction_inr") or 0)
+            taxable = max(gross - leave, 0.0)
+        else:
+            # net_amount_inr is already leave-adjusted — do not subtract leave again
+            taxable = max(float(preview.get("net_amount_inr") or 0), 0.0)
         invoice.tds_inr = round(taxable * rate / 100.0, 2)
     except Exception:
         invoice.tds_inr = None

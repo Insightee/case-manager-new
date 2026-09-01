@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import {
   isLeaveBalanceUpdated,
   leaveCreditPendingLabel,
@@ -14,6 +15,8 @@ export function TherapistLeaveBalancePanel({
   onSaved,
   className = '',
 }) {
+  const { can } = useAuth()
+  const canEditTds = Boolean(can?.('user.manage') || can?.('payout.override'))
   const year = yearProp || new Date().getFullYear()
   const [balance, setBalance] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -58,15 +61,18 @@ export function TherapistLeaveBalancePanel({
     setError('')
     setSuccess('')
     try {
+      const body = {
+        year,
+        employment_start_date: employmentStart || null,
+      }
+      if (canEditTds) {
+        body.tds_rate_percent = tdsRate === '' ? null : Number(tdsRate)
+      }
       await apiFetch(`/api/v1/hr/therapists/${therapistUserId}/leave-backfill`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          year,
-          employment_start_date: employmentStart || null,
-          tds_rate_percent: tdsRate === '' ? null : Number(tdsRate),
-        }),
+        body: JSON.stringify(body),
       })
-      setSuccess('Leave credit and TDS settings saved.')
+      setSuccess(canEditTds ? 'Leave credit and TDS settings saved.' : 'Leave credit settings saved.')
       await loadBalance()
       onSaved?.()
     } catch (err) {
@@ -195,21 +201,23 @@ export function TherapistLeaveBalancePanel({
               onChange={(e) => setEmploymentStart(e.target.value)}
             />
           </label>
-          <label className="admin-filter-field">
-            <span className="admin-filter-field__label">TDS rate (%)</span>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              className="admin-input"
-              value={tdsRate}
-              onChange={(e) => setTdsRate(e.target.value)}
-            />
-            <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
-              Platform default is 10%. Applied automatically on therapist invoices.
-            </span>
-          </label>
+          {canEditTds ? (
+            <label className="admin-filter-field">
+              <span className="admin-filter-field__label">TDS rate (%)</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                className="admin-input"
+                value={tdsRate}
+                onChange={(e) => setTdsRate(e.target.value)}
+              />
+              <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                Platform default is 10%. Applied automatically on therapist invoices.
+              </span>
+            </label>
+          ) : null}
           {error ? <p className="admin-alert admin-alert--error" style={{ margin: 0 }}>{error}</p> : null}
           {success ? <p className="admin-alert admin-alert--success" style={{ margin: 0 }}>{success}</p> : null}
           <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving}>

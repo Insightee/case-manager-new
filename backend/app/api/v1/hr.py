@@ -191,6 +191,15 @@ def update_therapist_leave_backfill(
         actor_user_id=user.id,
     )
     if payload.tds_rate_percent is not None:
+        # TDS is finance/HR payroll config — leave.manage alone must not set it to 0%.
+        if not (
+            user_has_permission(user, "user.manage")
+            or user_has_permission(user, "payout.override")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Looks like TDS rate needs finance or HR access — leave credits can still be updated separately.",
+            )
         profile.tds_rate_percent = float(payload.tds_rate_percent)
     meta = get_request_meta(request)
     log_audit(
