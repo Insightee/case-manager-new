@@ -56,9 +56,21 @@ function formatBillingDate(value) {
 
 function formatSessionLineLabel(line) {
   const date = formatBillingDate(line.sessionDate) || 'Session'
-  const status = line.sessionStatus || '—'
+  const status = parentSessionStatusLabel(line)
   const amount = formatInr(line.amountInr)
   return `${date} · ${status} · ${amount}`
+}
+
+function parentSessionStatusLabel(line) {
+  if (line?.sessionStatus) return line.sessionStatus
+  const raw = String(line?.sessionStatusRaw || '').toUpperCase()
+  if (
+    !Number(line?.amountInr) &&
+    (raw.includes('ABSENT') || raw.includes('CANCEL') || raw.includes('LEAVE'))
+  ) {
+    return 'Session cancelled'
+  }
+  return 'Session completed'
 }
 
 function statusClass(bucket) {
@@ -703,7 +715,7 @@ function ParentBillingPageFull() {
                         <td>{line.therapistName}</td>
                         <td>{line.serviceLabel}</td>
                         <td>
-                          {line.sessionStatus}
+                          {parentSessionStatusLabel(line)}
                           {line.packageDeducted ? ' · Pack' : ''}
                         </td>
                         <td>
@@ -720,6 +732,13 @@ function ParentBillingPageFull() {
                   </tbody>
                 </table>
               </div>
+
+              {selected.plannedSessionsNextMonth != null && selected.plannedSessionsNextMonth > 0 ? (
+                <p className="parent-pay__muted parent-pay__mt-4">
+                  Planned for next month: {selected.plannedSessionsNextMonth} session
+                  {selected.plannedSessionsNextMonth === 1 ? '' : 's'}
+                </p>
+              ) : null}
 
               <dl className="parent-pay__totals">
                 <div>

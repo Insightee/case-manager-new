@@ -24,10 +24,21 @@ def resolve_tds_rate_percent(db: Session, *, therapist_user_id: int) -> float:
 
 
 def _invoice_gross_inr(db: Session, invoice: Invoice) -> float:
+    """Taxable gross for settlement: case-line subtotal minus unpaid leave.
+
+    Case lines store pre-leave therapist share. Leave is snapshotted on the
+    invoice as ``leave_deduction_inr`` and must reduce the ladder base so TDS
+    and net payable match the preview (subtotal - leave).
+    """
     lines = db.scalars(select(InvoiceCaseLine).where(InvoiceCaseLine.invoice_id == invoice.id)).all()
+    leave = round(float(invoice.leave_deduction_inr or 0), 2)
     if lines:
-        return round(sum(float(cl.therapist_share_inr or 0) for cl in lines), 2)
-    return round(float(invoice.subtotal_inr or invoice.amount_inr or 0), 2)
+        subtotal = round(sum(float(cl.therapist_share_inr or 0) for cl in lines), 2)
+        return round(max(subtotal - leave, 0.0), 2)
+    if invoice.subtotal_inr is not None:
+        return round(max(float(invoice.subtotal_inr) - leave, 0.0), 2)
+    # amount_inr is already net of leave when subtotal was never stored
+    return round(float(invoice.amount_inr or 0), 2)
 
 
 def _invoice_deductions(db: Session, invoice: Invoice) -> list[dict[str, Any]]:

@@ -410,13 +410,10 @@ def resolve_billing_category(
         service_line=service_line,
         case_ids=case_ids,
     )
+    # Therapists may voluntarily choose unpaid even when credits remain (bill what they submit).
     if requested_category == LeaveBillingCategory.UNPAID:
-        if split.has_shadow_cases and split.paid_days > 0:
-            raise ValueError(
-                "Leave credits must be used first for shadow cases — "
-                f"{split.paid_days} paid + {split.unpaid_days} unpaid."
-            )
         return LeaveBillingCategory.UNPAID, 0, split.total_days, split.has_shadow_cases
+    # No paid balance → unpaid automatically.
     if split.paid_days <= 0:
         return LeaveBillingCategory.UNPAID, split.paid_days, split.unpaid_days, split.has_shadow_cases
     if split.unpaid_days > 0:
