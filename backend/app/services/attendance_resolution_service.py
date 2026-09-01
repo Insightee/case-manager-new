@@ -5,8 +5,9 @@ An unresolved day is a scheduled or cancelled session (past or today) with:
 - no pending/approved child absence,
 - no pending/approved therapist leave covering the date.
 
-Used by invoice preview (Needs attention lines), leave-submit gates, and
-invoice-submit gates. Does not invent pay — only surfaces the hole.
+Used by invoice preview (Needs log or absence lines) and leave-submit soft gates.
+Invoice submit is allowed while these days remain open — they stay out of payout
+until resolved/approved. Does not invent pay — only surfaces the hole.
 """
 
 from __future__ import annotations
@@ -201,7 +202,7 @@ _GATE_REASONS = frozenset(
 def unresolved_for_gates(
     db: Session, *, therapist_user_id: int, **kwargs: Any
 ) -> list[dict[str, Any]]:
-    """Subset that blocks new leave / invoice submit (not every open Needs-log day)."""
+    """Subset that blocks new leave (not every open Needs-log day). Invoice submit is not gated."""
     return [
         r
         for r in list_unresolved_attendance_days(db, therapist_user_id=therapist_user_id, **kwargs)
@@ -236,25 +237,12 @@ def assert_no_unresolved_for_invoice_month(
     year: int,
     month: int,
 ) -> None:
-    from calendar import monthrange
+    """Deprecated: invoice submit is no longer blocked by unresolved disposition days.
 
-    start = date(year, month, 1)
-    end = date(year, month, monthrange(year, month)[1])
-    # Only gate past/today within the invoice month (future days in month are fine).
-    today = today_ist()
-    end = min(end, today)
-    if end < start:
-        return
-    rows = unresolved_for_gates(
-        db, therapist_user_id=therapist_user_id, from_date=start, to_date=end
-    )
-    if not rows:
-        return
-    raise ValueError(
-        "Looks like we still need a few attendance details before we can submit this month's invoice. "
-        f"{len(rows)} day(s) still need a session log, child absence, or leave. "
-        "Would you like to continue from where you left off on Invoices?"
-    )
+    Kept for callers/tests that may still import the helper. Prefer surfacing days on
+    the invoice preview and allowing submit; pending items stay out of payout.
+    """
+    return
 
 
 def build_unresolved_invoice_line(row: dict[str, Any]) -> dict[str, Any]:

@@ -816,15 +816,11 @@ def submit_invoice_from_preview(
             "No billable payout for this month yet — add approved session logs or check your case billing setup."
         )
 
-    from app.services import attendance_resolution_service as attendance_resolution
-
-    year, month_num, _label = parse_month(preview.get("month") or preview.get("month_label") or "")
-    attendance_resolution.assert_no_unresolved_for_invoice_month(
-        db, therapist_user_id=therapist_user_id, year=year, month=month_num
-    )
-
+    # Unresolved / pending-approval days stay visible on the invoice; therapists may
+    # still submit. Those lines stay out of this month's pay until approved.
     pending_count = int(preview.get("pending_approval_count") or preview.get("pending_late_count") or 0)
     pending_inr = float(preview.get("pending_approval_inr") or preview.get("pending_late_inr") or 0)
+    unresolved_count = int(preview.get("unresolved_attendance_count") or 0)
     note_parts = []
     if notes:
         note_parts.append(notes.strip())
@@ -832,6 +828,11 @@ def submit_invoice_from_preview(
         note_parts.append(
             f"Contains {pending_count} session(s) pending approval "
             f"(₹{pending_inr:,.0f} excluded from payout)."
+        )
+    if unresolved_count:
+        note_parts.append(
+            f"{unresolved_count} day(s) still need a session log, child absence, or leave "
+            "(shown on breakdown; not in this payout yet)."
         )
     combined_notes = "\n".join(note_parts) if note_parts else None
 

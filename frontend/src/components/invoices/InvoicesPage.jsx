@@ -191,6 +191,7 @@ export function InvoicesPage() {
       <AttendanceDispositionBanner
         count={unresolvedAttendance.count}
         days={unresolvedAttendance.days}
+        context="invoice"
       />
 
       <GenerateInvoiceModal

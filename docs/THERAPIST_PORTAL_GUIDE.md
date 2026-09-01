@@ -277,7 +277,7 @@ Generate and track payment for your completed sessions.
 | You unavailable | **Leave** → request leave for those dates |
 | Visit happened | Complete the session and **submit the daily log** |
 
-Invoice preview shows cancelled visits that still need a disposition as **Needs log or absence** (Waiting on review). Resolve them before submit — the system will ask you to finish those days first.
+Invoice preview shows cancelled visits that still need a disposition as **Needs log or absence** (Waiting on review). Use **Add session for this day** on those lines, or submit the invoice anyway — pending items stay out of this pay until approved. New leave requests still need those days resolved first.
 
 Use the earnings summary and checklist on the page to stay current. For payout questions, open a **Support ticket** with a finance topic.
 
@@ -349,7 +349,7 @@ Request time away and see how it affects your caseload.
 4. Add a **reason** and confirm whether you consulted with parents if required.  
 5. Submit — track status as **Pending**, **Approved**, or **Rejected**.
 
-If leave is **rejected** or an **approved leave is cancelled**, any day that still has no session log, child absence, or new leave will appear under **Needs a log or absence**. Resolve those days before requesting another leave or submitting that month’s invoice (session log if the visit happened, child absence if the child was away, or a fresh leave request).
+If leave is **rejected** or an **approved leave is cancelled**, any day that still has no session log, child absence, or new leave will appear under **Needs a log or absence**. Resolve those days before requesting another leave (session log if the visit happened, child absence if the child was away, or a fresh leave request). You can still submit that month’s invoice while those days are pending — they simply won’t be in this pay yet.
 
 When an **approved leave is cancelled**, sessions that were cancelled for that leave are put back on the schedule so you can complete them or file the correct disposition.
 

@@ -306,6 +306,25 @@ def test_unexplained_cancelled_session_surfaces_on_preview():
             for line in cg.get("pending_approval_lines") or []:
                 kinds.append(line.get("line_kind"))
         assert "SESSION_CANCELLED_UNEXPLAINED" in kinds or "ATTENDANCE_NEEDS_DISPOSITION" in kinds
+
+        # Soft gate: invoice month helper is a no-op; submit is not blocked by unresolved days.
+        attendance_resolution.assert_no_unresolved_for_invoice_month(
+            db, therapist_user_id=therapist.id, year=day.year, month=day.month
+        )
+        from app.models.invoice import Invoice, InvoiceStatus
+
+        already = db.scalars(
+            select(Invoice).where(
+                Invoice.therapist_user_id == therapist.id,
+                Invoice.month == ym,
+                Invoice.status.in_([InvoiceStatus.DRAFT, InvoiceStatus.IN_REVIEW]),
+            )
+        ).first()
+        if already is None and billing.preview_has_billable_payout(preview):
+            inv = billing.submit_invoice_from_preview(db, therapist.id, preview, notes=None)
+            assert inv is not None
+            assert "still need a session log" in (inv.notes or "")
+            db.rollback()
     finally:
         db.close()
 

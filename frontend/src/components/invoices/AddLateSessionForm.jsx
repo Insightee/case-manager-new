@@ -1,11 +1,26 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { monthDateBounds } from './invoiceUtils.js'
 
-export function AddLateSessionForm({ caseId, month, onAdded, onCancel }) {
+/**
+ * Late session add for invoice month. Supports opening prefilled for a disposition day.
+ */
+export function AddLateSessionForm({
+  caseId,
+  month,
+  onAdded,
+  onCancel,
+  initialDate = null,
+  defaultOpen = false,
+  buttonLabel = '+ Add forgotten session',
+  formTitle = 'Add session (requires admin approval)',
+}) {
   const bounds = monthDateBounds(month)
-  const [open, setOpen] = useState(false)
-  const [sessionDate, setSessionDate] = useState(bounds.min)
+  const resolvedInitial = initialDate && initialDate >= bounds.min && initialDate <= bounds.max
+    ? initialDate
+    : bounds.min
+  const [open, setOpen] = useState(Boolean(defaultOpen))
+  const [sessionDate, setSessionDate] = useState(resolvedInitial)
   const [startTime, setStartTime] = useState('10:00')
   const [endTime, setEndTime] = useState('11:00')
   const [activities, setActivities] = useState('')
@@ -13,6 +28,16 @@ export function AddLateSessionForm({ caseId, month, onAdded, onCancel }) {
   const [lateReason, setLateReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (defaultOpen) setOpen(true)
+  }, [defaultOpen, initialDate])
+
+  useEffect(() => {
+    if (initialDate && initialDate >= bounds.min && initialDate <= bounds.max) {
+      setSessionDate(initialDate)
+    }
+  }, [initialDate, bounds.min, bounds.max])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -51,14 +76,14 @@ export function AddLateSessionForm({ caseId, month, onAdded, onCancel }) {
         className="mt-3 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
         onClick={() => setOpen(true)}
       >
-        + Add forgotten session
+        {buttonLabel}
       </button>
     )
   }
 
   return (
     <form className="mt-3 rounded-xl border border-dashed border-amber-200 bg-amber-50/50 p-4" onSubmit={handleSubmit}>
-      <p className="mb-3 text-sm font-semibold text-amber-900">Add session (requires admin approval)</p>
+      <p className="mb-3 text-sm font-semibold text-amber-900">{formTitle}</p>
       {error ? <p className="mb-2 text-sm text-red-700">{error}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-medium text-slate-700 sm:col-span-2">

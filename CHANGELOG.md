@@ -1,7 +1,7 @@
 ## [Unreleased]
 
 ### Added
-- Attendance disposition queue: past cancelled / leave-rejected days without a log or absence surface as **Needs log or absence** on invoice preview; soft banners on Leave + Invoices; new leave and month invoice submit are gated until those days are resolved (session log, child absence, or fresh leave). Cancel-after-approve leave reinstates leave-cancelled sessions.
+- Attendance disposition queue: past cancelled / leave-rejected days without a log or absence surface as **Needs log or absence** on invoice preview with **Add session for this day**; soft banners on Leave + Invoices; new leave is gated until those days are resolved (session log, child absence, or fresh leave). Invoice submit is allowed while disposition/pending-approval items remain — they stay out of this pay until approved. Cancel-after-approve leave reinstates leave-cancelled sessions.
 - Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
 - Expandable Description cells on People & HR report previews (parent support tickets + incident reports).

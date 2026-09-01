@@ -125,7 +125,9 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
               {pendingCount > 0
                 ? ` · ${pendingCount} pending (${formatInr(preview.pending_approval_inr ?? preview.pending_late_inr)})`
                 : null}
-              {unresolvedCount > 0 ? ` · ${unresolvedCount} need a log or absence` : null}
+              {unresolvedCount > 0
+                ? ` · ${unresolvedCount} need a log or absence (add below or submit anyway)`
+                : null}
               {refreshing ? ' · Updating…' : null}
             </p>
           </div>
@@ -183,7 +185,11 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
             onClick={handleSubmit}
             className="min-h-[44px] flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {submitting ? 'Submitting…' : 'Submit for review'}
+            {submitting
+              ? 'Submitting…'
+              : pendingCount > 0 || unresolvedCount > 0
+                ? 'Submit for review (pending stays out of pay)'
+                : 'Submit for review'}
           </button>
         </footer>
       </div>

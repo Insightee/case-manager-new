@@ -56,9 +56,20 @@ function SessionLineTags({ line }) {
   )
 }
 
-function SessionLineAction({ line, editable, pending, onToggle, onRemove }) {
+function SessionLineAction({ line, editable, pending, onToggle, onRemove, onAddSessionForDay }) {
   if (!editable) return null
   const excluded = line.included === false && !pending
+  if (pending && line.flags?.needs_disposition && onAddSessionForDay && line.session_date) {
+    return (
+      <button
+        type="button"
+        className="mt-3 min-h-[44px] w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-950"
+        onClick={() => onAddSessionForDay(line.session_date)}
+      >
+        Add session for this day
+      </button>
+    )
+  }
   if (pending && onRemove && line.flags?.added_late && line.session_id) {
     return (
       <button
@@ -83,7 +94,7 @@ function SessionLineAction({ line, editable, pending, onToggle, onRemove }) {
   )
 }
 
-function LineCard({ line, editable, pending, onToggle, onRemove }) {
+function LineCard({ line, editable, pending, onToggle, onRemove, onAddSessionForDay }) {
   const excluded = line.included === false && !pending && line.breakdown_bucket !== 'in_pay'
   const amount = lineDisplayAmount(line)
   return (
@@ -111,12 +122,13 @@ function LineCard({ line, editable, pending, onToggle, onRemove }) {
         pending={pending}
         onToggle={onToggle}
         onRemove={onRemove}
+        onAddSessionForDay={onAddSessionForDay}
       />
     </li>
   )
 }
 
-function LineList({ lines, editable, pending, onToggle, onRemove }) {
+function LineList({ lines, editable, pending, onToggle, onRemove, onAddSessionForDay }) {
   if (!lines?.length) return null
   return (
     <ul className="space-y-2">
@@ -128,6 +140,7 @@ function LineList({ lines, editable, pending, onToggle, onRemove }) {
           pending={pending}
           onToggle={onToggle}
           onRemove={onRemove}
+          onAddSessionForDay={onAddSessionForDay}
         />
       ))}
     </ul>
@@ -224,6 +237,8 @@ function CaseBreakdown({
   onRemoveLateSession,
   onNextMonthPlanChange,
 }) {
+  const [dispositionFormDate, setDispositionFormDate] = useState(null)
+  const [lateFormKey, setLateFormKey] = useState(0)
   const homecare = isHomecareCaseGroup(caseGroup)
   const shadow = isShadowCaseGroup(caseGroup)
   const { inPay, pending, info } = partitionCaseLines(caseGroup)
@@ -241,6 +256,16 @@ function CaseBreakdown({
         ...inPay.filter((l) => l.line_kind && l.line_kind !== 'SESSION'),
       ]
     : info
+
+  function openDispositionForm(dateStr) {
+    setDispositionFormDate(dateStr)
+    setLateFormKey((k) => k + 1)
+  }
+
+  function handleLateAdded() {
+    setDispositionFormDate(null)
+    onRefresh?.()
+  }
 
   return (
     <section className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white">
@@ -295,6 +320,7 @@ function CaseBreakdown({
               lines={pending}
               editable={editable}
               pending
+              onAddSessionForDay={editable && month ? openDispositionForm : undefined}
               onRemove={
                 onRemoveLateSession
                   ? (line) => line.flags?.added_late && line.session_id && onRemoveLateSession(line.session_id)
@@ -316,7 +342,25 @@ function CaseBreakdown({
         ) : null}
 
         {editable && month ? (
-          <AddLateSessionForm caseId={caseGroup.case_id} month={month} onAdded={onRefresh} />
+          <AddLateSessionForm
+            key={`${caseGroup.case_id}-${lateFormKey}-${dispositionFormDate || 'default'}`}
+            caseId={caseGroup.case_id}
+            month={month}
+            initialDate={dispositionFormDate}
+            defaultOpen={Boolean(dispositionFormDate)}
+            buttonLabel={
+              dispositionFormDate
+                ? `+ Add session for ${dispositionFormDate}`
+                : '+ Add forgotten session'
+            }
+            formTitle={
+              dispositionFormDate
+                ? `Add session for ${dispositionFormDate} (awaits review — not in this pay yet)`
+                : 'Add session (requires admin approval)'
+            }
+            onAdded={handleLateAdded}
+            onCancel={() => setDispositionFormDate(null)}
+          />
         ) : null}
 
         {showNextMonthSessionCount(caseGroup) && editable ? (
@@ -372,7 +416,12 @@ export function InvoiceBreakdownView({
 
   return (
     <div className="space-y-6">
-      <AttendanceDispositionBanner count={unresolvedCount} days={unresolvedDays} compact />
+      <AttendanceDispositionBanner
+        count={unresolvedCount}
+        days={unresolvedDays}
+        compact
+        context="invoice"
+      />
 
       {leaveBalance && hasShadowCase ? (
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-700">
