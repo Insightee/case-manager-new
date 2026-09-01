@@ -37,7 +37,15 @@ def test_parent_feedback_share_public_and_list():
     logs_res = client.get("/api/v1/parent/session-logs", headers=ph)
     assert logs_res.status_code == 200
     logs = logs_res.json()
-    approved_log = next((row for row in logs if row.get("parent_display_status") == "Reviewed"), None)
+    # Skip synthetic absence rows (negative ids = -session.id); feedback patches real DailyLog rows only.
+    approved_log = next(
+        (
+            row
+            for row in logs
+            if row.get("parent_display_status") == "Reviewed" and int(row.get("id") or 0) > 0
+        ),
+        None,
+    )
     if not approved_log:
         pytest.skip("No approved parent-visible session logs in seed")
     log_id = approved_log["id"]

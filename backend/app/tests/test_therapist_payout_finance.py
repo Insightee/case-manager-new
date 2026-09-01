@@ -346,6 +346,37 @@ def test_rbac_blocks_parent_and_therapist():
     assert client.get("/api/v1/admin/finance-overview/monday-brief", headers=finance_h).status_code == 200
 
 
+def test_settlement_subtracts_leave_deduction_before_tds_and_net():
+    """Unpaid leave must reduce taxable gross so net_payable is not overstated."""
+    db = SessionLocal()
+    try:
+        inv, _, session_amount = _invoice_with_session_line(
+            db,
+            amount=1000.0,
+            session_amount=1000.0,
+            session_id=int(uuid.uuid4().hex[:7], 16) % 900000 + 100000,
+            month="2099-08",
+        )
+        leave = 200.0
+        inv.leave_deduction_inr = leave
+        inv.amount_inr = session_amount - leave
+        inv.subtotal_inr = session_amount
+        taxable = session_amount - leave
+        inv.tds_inr = round(taxable * 0.10, 2)
+        db.commit()
+
+        settlement = payout_settlement_service.compute_invoice_settlement(db, inv)
+        assert settlement["grossInr"] == taxable
+        assert settlement["tdsInr"] == inv.tds_inr
+        assert settlement["netInr"] == round(taxable - float(inv.tds_inr), 2)
+
+        payout_settlement_service.snapshot_settlement_on_invoice(db, inv, settlement)
+        db.commit()
+        assert float(inv.net_payable_inr) == settlement["netInr"]
+    finally:
+        db.close()
+
+
 def test_monday_brief_matches_source_endpoints():
     db = SessionLocal()
     try:
