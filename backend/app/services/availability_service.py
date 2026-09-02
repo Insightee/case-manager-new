@@ -242,10 +242,14 @@ def _windows_for_user_day(
     exceptions: list[StaffAvailabilityException],
     busy: list[tuple[datetime, datetime]],
     buffer_minutes: int,
+    availability_configured: bool = False,
 ) -> list[tuple[datetime, datetime]]:
     day_rules = [rule for rule in rules if _rule_applies(rule, day)]
     if day_rules:
         windows = [(_aware(day, rule.start_time), _aware(day, rule.end_time)) for rule in day_rules]
+    elif availability_configured:
+        # User saved availability at least once; unchecked weekdays stay closed.
+        windows = []
     else:
         windows = _default_windows_for_day(day)
 
@@ -277,7 +281,7 @@ def _policy_for_user(policy: StaffBookingPolicy | None) -> dict[str, Any]:
             "allowed_durations": list(DEFAULT_ALLOWED_DURATIONS),
         }
     return {
-        "min_notice_minutes": int(policy.min_notice_minutes or 120),
+        "min_notice_minutes": int(policy.min_notice_minutes if policy.min_notice_minutes is not None else 120),
         "max_days_ahead": int(policy.max_days_ahead or 60),
         "buffer_minutes": int(policy.buffer_minutes or 0),
         "allowed_durations": policy.allowed_durations or list(DEFAULT_ALLOWED_DURATIONS),
@@ -671,6 +675,8 @@ def free_slots(
     date_to: date,
     duration_minutes: int,
     requesting_user: User | None,
+    *,
+    ignore_busy: bool = False,
 ) -> dict[str, Any]:
     _ = requesting_user
     ids = _normalize_user_ids(user_ids)
@@ -715,18 +721,20 @@ def free_slots(
             "policy": effective_policy,
         }
 
-    local_busy = busy_intervals(db, ids, date_from, date_to)
+    local_busy: dict[int, list] = {uid: [] for uid in ids}
     google_busy: dict[int, list] = {uid: [] for uid in ids}
     google_reasons: dict[int, str] = {}
     google_stale = False
-    if settings.google_calendar_freebusy_enabled:
-        google_busy, google_reasons, google_stale = _google_batch_freebusy(
-            db,
-            connections_by_user,
-            ids,
-            date_from,
-            date_to,
-        )
+    if not ignore_busy:
+        local_busy = busy_intervals(db, ids, date_from, date_to)
+        if settings.google_calendar_freebusy_enabled:
+            google_busy, google_reasons, google_stale = _google_batch_freebusy(
+                db,
+                connections_by_user,
+                ids,
+                date_from,
+                date_to,
+            )
     freebusy_stale = google_stale
     freebusy_reasons.update(google_reasons)
 
@@ -750,6 +758,7 @@ def free_slots(
                 exceptions=exceptions,
                 busy=busy,
                 buffer_minutes=buffer_minutes,
+                availability_configured=policies_by_user.get(uid) is not None,
             )
             if not windows:
                 per_user_windows = []
@@ -940,7 +949,10 @@ def save_user_availability(db: Session, user_id: int, payload: dict[str, Any]) -
     if policy is None:
         policy = StaffBookingPolicy(user_id=user_id)
         db.add(policy)
-    policy.min_notice_minutes = int(booking_policy.get("min_notice_minutes") or 120)
+    if "min_notice_minutes" in booking_policy:
+        policy.min_notice_minutes = int(booking_policy["min_notice_minutes"])
+    else:
+        policy.min_notice_minutes = 120
     policy.max_days_ahead = int(booking_policy.get("max_days_ahead") or 60)
     policy.buffer_minutes = int(booking_policy.get("buffer_minutes") or 0)
     durations = booking_policy.get("allowed_durations") or DEFAULT_ALLOWED_DURATIONS

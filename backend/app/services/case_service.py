@@ -279,6 +279,7 @@ def case_to_read(
     parent_contact = None
     therapist_contact = None
     access_as_mentor = False
+    primary_parent_user_id = None
     if db is not None:
         cm_name, cm_email = case_manager_contact(db, case)
         if resolve_therapist:
@@ -288,6 +289,7 @@ def case_to_read(
             from app.services import parent_service
 
             parent_user_id = parent_service.primary_parent_user_id_for_child(db, case.child_id)
+            primary_parent_user_id = parent_user_id
             parent_contact = _user_contact(db, parent_user_id)
         therapist_contact = _active_assignment_contact(db, case.id)
         if viewer is not None:
@@ -315,6 +317,7 @@ def case_to_read(
         "case_manager_name": cm_name,
         "case_manager_email": cm_email,
         "access_as_mentor": access_as_mentor,
+        "primary_parent_user_id": primary_parent_user_id,
         "parent_contact": parent_contact,
         "therapist_contact": therapist_contact,
         "notes": case.notes,

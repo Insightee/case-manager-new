@@ -30,6 +30,7 @@ import {
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import './admin-reports.css'
 import './admin-scheduling-hub.css'
+import '../meetings/meetings-mobile.css'
 
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { label: status, bg: '#f1f5f9', color: '#475569' }
@@ -126,10 +127,10 @@ function CancelMeetingModal({ meeting, onClose, onCancelled }) {
   const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Cancel meeting</h2>
-        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
+    <div className="meetings-modal-backdrop">
+      <div className="meetings-modal-panel">
+        <h2 className="meetings-modal-panel__title">Cancel meeting</h2>
+        <p className="meetings-modal-panel__subtitle">
           {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
         </p>
         {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
@@ -143,7 +144,7 @@ function CancelMeetingModal({ meeting, onClose, onCancelled }) {
               onChange={(e) => setReason(e.target.value)}
             />
           </label>
-          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+          <div className="meetings-modal-actions">
             <button type="submit" disabled={saving} style={{ flex: 1, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
               {saving ? 'Cancelling…' : 'Cancel meeting'}
             </button>
@@ -157,7 +158,7 @@ function CancelMeetingModal({ meeting, onClose, onCancelled }) {
   )
 }
 
-function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false }) {
+function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false, calendarDeepLink = '/admin/meetings' }) {
   const displayTitle = meetingDisplayTitle(meeting)
   const hasNotes = isTherapistView
     ? Boolean(meeting.therapist_notes)
@@ -166,7 +167,9 @@ function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPref
       || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
     )
   const attendeeLine = formatAttendeeList(meeting)
-  const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
+  const calendarEvent = meeting.status === 'SCHEDULED'
+    ? mapCmMeetingToCalendarEvent(meeting, { deepLinkPath: calendarDeepLink })
+    : null
 
   return (
     <article style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -240,7 +243,15 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       || user?.roles?.includes('SUPER_ADMIN')
       || user?.roles?.includes('MODULE_ADMIN')
       || user?.roles?.includes('THERAPIST'))
+  const canManageAvailability =
+    !isParentPortal
+    && !isTherapistPortal
+    && (user?.roles?.includes('CASE_MANAGER')
+      || user?.roles?.includes('ADMIN')
+      || user?.roles?.includes('SUPER_ADMIN')
+      || user?.roles?.includes('MODULE_ADMIN'))
   const caseLinkPrefix = isParentPortal ? null : isTherapistPortal ? '/therapist/cases' : '/admin/cases'
+  const meetingsDeepLink = isParentPortal ? '/parent/meetings' : isTherapistPortal ? '/therapist/meetings' : '/admin/meetings'
 
   const [pageView, setPageView] = useState(isParentPortal ? 'list' : 'calendar')
   const [meetings, setMeetings] = useState([])
@@ -268,6 +279,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [availabilityDraft, setAvailabilityDraft] = useState(createEmptyAvailabilityDraft())
   const [availabilityLoading, setAvailabilityLoading] = useState(false)
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  const [availabilitySaved, setAvailabilitySaved] = useState(false)
   const [availabilityError, setAvailabilityError] = useState('')
   const [googleConnection, setGoogleConnection] = useState(null)
   const [googleLoading, setGoogleLoading] = useState(false)
@@ -300,7 +312,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   }, [searchInput])
 
   useEffect(() => {
-    if (!user?.id || isParentPortal) return
+    if (!user?.id || !canManageAvailability) return
     let cancelled = false
     setAvailabilityLoading(true)
     Promise.all([
@@ -322,7 +334,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     return () => {
       cancelled = true
     }
-  }, [user?.id, isParentPortal])
+  }, [user?.id, canManageAvailability])
 
   const buildFilterParams = useCallback(() => {
     const p = new URLSearchParams()
@@ -560,12 +572,15 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     if (!user?.id) return
     setAvailabilitySaving(true)
     setAvailabilityError('')
+    setAvailabilitySaved(false)
     try {
       const result = await apiFetch(`/api/v1/users/${user.id}/availability`, {
         method: 'PUT',
         body: JSON.stringify(availabilityDraft),
       })
       setAvailabilityDraft(normalizeAvailabilityDraft(result))
+      setAvailabilitySaved(true)
+      window.setTimeout(() => setAvailabilitySaved(false), 4000)
     } catch (err) {
       setAvailabilityError(err.message || 'Could not save availability settings')
     } finally {
@@ -637,7 +652,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      {!isParentPortal ? (
+      {canManageAvailability ? (
         <section className="card" style={{ marginBottom: 20, padding: 18 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
             <div>
@@ -652,6 +667,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             Insighte owns meetings; Google edits are ignored. Use this panel to keep your shared booking window current.
           </p>
           {availabilityError ? <p className="admin-alert admin-alert--error">{availabilityError}</p> : null}
+          {availabilitySaved ? <p className="admin-alert admin-alert--success">Availability saved — therapists will only see these slots when booking with you.</p> : null}
           {googleError ? <p className="admin-alert admin-alert--error">{googleError}</p> : null}
 
           <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
@@ -710,7 +726,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             })}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
+          <div className="meetings-availability-policy-grid">
             <label className="admin-label">
               Min notice (minutes)
               <input
@@ -772,7 +788,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
               <strong>Exceptions</strong>
               <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={addException}>Add exception</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8, marginBottom: 10 }}>
+            <div className="meetings-availability-exceptions-grid">
               <input type="date" className="admin-input" value={newException.date} onChange={(e) => setNewException((draft) => ({ ...draft, date: e.target.value }))} />
               <select className="admin-input" value={newException.type} onChange={(e) => setNewException((draft) => ({ ...draft, type: e.target.value }))}>
                 <option value="CLOSED">Closed</option>
@@ -855,7 +871,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             refreshKey={calendarRefresh}
             selectedSlotId={selectedCalendarEventId}
             onSlotClick={handleCalendarSlotClick}
-            onCellClick={canBookMeetings ? handleCalendarCellClick : undefined}
+            onCellClick={canBookMeetings && !isTherapistPortal ? handleCalendarCellClick : undefined}
           />
         </article>
       ) : null}
@@ -973,6 +989,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
                 key={m.id}
                 meeting={m}
                 caseLinkPrefix={caseLinkPrefix}
+                calendarDeepLink={meetingsDeepLink}
                 readOnly={isParentPortal}
                 isTherapistView={isTherapistPortal}
                 onAddNotes={setNotesTarget}

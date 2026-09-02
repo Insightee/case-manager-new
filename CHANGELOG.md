@@ -15,7 +15,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
-- Therapist invoice labels: `Session cancelled` / `Paid leave` / `Unpaid leave` (no extra Still paid / Not billed chips); shadow may choose unpaid while credits remain (paid default); parent invoice lines use the same cancelled wording and show planned next-month session count when present.
+- Meetings: therapist booking uses the same CM availability API as case managers; unchecked weekdays stay closed after CM saves availability; CM-only availability/Google UI hidden on therapist portal; mobile bottom-sheet modals for book/reschedule/cancel. `Session cancelled` / `Paid leave` / `Unpaid leave` (no extra Still paid / Not billed chips); shadow may choose unpaid while credits remain (paid default); parent invoice lines use the same cancelled wording and show planned next-month session count when present.
 - Finance snapshot enabled on insighte.org: Railway `ENABLE_BILLING=true` (read-only tower routes); Vercel Production `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` + `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true`. Ledger writes remain off. Runbook: `docs/FINANCE_SNAPSHOT_PROD_CUTOVER.md`, script: `scripts/enable_finance_snapshot_prod.py`.
 - Finance therapist payout preview Excel/CSV columns aligned to lumpsum billing: **Billing Type**, **Client Amount (INR)** (was package-only `Lumpsum Amount`), **Therapist Pay (INR)**, **Therapist Unit Pay (INR)** — no share/% headers. Closed snapshots remap legacy headers on read. Postgres migration proof registry includes Alembic head `v6w7x8y9z0a1`.
 - Finance Reports UI uses a card catalog (all 10 report types) with clearer empty states instead of a single dropdown.
@@ -31,6 +31,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Meetings: slot validation no longer blocks double-booking conflict messages; `min_notice_minutes=0` saves correctly; therapist slot picker respects assigned case manager availability windows.
 - Therapist session-log submit no longer stops on the duration warning: the banner still prompts a time review, but the first Submit posts the log. Scheduled visits warn only outside a ±15 minute window (not exact scheduled minutes). Session start/end payloads now include `product_module` and `day_type`; therapist home/workspace serialize `day_type` even when Postgres returns a plain string.
 - Starting a session when a previous visit still needs a log opens that pending log form first (same Submit) instead of only showing an error. Portal install control is a dropdown with both **Install** and **Refresh**; the primary icon is Install in the browser and Refresh in the installed dock/PWA. Production service workers apply waiting updates automatically.
 - Therapist session-log form drops the stacked instructional banners: one short duration line (plus Edit times), a one-line late-reason hint, and a tighter session summary.
