@@ -157,7 +157,7 @@ function CancelMeetingModal({ meeting, onClose, onCancelled }) {
   )
 }
 
-function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false }) {
+function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false, calendarDeepLink = '/admin/meetings' }) {
   const displayTitle = meetingDisplayTitle(meeting)
   const hasNotes = isTherapistView
     ? Boolean(meeting.therapist_notes)
@@ -166,7 +166,9 @@ function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPref
       || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
     )
   const attendeeLine = formatAttendeeList(meeting)
-  const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
+  const calendarEvent = meeting.status === 'SCHEDULED'
+    ? mapCmMeetingToCalendarEvent(meeting, { deepLinkPath: calendarDeepLink })
+    : null
 
   return (
     <article style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -240,7 +242,15 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       || user?.roles?.includes('SUPER_ADMIN')
       || user?.roles?.includes('MODULE_ADMIN')
       || user?.roles?.includes('THERAPIST'))
+  const canManageAvailability =
+    !isParentPortal
+    && !isTherapistPortal
+    && (user?.roles?.includes('CASE_MANAGER')
+      || user?.roles?.includes('ADMIN')
+      || user?.roles?.includes('SUPER_ADMIN')
+      || user?.roles?.includes('MODULE_ADMIN'))
   const caseLinkPrefix = isParentPortal ? null : isTherapistPortal ? '/therapist/cases' : '/admin/cases'
+  const meetingsDeepLink = isParentPortal ? '/parent/meetings' : isTherapistPortal ? '/therapist/meetings' : '/admin/meetings'
 
   const [pageView, setPageView] = useState(isParentPortal ? 'list' : 'calendar')
   const [meetings, setMeetings] = useState([])
@@ -300,7 +310,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   }, [searchInput])
 
   useEffect(() => {
-    if (!user?.id || isParentPortal) return
+    if (!user?.id || !canManageAvailability) return
     let cancelled = false
     setAvailabilityLoading(true)
     Promise.all([
@@ -322,7 +332,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     return () => {
       cancelled = true
     }
-  }, [user?.id, isParentPortal])
+  }, [user?.id, canManageAvailability])
 
   const buildFilterParams = useCallback(() => {
     const p = new URLSearchParams()
@@ -637,7 +647,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      {!isParentPortal ? (
+      {canManageAvailability ? (
         <section className="card" style={{ marginBottom: 20, padding: 18 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
             <div>
@@ -855,7 +865,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             refreshKey={calendarRefresh}
             selectedSlotId={selectedCalendarEventId}
             onSlotClick={handleCalendarSlotClick}
-            onCellClick={canBookMeetings ? handleCalendarCellClick : undefined}
+            onCellClick={canBookMeetings && !isTherapistPortal ? handleCalendarCellClick : undefined}
           />
         </article>
       ) : null}
@@ -973,6 +983,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
                 key={m.id}
                 meeting={m}
                 caseLinkPrefix={caseLinkPrefix}
+                calendarDeepLink={meetingsDeepLink}
                 readOnly={isParentPortal}
                 isTherapistView={isTherapistPortal}
                 onAddNotes={setNotesTarget}

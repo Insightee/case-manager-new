@@ -953,6 +953,7 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "title": "Therapist-requested CM sync",
+            "meeting_url": "https://meet.google.com/therapist-cm-sync",
         },
     )
     assert created.status_code == 201, created.text
@@ -1385,3 +1386,121 @@ def test_admin_duration_outlier_export_xlsx():
     assert "spreadsheetml" in res.headers.get("content-type", "")
     wb = openpyxl.load_workbook(BytesIO(res.content))
     assert wb.active.title == "Duration outliers"
+
+
+def test_meeting_create_rejects_time_outside_cm_availability():
+    from datetime import date
+
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+
+    cm_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert cases.status_code == 200, cases.text
+    case_id = cases.json()[0]["id"]
+
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None
+        cm_user_id = case.case_manager_user_id
+
+    target = future_meeting_date(21)
+    weekday = date.fromisoformat(target).weekday()
+    save_res = client.put(
+        f"/api/v1/users/{cm_user_id}/availability",
+        headers=cm_headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday,
+                    "start_time": "14:00",
+                    "end_time": "16:00",
+                    "slot_granularity_minutes": 30,
+                },
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert save_res.status_code == 200, save_res.text
+
+    rejected = client.post(
+        "/api/v1/meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": target,
+            "scheduled_time": "10:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "title": "Outside availability",
+            "meeting_url": "https://meet.google.com/test-outside-slot",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+            "invite_client": False,
+        },
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert "available slots" in rejected.json()["detail"].lower()
+
+    allowed = client.post(
+        "/api/v1/meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": target,
+            "scheduled_time": "14:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "title": "Inside availability",
+            "meeting_url": "https://meet.google.com/test-inside-slot",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+            "invite_client": False,
+        },
+    )
+    assert allowed.status_code == 201, allowed.text
+
+    restore_res = client.put(
+        f"/api/v1/users/{cm_user_id}/availability",
+        headers=cm_headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday_index,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+                for weekday_index in range(5)
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert restore_res.status_code == 200, restore_res.text
+
+
+def test_therapist_meetings_export_matches_scoped_list():
+    th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
+    listed = client.get("/api/v1/meetings", headers=th_headers)
+    assert listed.status_code == 200, listed.text
+    meetings = listed.json()
+
+    export = client.get("/api/v1/meetings/export?format=csv", headers=th_headers)
+    assert export.status_code == 200, export.text
+    lines = [line for line in export.text.strip().splitlines() if line.strip()]
+    assert len(lines) == len(meetings) + 1
+    for meeting in meetings:
+        assert str(meeting["id"]) in export.text

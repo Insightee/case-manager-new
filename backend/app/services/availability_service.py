@@ -242,10 +242,14 @@ def _windows_for_user_day(
     exceptions: list[StaffAvailabilityException],
     busy: list[tuple[datetime, datetime]],
     buffer_minutes: int,
+    availability_configured: bool = False,
 ) -> list[tuple[datetime, datetime]]:
     day_rules = [rule for rule in rules if _rule_applies(rule, day)]
     if day_rules:
         windows = [(_aware(day, rule.start_time), _aware(day, rule.end_time)) for rule in day_rules]
+    elif availability_configured:
+        # User saved availability at least once; unchecked weekdays stay closed.
+        windows = []
     else:
         windows = _default_windows_for_day(day)
 
@@ -750,6 +754,7 @@ def free_slots(
                 exceptions=exceptions,
                 busy=busy,
                 buffer_minutes=buffer_minutes,
+                availability_configured=policies_by_user.get(uid) is not None,
             )
             if not windows:
                 per_user_windows = []

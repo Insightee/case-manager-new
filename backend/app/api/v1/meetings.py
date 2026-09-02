@@ -599,6 +599,39 @@ def check_conflicts(
     return False, None
 
 
+def _validate_slot_in_availability(
+    db: Session,
+    *,
+    target_date: date,
+    target_time: time,
+    duration_minutes: int,
+    attendee_ids: list[int],
+    user: User,
+) -> None:
+    """Ensure the requested start time falls in shared attendee availability."""
+    if not attendee_ids or not target_time:
+        return
+    slots_payload = availability_service.free_slots(
+        db,
+        attendee_ids,
+        target_date,
+        target_date,
+        duration_minutes,
+        user,
+    )
+    requested = target_time.strftime("%H:%M")
+    allowed = {
+        slot["time"]
+        for slot in slots_payload.get("slots", [])
+        if slot.get("date") == target_date.isoformat()
+    }
+    if requested not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="That time isn't open on the case manager's calendar — pick one of the available slots.",
+        )
+
+
 @router.get("/meetings/bookable-cases")
 @compat_router.get("/cm-meetings/bookable-cases")
 def list_bookable_cases_for_meetings(
@@ -749,6 +782,14 @@ def create_meeting(
             attendees.append(payload.mentor_user_id)
         attendees.extend(payload.admin_user_ids)
 
+        _validate_slot_in_availability(
+            db,
+            target_date=payload.scheduled_date,
+            target_time=payload.scheduled_time,
+            duration_minutes=payload.duration_minutes,
+            attendee_ids=attendees,
+            user=user,
+        )
         conflicted, reason = check_conflicts(db, payload.scheduled_date, payload.scheduled_time, payload.duration_minutes, attendees)
         if conflicted:
             raise HTTPException(status_code=400, detail=f"Double booking error: {reason}")
@@ -831,6 +872,14 @@ def reschedule_meeting(
     # Prevent double booking on new slot
     attendees = list(meeting_participant_user_ids(meeting))
 
+    _validate_slot_in_availability(
+        db,
+        target_date=payload.scheduled_date,
+        target_time=payload.scheduled_time,
+        duration_minutes=payload.duration_minutes,
+        attendee_ids=attendees,
+        user=user,
+    )
     conflicted, reason = check_conflicts(
         db,
         payload.scheduled_date,
