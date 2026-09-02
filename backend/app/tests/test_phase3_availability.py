@@ -144,6 +144,31 @@ def test_configured_weekday_without_rule_is_closed():
     tuesday_times = {slot["time"] for slot in tuesday_res.json()["slots"]}
     assert tuesday_times == {"14:00", "14:30", "15:00", "15:30"}
 
+    admin_headers = login_headers(client, "superadmin@demo.com")
+    restore = client.put(
+        f"/api/v1/users/{user.id}/availability",
+        headers=admin_headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday_index,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+                for weekday_index in range(5)
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert restore.status_code == 200, restore.text
+
 
 def test_closed_exception_removes_the_day():
     headers = login_headers(client, "superadmin@demo.com")

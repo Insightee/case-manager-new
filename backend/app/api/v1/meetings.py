@@ -611,6 +611,13 @@ def _validate_slot_in_availability(
     """Ensure the requested start time falls in shared attendee availability."""
     if not attendee_ids or not target_time:
         return
+    from datetime import datetime
+
+    from app.core.timezone import IST, now_ist
+
+    start_dt = datetime.combine(target_date, target_time, tzinfo=IST)
+    if start_dt <= now_ist():
+        return
     slots_payload = availability_service.free_slots(
         db,
         attendee_ids,
@@ -618,6 +625,7 @@ def _validate_slot_in_availability(
         target_date,
         duration_minutes,
         user,
+        ignore_busy=True,
     )
     requested = target_time.strftime("%H:%M")
     allowed = {

@@ -124,6 +124,99 @@ def today_meeting_date() -> str:
     return today_ist().isoformat()
 
 
+def first_meeting_slot(
+    client,
+    headers: dict[str, str],
+    user_ids: list[int],
+    *,
+    days_ahead: int = 14,
+    duration_minutes: int = 30,
+    slot_index: int = 0,
+) -> tuple[str, str]:
+    """Return a bookable (date, time) tuple from shared attendee availability."""
+    target_date = future_meeting_date(days_ahead)
+    res = client.get(
+        "/api/v1/calendar/availability",
+        headers=headers,
+        params={
+            "user_ids": ",".join(str(uid) for uid in user_ids),
+            "date_from": target_date,
+            "date_to": target_date,
+            "duration_minutes": duration_minutes,
+        },
+    )
+    assert res.status_code == 200, res.text
+    slots = res.json().get("slots", [])
+    assert slots, f"Expected availability slots for users {user_ids} on {target_date}"
+    slot = slots[min(slot_index, len(slots) - 1)]
+    return slot["date"], f"{slot['time']}:00"
+
+
+def meeting_slot_near_minutes_ahead(
+    client,
+    headers: dict[str, str],
+    user_ids: list[int],
+    *,
+    minutes_ahead: int,
+    duration_minutes: int = 30,
+) -> dict[str, object]:
+    """Build a meeting payload scheduled near ``minutes_ahead`` on a valid slot."""
+    from datetime import date, datetime, time, timedelta
+
+    from app.core.timezone import IST, now_ist
+
+    now = now_ist()
+    if minutes_ahead <= 60:
+        window_start = now + timedelta(minutes=25)
+        window_end = now + timedelta(minutes=59)
+        day_offsets = range(2)
+    elif minutes_ahead <= 70:
+        window_start = now + timedelta(minutes=55)
+        window_end = now + timedelta(minutes=70)
+        day_offsets = range(2)
+    else:
+        target = now + timedelta(minutes=minutes_ahead)
+        if target.minute % 30:
+            target = target + timedelta(minutes=30 - (target.minute % 30))
+        target = target.replace(second=0, microsecond=0)
+        while target.weekday() >= 5:
+            target = (target + timedelta(days=1)).replace(hour=10, minute=0)
+        window_start = target
+        window_end = target
+        day_offsets = [0]
+
+    for day_offset in day_offsets:
+        day = (now + timedelta(days=day_offset)).date()
+        res = client.get(
+            "/api/v1/calendar/availability",
+            headers=headers,
+            params={
+                "user_ids": ",".join(str(uid) for uid in user_ids),
+                "date_from": day.isoformat(),
+                "date_to": day.isoformat(),
+                "duration_minutes": duration_minutes,
+            },
+        )
+        assert res.status_code == 200, res.text
+        for slot in res.json().get("slots", []):
+            start = datetime.combine(
+                date.fromisoformat(slot["date"]),
+                time.fromisoformat(f"{slot['time']}:00"),
+                tzinfo=IST,
+            )
+            if window_start == window_end or window_start <= start <= window_end:
+                return {
+                    "scheduled_date": slot["date"],
+                    "scheduled_time": f"{slot['time']}:00",
+                    "duration_minutes": duration_minutes,
+                    "meeting_type": "PARENT_MEETING",
+                }
+
+    raise AssertionError(
+        f"No availability slot found between {window_start.isoformat()} and {window_end.isoformat()}"
+    )
+
+
 def isolated_homecare_case(db):
     """Dedicated PER_SESSION homecare case for billing tests (avoids mutating seed cases)."""
     from sqlalchemy import select

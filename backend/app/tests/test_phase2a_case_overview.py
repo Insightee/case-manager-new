@@ -105,11 +105,12 @@ def test_mentor_can_list_and_read_meetings_for_mentored_case():
         headers=admin_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": str(date.today()),
-            "scheduled_time": "10:00:00",
+            "scheduled_date": future_meeting_date(14),
+            "scheduled_time": "14:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "title": "Mentor scope test meeting",
+            "invite_client": False,
         },
     )
     assert created.status_code == 201, created.text

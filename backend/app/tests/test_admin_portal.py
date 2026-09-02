@@ -964,24 +964,43 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
 
 def test_cm_meeting_observation_checklist_review_type():
     """Regression: Postgres meetingtype enum must accept product meeting types."""
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+    from app.models.user import User
+    from app.tests.conftest import first_meeting_slot
+
     th_token = _login("therapist@demo.com")
     th_headers = {"Authorization": f"Bearer {th_token}"}
     cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
     assert cases.status_code == 200, cases.text
     case_id = cases.json()[0]["id"]
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None
+        therapist_id = db.scalars(select(User.id).where(User.email == "therapist@demo.com")).first()
+        attendee_ids = [case.case_manager_user_id, therapist_id]
+    slot_date, slot_time = first_meeting_slot(
+        client,
+        th_headers,
+        attendee_ids,
+        days_ahead=14,
+    )
     created = client.post(
         "/api/v1/cm-meetings",
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2027-03-15",
-            "scheduled_time": "14:30:00",
+            "scheduled_date": slot_date,
+            "scheduled_time": slot_time,
             "duration_minutes": 30,
             "meeting_type": "OBSERVATION_CHECKLIST_REVIEW",
             "title": "Observation checklist review",
             "meeting_url": "https://meet.google.com/test-checklist-review",
             "invite_therapist": True,
             "invite_case_manager": True,
+            "invite_client": False,
         },
     )
     assert created.status_code == 201, created.text

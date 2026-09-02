@@ -12,14 +12,80 @@ from app.main import app
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus
 from app.models.notification import Notification
 from app.seed.demo_seed import run as seed_run
+from app.tests.conftest import future_meeting_date, meeting_slot_near_minutes_ahead
 from app.services.cm_meeting_service import meeting_participant_user_ids, send_due_meeting_reminders
 
 client = TestClient(app)
 
 
+def _clear_cm_meetings_today(cm_user_id: int) -> None:
+    from sqlalchemy import select
+
+    from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus
+
+    today = now_ist().date()
+    with SessionLocal() as db:
+        meetings = list(
+            db.scalars(
+                select(CaseManagerMeeting).where(
+                    CaseManagerMeeting.case_manager_user_id == cm_user_id,
+                    CaseManagerMeeting.scheduled_date == today,
+                    CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+                )
+            ).all()
+        )
+        for meeting in meetings:
+            meeting.status = MeetingStatus.CANCELLED
+            meeting.cancel_reason = "test cleanup"
+        db.commit()
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup_db():
     seed_run()
+    _set_demo_cm_min_notice(minutes=0)
+    from app.models.case import Case
+
+    with SessionLocal() as db:
+        case = db.get(Case, _bookable_case_id())
+        assert case is not None
+        cm_user_id = case.case_manager_user_id
+    _clear_cm_meetings_today(cm_user_id)
+
+
+def _set_demo_cm_min_notice(*, minutes: int) -> None:
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+
+    headers = _headers("superadmin@demo.com")
+    with SessionLocal() as db:
+        case = db.get(Case, _bookable_case_id())
+        assert case is not None
+        cm_user_id = case.case_manager_user_id
+
+    res = client.put(
+        f"/api/v1/users/{cm_user_id}/availability",
+        headers=headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday_index,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+                for weekday_index in range(5)
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": minutes,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
 
 
 def _login(email: str) -> str:
@@ -40,13 +106,25 @@ def _bookable_case_id(email: str = "superadmin@demo.com") -> int:
     return int(rows[0]["id"])
 
 
-def _future_payload(minutes_ahead: int) -> dict[str, str]:
-    target = now_ist() + timedelta(minutes=minutes_ahead)
+def _future_payload(minutes_ahead: int) -> dict[str, str | int]:
+    case_id = _bookable_case_id()
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None
+        cm_user_id = case.case_manager_user_id
+
     return {
-        "scheduled_date": target.date().isoformat(),
-        "scheduled_time": target.time().replace(microsecond=0).isoformat(timespec="seconds"),
-        "duration_minutes": 30,
-        "meeting_type": "PARENT_MEETING",
+        "case_id": case_id,
+        "invite_client": False,
+        **meeting_slot_near_minutes_ahead(
+            client,
+            _headers("superadmin@demo.com"),
+            [cm_user_id],
+            minutes_ahead=minutes_ahead,
+        ),
     }
 
 
@@ -86,11 +164,7 @@ def _meeting(meeting_id: int) -> CaseManagerMeeting:
 
 
 def test_meeting_62_minutes_out_gets_one_reminder_per_participant():
-    case_id = _bookable_case_id()
-    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json={
-        "case_id": case_id,
-        **_future_payload(62),
-    })
+    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json=_future_payload(62))
     assert create.status_code == 201, create.text
     meeting_id = create.json()["id"]
 
@@ -116,11 +190,18 @@ def test_meeting_62_minutes_out_gets_one_reminder_per_participant():
 
 
 def test_cancelled_meeting_gets_no_reminder():
-    case_id = _bookable_case_id()
-    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json={
-        "case_id": case_id,
-        **_future_payload(182),
-    })
+    create = client.post(
+        "/api/v1/meetings",
+        headers=_headers("superadmin@demo.com"),
+        json={
+            "case_id": _bookable_case_id(),
+            "scheduled_date": future_meeting_date(30),
+            "scheduled_time": "10:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "invite_client": False,
+        },
+    )
     assert create.status_code == 201, create.text
     meeting_id = create.json()["id"]
 
@@ -143,11 +224,7 @@ def test_cancelled_meeting_gets_no_reminder():
 
 
 def test_meeting_booked_30_minutes_ahead_sends_reminder_at_booking():
-    case_id = _bookable_case_id()
-    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json={
-        "case_id": case_id,
-        **_future_payload(30),
-    })
+    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json=_future_payload(30))
     assert create.status_code == 201, create.text
     meeting_id = create.json()["id"]
 
