@@ -5,6 +5,7 @@ import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { MeetingAvailabilitySlots } from './MeetingAvailabilitySlots.jsx'
 import { MODAL_INPUT_STYLE, MODAL_LABEL_STYLE } from './meetingConstants.js'
 import { buildSharedAvailabilityQuery, meetingDisplayTitle } from './meetingUtils.js'
+import './meetings-mobile.css'
 
 export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
   const [form, setForm] = useState({
@@ -95,10 +96,10 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px' }}>Reschedule meeting</h2>
-        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 16px' }}>
+    <div className="meetings-modal-backdrop">
+      <div className="meetings-modal-panel">
+        <h2 className="meetings-modal-panel__title">Reschedule meeting</h2>
+        <p className="meetings-modal-panel__subtitle">
           {meetingDisplayTitle(meeting) || meeting.child_name || 'Case manager meeting'}
         </p>
         {error ? (
@@ -107,7 +108,7 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
           </p>
         ) : null}
         <form onSubmit={submit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          <div className="meetings-modal-form-grid">
             <label style={MODAL_LABEL_STYLE}>
               New date *
               <input
@@ -155,7 +156,7 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
             />
           </label>
 
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <div className="meetings-modal-actions">
             <button
               type="submit"
               disabled={saving}

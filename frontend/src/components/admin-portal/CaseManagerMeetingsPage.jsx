@@ -30,6 +30,7 @@ import {
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import './admin-reports.css'
 import './admin-scheduling-hub.css'
+import '../meetings/meetings-mobile.css'
 
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { label: status, bg: '#f1f5f9', color: '#475569' }
@@ -126,10 +127,10 @@ function CancelMeetingModal({ meeting, onClose, onCancelled }) {
   const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Cancel meeting</h2>
-        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
+    <div className="meetings-modal-backdrop">
+      <div className="meetings-modal-panel">
+        <h2 className="meetings-modal-panel__title">Cancel meeting</h2>
+        <p className="meetings-modal-panel__subtitle">
           {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
         </p>
         {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
@@ -143,7 +144,7 @@ function CancelMeetingModal({ meeting, onClose, onCancelled }) {
               onChange={(e) => setReason(e.target.value)}
             />
           </label>
-          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+          <div className="meetings-modal-actions">
             <button type="submit" disabled={saving} style={{ flex: 1, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
               {saving ? 'Cancelling…' : 'Cancel meeting'}
             </button>
@@ -278,6 +279,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [availabilityDraft, setAvailabilityDraft] = useState(createEmptyAvailabilityDraft())
   const [availabilityLoading, setAvailabilityLoading] = useState(false)
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  const [availabilitySaved, setAvailabilitySaved] = useState(false)
   const [availabilityError, setAvailabilityError] = useState('')
   const [googleConnection, setGoogleConnection] = useState(null)
   const [googleLoading, setGoogleLoading] = useState(false)
@@ -570,12 +572,15 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     if (!user?.id) return
     setAvailabilitySaving(true)
     setAvailabilityError('')
+    setAvailabilitySaved(false)
     try {
       const result = await apiFetch(`/api/v1/users/${user.id}/availability`, {
         method: 'PUT',
         body: JSON.stringify(availabilityDraft),
       })
       setAvailabilityDraft(normalizeAvailabilityDraft(result))
+      setAvailabilitySaved(true)
+      window.setTimeout(() => setAvailabilitySaved(false), 4000)
     } catch (err) {
       setAvailabilityError(err.message || 'Could not save availability settings')
     } finally {
@@ -662,6 +667,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             Insighte owns meetings; Google edits are ignored. Use this panel to keep your shared booking window current.
           </p>
           {availabilityError ? <p className="admin-alert admin-alert--error">{availabilityError}</p> : null}
+          {availabilitySaved ? <p className="admin-alert admin-alert--success">Availability saved — therapists will only see these slots when booking with you.</p> : null}
           {googleError ? <p className="admin-alert admin-alert--error">{googleError}</p> : null}
 
           <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
@@ -720,7 +726,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             })}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
+          <div className="meetings-availability-policy-grid">
             <label className="admin-label">
               Min notice (minutes)
               <input
@@ -782,7 +788,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
               <strong>Exceptions</strong>
               <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={addException}>Add exception</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8, marginBottom: 10 }}>
+            <div className="meetings-availability-exceptions-grid">
               <input type="date" className="admin-input" value={newException.date} onChange={(e) => setNewException((draft) => ({ ...draft, date: e.target.value }))} />
               <select className="admin-input" value={newException.type} onChange={(e) => setNewException((draft) => ({ ...draft, type: e.target.value }))}>
                 <option value="CLOSED">Closed</option>

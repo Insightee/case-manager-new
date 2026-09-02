@@ -12,6 +12,7 @@ import {
   MODAL_LABEL_STYLE,
 } from './meetingConstants.js'
 import { buildSharedAvailabilityQuery } from './meetingUtils.js'
+import './meetings-mobile.css'
 
 const ADMIN_ROLES = new Set(['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN'])
 const INTERNAL_STAFF_ROLES = new Set(['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER'])
@@ -337,9 +338,9 @@ export function BookMeetingModal({
     : `Available slots — ${caseDetail?.case_manager_name || 'Your calendar'}`
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px' }}>Book a meeting</h2>
+    <div className="meetings-modal-backdrop">
+      <div className="meetings-modal-panel">
+        <h2 className="meetings-modal-panel__title">Book a meeting</h2>
         {error ? (
           <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>
             {error}
@@ -596,7 +597,7 @@ export function BookMeetingModal({
             )}
           </fieldset>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          <div className="meetings-modal-form-grid">
             <label style={MODAL_LABEL_STYLE}>
               Date *
               <input type="date" style={MODAL_INPUT_STYLE} value={form.scheduled_date} required min={today} onChange={(e) => set('scheduled_date', e.target.value)} />
@@ -626,7 +627,7 @@ export function BookMeetingModal({
             </p>
           ) : null}
 
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <div className="meetings-modal-actions">
             <button
               type="submit"
               disabled={saving}

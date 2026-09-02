@@ -18,6 +18,22 @@ from app.services.cm_meeting_service import meeting_participant_user_ids, send_d
 client = TestClient(app)
 
 
+def _demo_cm_user_id() -> int:
+    from app.models.case import Case
+
+    with SessionLocal() as db:
+        case = db.get(Case, _bookable_case_id())
+        assert case is not None
+        return int(case.case_manager_user_id)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_reminder_calendar():
+    _clear_cm_meetings_today(_demo_cm_user_id())
+    _set_demo_cm_min_notice(minutes=0)
+    yield
+
+
 def _clear_cm_meetings_today(cm_user_id: int) -> None:
     from sqlalchemy import select
 
@@ -44,13 +60,7 @@ def _clear_cm_meetings_today(cm_user_id: int) -> None:
 def setup_db():
     seed_run()
     _set_demo_cm_min_notice(minutes=0)
-    from app.models.case import Case
-
-    with SessionLocal() as db:
-        case = db.get(Case, _bookable_case_id())
-        assert case is not None
-        cm_user_id = case.case_manager_user_id
-    _clear_cm_meetings_today(cm_user_id)
+    _clear_cm_meetings_today(_demo_cm_user_id())
 
 
 def _set_demo_cm_min_notice(*, minutes: int) -> None:
