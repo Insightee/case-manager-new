@@ -101,7 +101,7 @@ Email/DNS detail: [`EMAIL_DNS.md`](EMAIL_DNS.md).
 
 > **Agent rule:** GitHub repo is `case-manager-new`, but the **Vercel project name is `frontend`**. Railway uses `case-manager-new`. Every `vercel` CLI command must include `--project frontend` (or link `.vercel` to that project). Do **not** create or target a Vercel project named `case-manager-new`.
 
-There is **one** UI project: team **`insightes-projects`**, project **`frontend`**. There are no staging or testing Vercel apps. Extra GitHub checks named `Vercel – insightecasestaging` or `Vercel – insightecasetesting` are leftover Git integrations — disconnect those apps; they are not required to merge. Preview deploys of feature branches live on the same `frontend` project (`frontend-git-*-insightes-projects.vercel.app`).
+There is **one** official UI project: team **`insightes-projects`**, project **`frontend`** (production branch `main` → Railway `VITE_API_URL`). Leftover team projects `insightecasestaging` / `insightecasetesting` may still be Git-linked to this repo; they are **not** environments. Disconnect Git on those two apps so `Vercel – insightecasestaging` / `Vercel – insightecasetesting` stop failing PRs. Do not recreate them. Feature-branch previews, when enabled, belong on `frontend` (`frontend-git-*-insightes-projects.vercel.app`).
 
 InsighteCase UI lives on team **`insightes-projects`**, project name **`frontend`** (not `case-manager-new`).
 
