@@ -148,6 +148,7 @@ Setup: [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md)
 | `TICKET_ATTACHMENT_MAX_FILES` | no | `3` | Max attachments per ticket. |
 | `CASE_DOCUMENT_MAX_BYTES` | no | 5 MiB | Max case document upload size. |
 | `MEETING_INVITE_CALENDAR_TIMEZONE` | no | `Asia/Kolkata` | Google Calendar `ctz` for CM meeting invites. |
+| `SCHEDULING_WEEKENDS_ENABLED` | no | `false` | When true, default staff availability and session templates include Saturday/Sunday until a user saves narrower hours. |
 
 ### SQLite dev-only
 

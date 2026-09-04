@@ -6,8 +6,8 @@ Source of truth for meetings/calendar behavior across portals. Update this doc w
 
 | Type | Data | Booking | Availability |
 |------|------|---------|--------------|
-| **Therapy session** | `TherapySession` / slots | Parent books therapist slots | Therapist `/therapist/slots` |
-| **CM meeting** | `CaseManagerMeeting` | CM, admin, or therapist requests | CM `/users/{id}/availability` |
+| **Therapy session** | `TherapySession` / slots | Parent books therapist slots | Therapist `/users/{id}/availability` (syncs to `/therapist/slots` template) |
+| **CM meeting** | `CaseManagerMeeting` | CM, admin, or therapist requests | Staff `/users/{id}/availability` |
 
 Unified calendar feed: `GET /api/v1/calendar/events` (`event_type`: `cm_meeting`, `therapy_session`, …).
 
@@ -18,8 +18,8 @@ Unified calendar feed: `GET /api/v1/calendar/events` (`event_type`: `cm_meeting`
 | View scoped meetings | Yes (team/global) | Yes (caseload) | Yes (assigned cases) | Yes (child) |
 | Calendar week/month | Yes | Yes | Yes | List-first (calendar deferred) |
 | Book CM meeting | Yes | Yes | Yes (request for own cases) | No |
-| Set CM availability | Own + override | Own | No | No |
-| Google Calendar sync (CM availability) | Own | Own | No | No |
+| Set staff availability (meetings + sessions) | Own + override | Own | Own (`/therapist/meetings?availability=1`) | No |
+| Google Calendar sync (availability) | Own | Own | Optional (same panel) | No |
 | CM shared minutes / complete | Yes | Yes | No | No |
 | Therapist private notes | No | No | Yes (own meetings) | No |
 | Reschedule / cancel | Yes | Yes | Yes (participant) | No (contact CM) |
@@ -48,7 +48,9 @@ Unified calendar feed: `GET /api/v1/calendar/events` (`event_type`: `cm_meeting`
 1. Frontend: `BookMeetingModal` calls `GET /api/v1/calendar/availability` with intersected attendee IDs.
 2. Therapist path: CM + booking therapist + parent (only if client invited).
 3. Backend: `create_meeting` / `reschedule` reject times not in `free_slots` for attendees.
-4. Configured availability: weekdays without saved rules are **closed** (not default 10–19).
+4. Configured availability: weekdays without saved rules are **closed** (not default open).
+5. **One rule**: `StaffAvailabilityRule` is canonical; saves sync to `TherapistScheduleTemplate` and session materialization reads staff rules when a booking policy exists.
+6. **Weekends**: off by default org-wide (`SCHEDULING_WEEKENDS_ENABLED=false`); when true, default templates include Sat/Sun until staff saves narrower hours.
 
 ## Deferred (next pass)
 

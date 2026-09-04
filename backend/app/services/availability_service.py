@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.scheduling_defaults import default_open_windows, default_weekday_indices
 from app.core.security import get_redis
 from app.core.timezone import now_ist, today_ist
 from app.models.calendar_availability import (
@@ -36,13 +37,6 @@ GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_FREEBUSY_URL = "https://www.googleapis.com/calendar/v3/freeBusy"
 GOOGLE_CACHE_TTL_SECONDS = 600
-DEFAULT_OPEN_WINDOWS: dict[int, list[tuple[time, time]]] = {
-    0: [(time(10, 0), time(19, 0))],
-    1: [(time(10, 0), time(19, 0))],
-    2: [(time(10, 0), time(19, 0))],
-    3: [(time(10, 0), time(19, 0))],
-    4: [(time(10, 0), time(19, 0))],
-}
 DEFAULT_ALLOWED_DURATIONS = [30, 45, 60, 90]
 
 _MEMORY_CACHE: dict[str, tuple[float, str]] = {}
@@ -219,9 +213,7 @@ def _split_interval_candidates(
 
 
 def _default_windows_for_day(day: date) -> list[tuple[datetime, datetime]]:
-    if day.weekday() > 4:
-        return []
-    windows = DEFAULT_OPEN_WINDOWS.get(day.weekday(), [])
+    windows = default_open_windows().get(day.weekday(), [])
     return [(_aware(day, start), _aware(day, end)) for start, end in windows]
 
 
@@ -829,6 +821,49 @@ def free_slots(
     }
 
 
+def staff_day_windows(
+    db: Session,
+    user_id: int,
+    day: date,
+) -> list[tuple[time, time]]:
+    """Local-time windows for session slot materialization (no busy subtraction)."""
+    rules_by_user = _load_rules(db, [user_id])
+    exceptions_by_user = _load_exceptions(db, [user_id], date_from=day, date_to=day)
+    policies_by_user = _load_policies(db, [user_id])
+    windows = _windows_for_user_day(
+        day=day,
+        rules=rules_by_user.get(user_id, []),
+        exceptions=exceptions_by_user.get(user_id, []),
+        busy=[],
+        buffer_minutes=0,
+        availability_configured=policies_by_user.get(user_id) is not None,
+    )
+    return [(start.time(), end.time()) for start, end in windows]
+
+
+def slot_start_allowed(
+    db: Session,
+    user_id: int,
+    slot_date: date,
+    start_time: time,
+    duration_minutes: int,
+) -> bool:
+    allowed_windows = staff_day_windows(db, user_id, slot_date)
+    if not allowed_windows:
+        policies = _load_policies(db, [user_id])
+        if policies.get(user_id) is not None:
+            return False
+        return True
+    start_dt = _aware(slot_date, start_time)
+    end_dt = start_dt + timedelta(minutes=max(duration_minutes, 1))
+    for window_start, window_end in allowed_windows:
+        window_start_dt = _aware(slot_date, window_start)
+        window_end_dt = _aware(slot_date, window_end)
+        if start_dt >= window_start_dt and end_dt <= window_end_dt:
+            return True
+    return False
+
+
 def load_user_availability(db: Session, user_id: int) -> dict[str, Any]:
     rules = db.scalars(
         select(StaffAvailabilityRule).where(StaffAvailabilityRule.user_id == user_id).order_by(
@@ -874,7 +909,7 @@ def load_user_availability(db: Session, user_id: int) -> dict[str, Any]:
                 "slot_granularity_minutes": 30,
                 "is_default": True,
             }
-            for weekday in range(5)
+            for weekday in default_weekday_indices()
         ]
 
     return {
@@ -961,6 +996,9 @@ def save_user_availability(db: Session, user_id: int, payload: dict[str, Any]) -
     policy.allowed_durations_json = [int(value) for value in durations]
 
     db.flush()
+    from app.services import availability_sync
+
+    availability_sync.sync_staff_rules_to_template(db, user_id)
     return load_user_availability(db, user_id)
 
 

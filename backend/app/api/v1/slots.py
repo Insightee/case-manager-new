@@ -121,6 +121,9 @@ def update_template(
 ):
     tid = _resolve_therapist_id(user, therapist_id)
     row = cal.upsert_template(db, tid, payload.config)
+    from app.services import availability_sync
+
+    availability_sync.sync_template_to_staff_rules(db, tid, row.get_config())
     db.commit()
     return {"therapist_user_id": tid, "config": row.get_config()}
 
