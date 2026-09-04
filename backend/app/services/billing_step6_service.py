@@ -362,10 +362,15 @@ def deductible_leave_dates_for_month(
         if case_ids and case.id not in case_ids:
             continue
 
+        from app.services.leave_dates_service import case_has_scheduled_presence
+
         d0 = max(leave.start_date, month_start)
         d1 = min(leave.end_date, month_end)
         day = d0
         while day <= d1:
+            if not case_has_scheduled_presence(db, case.id, day, leave_id=leave.id):
+                day += timedelta(days=1)
+                continue
             credit_ok = None
             if leave.leave_type == LeaveType.SICK:
                 if remaining_sick_credits is None and sick_credit_available is None:

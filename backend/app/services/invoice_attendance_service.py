@@ -361,7 +361,19 @@ def build_pending_approval_line(
     return line
 
 
-def _iter_leave_dates(leave: TherapistLeave, start: date, end: date) -> list[date]:
+def _iter_leave_dates(
+    leave: TherapistLeave,
+    start: date,
+    end: date,
+    db: Session | None = None,
+    case_id: int | None = None,
+) -> list[date]:
+    if db is not None:
+        from app.services import leave_dates_service as leave_dates
+
+        return leave_dates.billable_leave_dates(
+            db, leave, case_id=case_id, from_date=start, to_date=end
+        )
     overlap_start = max(leave.start_date, start)
     overlap_end = min(leave.end_date, end)
     if overlap_end < overlap_start:
@@ -394,8 +406,11 @@ def build_leave_lines_for_case(
     from app.services.leave_policy_service import _paid_unpaid_for_leave
 
     for lv in leaves:
+        dates = _iter_leave_dates(
+            lv, month_start, month_end, db=db if shadow else None, case_id=case.id if shadow else None
+        )
         if lv.status == LeaveStatus.PENDING:
-            for d in _iter_leave_dates(lv, month_start, month_end):
+            for d in dates:
                 if not shadow:
                     lines.append(
                         {
@@ -438,19 +453,19 @@ def build_leave_lines_for_case(
 
         year = month_start.year
         paid_days, unpaid_days = _paid_unpaid_for_leave(db, lv, year)
-        total = max(leave_service_day_count(lv), 1)
-        dates = _iter_leave_dates(lv, month_start, month_end)
         if not dates:
             continue
 
-        # Distribute paid/unpaid across overlapping dates. Fully paid/unpaid
-        # leaves must not invent the opposite kind via rounding.
+        all_dates = _iter_leave_dates(
+            lv, lv.start_date, lv.end_date, db=db if shadow else None, case_id=case.id if shadow else None
+        )
+        paid_n = max(0, int(lv.paid_days or 0))
         if unpaid_days <= 0:
             paid_left = len(dates)
         elif paid_days <= 0:
             paid_left = 0
         else:
-            paid_left = min(len(dates), max(0, round(paid_days * (len(dates) / total))))
+            paid_left = sum(1 for d in dates if d in all_dates and all_dates.index(d) < paid_n)
         if not shadow:
             for d in dates:
                 lines.append(

@@ -16,6 +16,7 @@ export function AddLateSessionForm({ caseId, month, onAdded, onCancel }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (saving) return
     setSaving(true)
     setError('')
     try {

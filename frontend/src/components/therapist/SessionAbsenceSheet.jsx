@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
 import { isBackfillWindowActive, migrationBackfillDateBounds } from '../../lib/leaveMigration.js'
+import { logsPathForSession } from '../../lib/sessionStartRules.js'
 
 function sliceTime(t) {
   if (!t) return ''
@@ -42,6 +43,7 @@ export function SessionAbsenceSheet({
 
   const activeSessionId = sessionsForSelectedDate[0]?.id ?? sessionId
   const activeSession = sessionsForSelectedDate[0] || session
+  const liveSession = String(activeSession?.status || '').toUpperCase() === 'IN_PROGRESS'
 
   useEffect(() => {
     if (backfillActive && dateBounds?.min) {
@@ -109,6 +111,7 @@ export function SessionAbsenceSheet({
 
   async function submitChildAbsent(e) {
     e.preventDefault()
+    if (busy) return
     if (backfillActive) {
       if (!caseId) {
         setLocalError('Choose a client first.')
@@ -127,7 +130,7 @@ export function SessionAbsenceSheet({
     setLocalError('')
     try {
       if (backfillActive) {
-        await apiFetch('/api/v1/sessions/child-absence/backfill', {
+        const created = await apiFetch('/api/v1/sessions/child-absence/backfill', {
           method: 'POST',
           body: JSON.stringify({
             case_id: Number(caseId),
@@ -138,12 +141,13 @@ export function SessionAbsenceSheet({
           }),
         })
         setReason('')
+        if (created) setPendingRequest(created)
         onSuccess?.('Child absent logged — parent or admin will review.', activeSessionId)
         return
       }
 
       await patchSessionTimesIfNeeded()
-      await apiFetch(`/api/v1/sessions/${activeSessionId}/absence`, {
+      const created = await apiFetch(`/api/v1/sessions/${activeSessionId}/absence`, {
         method: 'POST',
         body: JSON.stringify({
           absence_type: 'CLIENT_ABSENT',
@@ -151,6 +155,7 @@ export function SessionAbsenceSheet({
         }),
       })
       setReason('')
+      if (created) setPendingRequest(created)
       onSuccess?.('Child absent logged — parent or admin will review.', activeSessionId)
     } catch (err) {
       if (err.status === 409 && err.detail?.existing && err.detail?.absence_request) {
@@ -229,6 +234,27 @@ export function SessionAbsenceSheet({
         </label>
       ) : null}
 
+      {liveSession && !pendingRequest ? (
+        <div
+          className="ic-session-composer__status-card"
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 8,
+            border: '1px solid #93c5fd',
+            background: '#eff6ff',
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 600, color: '#1d4ed8' }}>A session is already in progress</p>
+          <p style={{ margin: '6px 0 12px', fontSize: '0.875rem' }}>
+            End that session before logging child absence, or continue it from session logs.
+          </p>
+          <Link to={logsPathForSession(activeSessionId)} className="ic-btn ic-btn--primary">
+            Continue session
+          </Link>
+        </div>
+      ) : null}
+
       {statusLoading ? (
         <p className="ic-session-composer__hint">Checking absence status…</p>
       ) : pendingRequest ? (
@@ -263,7 +289,7 @@ export function SessionAbsenceSheet({
           <span className="ic-session-composer__visit-label">Session date</span>
           <strong>{formatDisplayDate(activeSession?.scheduled_date || absenceDate)}</strong>
         </div>
-        {!pendingRequest ? (
+        {!pendingRequest && !liveSession ? (
           <div className="ic-session-composer__time-grid">
             <label className="ic-session-composer__field">
               <span>Start time</span>
@@ -289,7 +315,7 @@ export function SessionAbsenceSheet({
         ) : null}
       </div>
 
-      {!pendingRequest ? (
+      {!pendingRequest && !liveSession ? (
         <form
           onSubmit={submitChildAbsent}
           style={{

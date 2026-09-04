@@ -459,10 +459,27 @@ def create_late_session(
     if not get_active_assignment(db, case_id, therapist_user_id):
         raise ValueError("You are not actively assigned to this case")
 
-    for existing, log in _all_case_sessions_in_month(db, case_id, therapist_user_id, year, month_num):
-        if existing.scheduled_date == session_date and existing.start_time and existing.end_time:
-            if _times_overlap(start_time, end_time, existing.start_time, existing.end_time):
-                raise ValueError("A session already exists at this date and time for this case")
+    existing_same_day = db.scalars(
+        select(TherapySession).where(
+            TherapySession.case_id == case_id,
+            TherapySession.therapist_user_id == therapist_user_id,
+            TherapySession.scheduled_date == session_date,
+            TherapySession.status.notin_((SessionStatus.CANCELLED, SessionStatus.RESCHEDULED)),
+        )
+    ).all()
+    for existing in existing_same_day:
+        if not existing.start_time or not existing.end_time:
+            continue
+        if not _times_overlap(start_time, end_time, existing.start_time, existing.end_time):
+            continue
+        if existing.status == SessionStatus.IN_PROGRESS:
+            raise ValueError(
+                "A session is already in progress for this case. End that session before adding another."
+            )
+        raise ValueError(
+            "A session already exists at this date and time for this case. "
+            "Edit the time or cancel the existing session first."
+        )
 
     session = TherapySession(
         case_id=case_id,

@@ -44,6 +44,29 @@ export function leaveUsedSummaryLabel(balance) {
  * (shadow days beyond available credits). Returns null when there is nothing to explain.
  * @param {Record<string, unknown> | null | undefined} balance
  */
+/**
+ * Invoice banner copy: remaining credits vs missing employment start date.
+ * @param {Record<string, unknown> | null | undefined} balance
+ */
+export function invoiceLeaveCreditBanner(balance) {
+  if (!balance) return null
+  if (!isLeaveBalanceUpdated(balance)) {
+    return {
+      remainingLabel: '—',
+      detail:
+        'HR still needs an employment start date before paid credits apply — this month’s leave is unpaid.',
+    }
+  }
+  const remaining = balance.leave_credit_pending ?? balance.paid_remaining ?? 0
+  const earned = balance.credits_earned ?? balance.entitlement_paid ?? 0
+  const paid = balance.paid_leaves_taken ?? balance.paid_used_effective ?? 0
+  const unpaid = balance.unpaid_leaves_taken ?? balance.computed_unpaid_days ?? 0
+  return {
+    remainingLabel: String(remaining),
+    detail: `Remaining ${remaining} of ${earned} earned this year · used ${paid} paid / ${unpaid} unpaid`,
+  }
+}
+
 export function unpaidBreakdownLabel(balance) {
   if (!balance) return null
   const homecare = balance.unpaid_homecare

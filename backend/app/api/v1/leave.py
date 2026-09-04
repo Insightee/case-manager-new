@@ -392,6 +392,10 @@ def review_leave(
                 raise HTTPException(status_code=400, detail="Rejection comment is required")
 
     previous_status = leave.status
+    if payload.status == LeaveStatus.APPROVED and previous_status == LeaveStatus.PENDING:
+        therapist_for_split = db.get(User, leave.therapist_user_id)
+        if therapist_for_split:
+            policy.apply_live_paid_unpaid(db, leave, therapist_for_split)
     leave.status = payload.status
     if payload.review_note is not None:
         leave.review_note = (payload.review_note or "").strip() or None

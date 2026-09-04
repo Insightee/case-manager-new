@@ -154,7 +154,8 @@ export function TherapistLeaveBalancePanel({
 
       {!updated ? (
         <p className="therapist-leave-panel__banner">
-          Add consultant start date below to calculate leave credits for {year}.
+          Paid leave credits cannot apply until an employment start date is saved.
+          Until then, shadow leave days are unpaid. Add the consultant start date below.
         </p>
       ) : null}
 

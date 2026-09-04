@@ -13,6 +13,7 @@ from app.core.permissions import RoleName, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.role import Role
 from app.models.user import User
+from app.services import leave_dates_service as leave_dates
 from app.services import leave_migration_service as leave_migration
 from app.services import leave_notification_service as leave_notify
 from app.services import leave_policy_service as policy
@@ -23,7 +24,13 @@ def leave_day_count(start: date, end: date) -> int:
     return (end - start).days + 1
 
 
-def days_in_calendar_year(leave: TherapistLeave, year: int) -> int:
+def days_in_calendar_year(
+    leave: TherapistLeave,
+    year: int,
+    db: Session | None = None,
+    *,
+    shadow_only: bool = False,
+) -> int:
     if leave.status != LeaveStatus.APPROVED:
         return 0
     year_start = date(year, 1, 1)
@@ -32,6 +39,12 @@ def days_in_calendar_year(leave: TherapistLeave, year: int) -> int:
     end = min(leave.end_date, year_end)
     if end < start:
         return 0
+    if db is not None:
+        return len(
+            leave_dates.billable_leave_dates(
+                db, leave, from_date=start, to_date=end, shadow_only=shadow_only
+            )
+        )
     return (end - start).days + 1
 
 
@@ -76,7 +89,7 @@ def build_summary(
             pending += 1
         elif l.status == LeaveStatus.REJECTED:
             rejected += 1
-        days = days_in_calendar_year(l, year)
+        days = days_in_calendar_year(l, year, db)
         if l.status == LeaveStatus.APPROVED:
             approved_days += days
             by_type[l.leave_type.value] += days
@@ -122,7 +135,7 @@ def build_report(
 
         if granularity == "yearly":
             period = str(year)
-            days = days_in_calendar_year(l, year) if l.status == LeaveStatus.APPROVED else 0
+            days = days_in_calendar_year(l, year, db) if l.status == LeaveStatus.APPROVED else 0
             rows.append(
                 {
                     "therapist_user_id": l.therapist_user_id,
@@ -163,7 +176,9 @@ def build_report(
                 continue
             start = max(l.start_date, month_start)
             end = min(l.end_date, month_end)
-            days = (end - start).days + 1
+            days = len(
+                leave_dates.billable_leave_dates(db, l, from_date=start, to_date=end)
+            )
             rows.append(
                 {
                     "therapist_user_id": l.therapist_user_id,
@@ -263,6 +278,14 @@ def create_therapist_leave_request(
     ids = list(dict.fromkeys(int(x) for x in (case_ids or [])))
     if case_id is not None and int(case_id) not in ids:
         ids.insert(0, int(case_id))
+    leave_dates.lock_leave_and_absence_rows(db, therapist.id)
+    leave_dates.raise_if_absence_blocks_leave(
+        db,
+        therapist_user_id=therapist.id,
+        start=start_date,
+        end=end_date,
+        case_ids=ids or None,
+    )
     conflicting = [lv for lv in overlapping_leaves if _leave_scopes_conflict(lv, ids or None)]
     if conflicting:
         conflict = conflicting[0]

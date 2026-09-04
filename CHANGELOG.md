@@ -31,6 +31,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Leave and child absence are unique per **case×day** (disjoint cases the same day stay allowed). Shadow leave counts only dates with a session or booked slot, so a Saturday without a session is not deducted. Paid/unpaid days recompute on approve from live monthly credits; invoice copy explains missing employment start date vs remaining credits.
 - Meetings: slot validation no longer blocks double-booking conflict messages; `min_notice_minutes=0` saves correctly; therapist slot picker respects assigned case manager availability windows.
 - Therapist session-log submit no longer stops on the duration warning: the banner still prompts a time review, but the first Submit posts the log. Scheduled visits warn only outside a ±15 minute window (not exact scheduled minutes). Session start/end payloads now include `product_module` and `day_type`; therapist home/workspace serialize `day_type` even when Postgres returns a plain string.
 - Starting a session when a previous visit still needs a log opens that pending log form first (same Submit) instead of only showing an error. Portal install control is a dropdown with both **Install** and **Refresh**; the primary icon is Install in the browser and Refresh in the installed dock/PWA. Production service workers apply waiting updates automatically.

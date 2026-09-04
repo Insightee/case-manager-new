@@ -16,6 +16,7 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.models.user import User
 from app.services import billing_ledger_service, notification_service, parent_service
+from app.services import leave_dates_service as leave_dates
 from app.services import leave_migration_service as leave_migration
 from app.services import leave_notification_service as leave_notify
 
@@ -318,15 +319,36 @@ def _ensure_session_for_child_absence(
         therapist_user_id=user.id,
         scheduled_date=scheduled_date,
     )
+    if existing is None:
+        existing = db.scalars(
+            select(TherapySession).where(
+                TherapySession.case_id == case.id,
+                TherapySession.therapist_user_id == user.id,
+                TherapySession.scheduled_date == scheduled_date,
+                TherapySession.status == SessionStatus.CANCELLED,
+            )
+        ).first()
     if existing:
         if existing.status == SessionStatus.CLIENT_ABSENT:
             raise HTTPException(status_code=400, detail="Child was already marked absent for this day.")
+        if existing.status == SessionStatus.THERAPIST_LEAVE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Leave is already recorded for this case on this day. "
+                    "One leave or child absence is allowed per case each day."
+                ),
+            )
         if existing.status == SessionStatus.COMPLETED and existing.daily_log is not None:
             raise HTTPException(
                 status_code=400,
                 detail="This day already has a completed session log — contact your case manager if you need a correction.",
             )
-        if existing.status not in (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS):
+        if existing.status not in (
+            SessionStatus.SCHEDULED,
+            SessionStatus.IN_PROGRESS,
+            SessionStatus.CANCELLED,
+        ):
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -383,6 +405,28 @@ def create_child_absence_backfill(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    leave_dates.lock_leave_and_absence_rows(db, user.id)
+    existing_day = leave_dates.active_absence_on_case_day(db, case.id, scheduled_date)
+    if existing_day:
+        serialized = _serialize(db, existing_day)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": existing_day.status.value.lower(),
+                "message": "Child absence already logged for this case on this day. One leave or child absence is allowed per case each day.",
+                "existing": True,
+                "absence_request": serialized,
+            },
+        )
+    if leave_dates.active_leave_for_case_day(db, user.id, case.id, scheduled_date):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Leave is already recorded for this case on this day. "
+                "One leave or child absence is allowed per case each day."
+            ),
+        )
+
     session = _ensure_session_for_child_absence(
         db,
         user,
@@ -423,7 +467,11 @@ def create_request(
     case = session.case
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
-    if session.status not in (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS):
+    if session.status not in (
+        SessionStatus.SCHEDULED,
+        SessionStatus.IN_PROGRESS,
+        SessionStatus.CANCELLED,
+    ):
         raise HTTPException(status_code=400, detail="Session cannot be marked absent in its current state")
 
     try:
@@ -437,23 +485,33 @@ def create_request(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    existing = db.scalars(
-        select(SessionAbsenceRequest).where(
-            SessionAbsenceRequest.session_id == session_id,
-            SessionAbsenceRequest.status == SessionAbsenceStatus.PENDING_APPROVAL,
-        )
-    ).first()
-    if existing:
-        serialized = _serialize(db, existing)
+    leave_dates.lock_leave_and_absence_rows(db, user.id)
+
+    existing_day = leave_dates.active_absence_on_case_day(db, session.case_id, session.scheduled_date)
+    if existing_day:
+        serialized = _serialize(db, existing_day)
         raise HTTPException(
             status_code=409,
             detail={
-                "status": "pending",
-                "message": "Child absence already submitted for this session.",
+                "status": existing_day.status.value.lower(),
+                "message": "Child absence already logged for this case on this day. One leave or child absence is allowed per case each day.",
                 "existing": True,
                 "absence_request": serialized,
             },
         )
+
+    if atype == SessionAbsenceType.CLIENT_ABSENT:
+        blocking_leave = leave_dates.active_leave_for_case_day(
+            db, user.id, session.case_id, session.scheduled_date
+        )
+        if blocking_leave:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Leave is already recorded for this case on this day. "
+                    "One leave or child absence is allowed per case each day."
+                ),
+            )
 
     row = SessionAbsenceRequest(
         session_id=session.id,
@@ -481,16 +539,15 @@ def create_request(
         # creating duplicate leave rows when the same absence is submitted more than once.
         from app.services.leave_service import _leave_scopes_conflict
 
-        existing_leave = db.scalars(
-            select(TherapistLeave).where(
-                TherapistLeave.therapist_user_id == user.id,
-                TherapistLeave.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
-                TherapistLeave.start_date <= session.scheduled_date,
-                TherapistLeave.end_date >= session.scheduled_date,
-            )
-        ).first()
+        overlapping = leave_dates.overlapping_active_leaves(
+            db, user.id, session.scheduled_date, session.scheduled_date
+        )
+        existing_leave = next(
+            (lv for lv in overlapping if _leave_scopes_conflict(lv, [case.id])),
+            None,
+        )
 
-        if existing_leave and _leave_scopes_conflict(existing_leave, [case.id]):
+        if existing_leave:
             row.therapist_leave_id = existing_leave.id
         else:
             leave = TherapistLeave(

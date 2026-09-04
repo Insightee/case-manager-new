@@ -339,9 +339,13 @@ Request time away and see how it affects your caseload.
 4. Add a **reason** and confirm whether you consulted with parents if required.  
 5. Submit — track status as **Pending**, **Approved**, or **Rejected**.
 
+You can file **one leave or child absence per case per day**. Leave on a shadow case and work (or leave) on a homecare or counselling case the same day is allowed. If a session is already in progress, continue or end that visit instead of starting a second clock-in.
+
+For **shadow** cases, a leave day counts only when that case had a scheduled session or booked slot. A Saturday or Sunday without a session is not deducted and does not use a leave credit.
+
 ### Leave balance
 
-Your **balance summary** and calendar view show approved leave and remaining credits when your organization maintains balances.
+Your **balance summary** and calendar view show approved leave and remaining credits when your organization maintains balances. Credits accrue **one per calendar month** from your employment start date and reset in January (unused credits do not carry forward). If HR has not saved a start date yet, remaining credits show as not updated and shadow leave for that month is unpaid.
 
 When you are on approved leave, related sessions may show as **therapist unavailable** for families.
 
