@@ -99,6 +99,35 @@ def test_production_rejects_smtp_username_env(monkeypatch):
         validate_production_settings()
 
 
+def test_production_rejects_retired_vercel_cors_origin(monkeypatch):
+    _prod_baseline(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "cors_origins",
+        "https://www.insighte.org,https://insightecasestaging-insightes-projects.vercel.app",
+    )
+    with pytest.raises(RuntimeError, match="retired Vercel"):
+        validate_production_settings()
+
+
+def test_production_rejects_retired_vercel_frontend_url(monkeypatch):
+    _prod_baseline(monkeypatch)
+    monkeypatch.setattr(settings, "frontend_url", "https://insightecasetesting.vercel.app")
+    with pytest.raises(RuntimeError, match="retired Vercel"):
+        validate_production_settings()
+
+
+def test_production_allows_official_frontend_and_railway_api_url(monkeypatch):
+    _prod_baseline(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "cors_origins",
+        "https://www.insighte.org,https://frontend-omega-eight-92.vercel.app",
+    )
+    monkeypatch.setattr(settings, "frontend_url", "https://www.insighte.org")
+    validate_production_settings()
+
+
 def test_development_skips_validation(monkeypatch):
     monkeypatch.setattr(settings, "app_env", "development")
     monkeypatch.setattr(settings, "jwt_secret_key", "dev-secret-change-in-production")

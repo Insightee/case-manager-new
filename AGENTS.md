@@ -37,7 +37,7 @@
 | **Railway** | `case-manager-new` (repo `Insightee/case-manager-new`) | FastAPI API, Postgres, Redis — all backend env vars |
 | **Vercel** | **`insightes-projects/frontend`** only (`prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN`) | Vite React UI — **`VITE_API_URL` only** |
 
-Never use Vercel project `case-manager-new` (deleted duplicate). CLI: `vercel … --scope insightes-projects --project frontend`. See [docs/RAILWAY_VERCEL.md](docs/RAILWAY_VERCEL.md).
+Never use Vercel project `case-manager-new` (deleted duplicate). There is no staging or testing Vercel UI (`insightecasestaging` / `insightecasetesting` Git checks are leftover integrations — disconnect them). CLI: `vercel … --scope insightes-projects --project frontend`. See [docs/RAILWAY_VERCEL.md](docs/RAILWAY_VERCEL.md).
 
 ## Learned Workspace Facts
 

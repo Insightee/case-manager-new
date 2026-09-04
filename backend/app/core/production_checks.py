@@ -2,8 +2,39 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
 
 from app.core.config import settings
+
+# Extra Git-connected Vercel apps. Official UI is insightes-projects/frontend only.
+_RETIRED_VERCEL_HOST_MARKERS = ("insightecasestaging", "insightecasetesting")
+
+
+def _origin_host(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        value = f"https://{value}"
+    return urlparse(value).netloc.lower()
+
+
+def _retired_vercel_hosts(urls: list[str]) -> list[str]:
+    """Return CORS/FRONTEND URLs that point at retired staging/testing Vercel apps."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for raw in urls:
+        value = (raw or "").strip()
+        if not value or value in seen:
+            continue
+        host = _origin_host(value)
+        if "vercel.app" not in host:
+            continue
+        if any(marker in host for marker in _RETIRED_VERCEL_HOST_MARKERS):
+            seen.add(value)
+            found.append(value)
+    return found
+
 
 _INSECURE_JWT_SECRETS = frozenset(
     {
@@ -70,11 +101,24 @@ def validate_production_settings() -> None:
 
     cors = settings.cors_origin_list
     if not cors or all("localhost" in o or "127.0.0.1" in o for o in cors):
-        errors.append("CORS_ORIGINS must include your production Vercel URL(s)")
+        errors.append(
+            "CORS_ORIGINS must include the production UI "
+            "(insightes-projects/frontend or www.insighte.org)"
+        )
+    retired = _retired_vercel_hosts(cors + [settings.frontend_url or ""])
+    if retired:
+        errors.append(
+            "CORS_ORIGINS / FRONTEND_URL must not list retired Vercel apps "
+            f"({', '.join(retired)}). Use insightes-projects/frontend only "
+            "(www.insighte.org or frontend*.vercel.app)."
+        )
 
     frontend = (settings.frontend_url or "").strip()
     if not frontend or "localhost" in frontend or "127.0.0.1" in frontend:
-        errors.append("FRONTEND_URL must be your production Vercel URL (not localhost)")
+        errors.append(
+            "FRONTEND_URL must be the production UI "
+            "(https://www.insighte.org or the frontend Vercel host), not localhost"
+        )
 
     if os.environ.get("SMTP_USERNAME", "").strip():
         errors.append(

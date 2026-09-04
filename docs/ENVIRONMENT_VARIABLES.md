@@ -73,7 +73,7 @@ Loaded from environment via [`backend/app/core/config.py`](../backend/app/core/c
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `CORS_ORIGINS` | yes (prod) | `http://localhost:5173,...` | Comma-separated browser origins allowed for API calls. Include **every** active production UI host (custom domains + legacy `vercel.app`). Custom domains like `insighte.org` are **not** covered by the default regex. |
-| `CORS_ORIGIN_REGEX` | no | auto in prod | Optional regex for extra origins (e.g. Vercel previews). If unset in production, defaults to `https://frontend-*.vercel.app`. |
+| `CORS_ORIGIN_REGEX` | no | auto in prod | Optional regex for extra origins. If unset in production, defaults to official `frontend*.vercel.app` plus `insighte.org`. Retired `insightecasestaging` / `insightecasetesting` hosts do not match and fail production startup if listed. |
 | `FRONTEND_URL` | yes (prod) | `http://localhost:5173` | Base URL for invite links, password reset, booking emails — use the **canonical** production host (`https://www.insighte.org`). |
 
 **Production example (three parallel Vercel domains):**

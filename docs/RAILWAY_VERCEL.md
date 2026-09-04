@@ -101,6 +101,8 @@ Email/DNS detail: [`EMAIL_DNS.md`](EMAIL_DNS.md).
 
 > **Agent rule:** GitHub repo is `case-manager-new`, but the **Vercel project name is `frontend`**. Railway uses `case-manager-new`. Every `vercel` CLI command must include `--project frontend` (or link `.vercel` to that project). Do **not** create or target a Vercel project named `case-manager-new`.
 
+There is **one** UI project: team **`insightes-projects`**, project **`frontend`**. There are no staging or testing Vercel apps. Extra GitHub checks named `Vercel – insightecasestaging` or `Vercel – insightecasetesting` are leftover Git integrations — disconnect those apps; they are not required to merge. Preview deploys of feature branches live on the same `frontend` project (`frontend-git-*-insightes-projects.vercel.app`).
+
 InsighteCase UI lives on team **`insightes-projects`**, project name **`frontend`** (not `case-manager-new`).
 
 | Item | Value |
@@ -167,7 +169,7 @@ Vercel **frontend** project (`insightes-projects/frontend`) can serve the same b
 | `CORS_ORIGINS` | `http://localhost:5173,https://www.insighte.org,https://insighte.org,https://frontend-omega-eight-92.vercel.app` |
 | `VITE_API_URL` (Vercel only) | `https://case-manager-new-production.up.railway.app` (unchanged) |
 
-Custom domains **do not** match the API default CORS regex (`frontend-*.vercel.app`) in [`backend/app/core/config.py`](../backend/app/core/config.py) — list them explicitly.
+Custom domains **do not** match the API default CORS regex (`frontend*.vercel.app` + `insighte.org`) in [`backend/app/core/config.py`](../backend/app/core/config.py) — list them explicitly. Retired hosts (`insightecasestaging*`, `insightecasetesting*`) are **not** allowed by that regex and fail Railway production startup if listed in `CORS_ORIGINS` / `FRONTEND_URL`.
 
 One-shot Railway update (no SMTP changes):
 
@@ -190,7 +192,7 @@ If login or invite shows **Cannot reach the API** but `curl …/health` works, t
 | UI at `https://www.insighte.org` | Custom domain not in `CORS_ORIGINS` | Add `https://www.insighte.org` and `https://insighte.org` to `CORS_ORIGINS`, redeploy API |
 | UI at `https://frontend-omega-eight-92.vercel.app` | That host was missing from `CORS_ORIGINS` | Keep legacy host in `CORS_ORIGINS` until removed from Vercel Domains |
 | Invite email opens a different host | `FRONTEND_URL` was wrong when email was sent | Update Railway `FRONTEND_URL`, redeploy API, **re-send invite** from Admin |
-| Git preview URLs | `frontend-git-*-insightes-projects.vercel.app` | Allowed by API CORS regex after latest backend deploy (`frontend-*.vercel.app`) |
+| Git preview URLs | `frontend-git-*-insightes-projects.vercel.app` | Allowed by API CORS regex after latest backend deploy (`frontend*.vercel.app`) |
 
 Quick CORS check (replace origin with your Vercel URL):
 
@@ -216,10 +218,13 @@ CLI (link + env + deploy):
 npx vercel login
 chmod +x scripts/vercel_setup_frontend.sh
 ./scripts/vercel_setup_frontend.sh
-npx vercel --prod --scope insightes-projects
+# Preview this branch on insightes-projects/frontend (Railway production API):
+./scripts/vercel_deploy_frontend.sh
+# Production promote (insighte.org) — only after merge to main:
+npx vercel --prod --scope insightes-projects --project frontend
 ```
 
-Deleted duplicate Vercel project `case-manager-new` on this team is fine — use **`frontend`** only.
+Deleted duplicate Vercel project `case-manager-new` on this team is fine — use **`frontend`** only. Do not recreate `insightecasestaging` or `insightecasetesting`.
 
 ## Pairing matrix
 

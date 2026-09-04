@@ -30,6 +30,8 @@ Add these from CI (`.github/workflows/ci.yml`):
 
 If check names differ, open a recent PR and copy exact names from the Checks tab.
 
+Do **not** require `Vercel – insightecasestaging` or `Vercel – insightecasetesting`. Those leftover Git integrations are unused; the only Vercel UI is `insightes-projects/frontend`. Disconnect those Git apps so they stop failing PRs.
+
 ## CODEOWNERS
 
 1. Edit [`.github/CODEOWNERS`](../.github/CODEOWNERS) — replace `@Insightee/TBD` with real GitHub usernames or teams.
