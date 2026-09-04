@@ -20,6 +20,7 @@ from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStat
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_billing_service as billing
 from app.services import therapist_invoice_labels as labels
+from app.services.leave_policy_service import allocations_for_leave
 from app.services.reports_export_helpers import (
     is_homecare_case,
     is_shadow_case,
@@ -391,8 +392,6 @@ def build_leave_lines_for_case(
     day_rate = _day_rate_inr(case, db=db, as_of=month_end)
     lines: list[dict[str, Any]] = []
 
-    from app.services.leave_policy_service import _paid_unpaid_for_leave
-
     for lv in leaves:
         if lv.status == LeaveStatus.PENDING:
             for d in _iter_leave_dates(lv, month_start, month_end):
@@ -436,21 +435,11 @@ def build_leave_lines_for_case(
         if lv.status != LeaveStatus.APPROVED:
             continue
 
-        year = month_start.year
-        paid_days, unpaid_days = _paid_unpaid_for_leave(db, lv, year)
-        total = max(leave_service_day_count(lv), 1)
         dates = _iter_leave_dates(lv, month_start, month_end)
         if not dates:
             continue
 
-        # Distribute paid/unpaid across overlapping dates. Fully paid/unpaid
-        # leaves must not invent the opposite kind via rounding.
-        if unpaid_days <= 0:
-            paid_left = len(dates)
-        elif paid_days <= 0:
-            paid_left = 0
-        else:
-            paid_left = min(len(dates), max(0, round(paid_days * (len(dates) / total))))
+        status_by_day = {item.day: item.status for item in allocations_for_leave(db, lv)}
         if not shadow:
             for d in dates:
                 lines.append(
@@ -472,8 +461,8 @@ def build_leave_lines_for_case(
                 )
             continue
 
-        for idx, d in enumerate(dates):
-            is_paid = idx < paid_left
+        for d in dates:
+            is_paid = status_by_day.get(d) == "paid"
             if is_paid:
                 lines.append(
                     {
@@ -512,12 +501,6 @@ def build_leave_lines_for_case(
                     }
                 )
     return lines
-
-
-def leave_service_day_count(leave: TherapistLeave) -> int:
-    from app.services import leave_service
-
-    return leave_service.leave_day_count(leave.start_date, leave.end_date) or 0
 
 
 def compute_leave_deduction_inr(
@@ -774,6 +757,24 @@ def month_attendance_facts(
         case_rejected_notes = [n for n in rejected_notes if n.get("case_code") == case_row.case_code]
         has_activity = _case_has_activity(attendance, pending_approval_lines, case_rejected_notes)
 
+        leave_day_lines: list[dict[str, Any]] = []
+        for lv in case_leaves:
+            if lv.status != LeaveStatus.APPROVED:
+                continue
+            for item in allocations_for_leave(db, lv):
+                if start <= item.day <= end:
+                    leave_day_lines.append(
+                        {
+                            "leave_id": lv.id,
+                            "date": item.day.isoformat(),
+                            "status": item.status,
+                            "ui_label": "Paid leave" if item.status == "paid" else "Unpaid leave",
+                        }
+                    )
+        leave_day_lines.sort(key=lambda row: row["date"])
+        if leave_day_lines:
+            has_activity = True
+
         _merge_attendance(summary, attendance, profile)
 
         case_payloads.append(
@@ -784,6 +785,7 @@ def month_attendance_facts(
                 "attendance": attendance,
                 "pending_approval_lines": pending_approval_lines,
                 "child_absence_lines": child_absence_lines,
+                "leave_day_lines": leave_day_lines,
                 "leave_lines": leave_lines,
                 "session_lines": session_lines,
                 "consuming_absences": consuming_absences,

@@ -62,6 +62,7 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 
 def _serialise(leave: TherapistLeave, db: Session) -> dict:
     retro = leave_migration.is_retroactive_leave(leave.start_date, leave.end_date)
+    day_allocations = policy.allocations_for_leave(db, leave)
     return {
         "id": leave.id,
         "therapist_user_id": leave.therapist_user_id,
@@ -73,6 +74,11 @@ def _serialise(leave: TherapistLeave, db: Session) -> dict:
         "billing_category": leave.billing_category.value if leave.billing_category else None,
         "paid_days": leave.paid_days,
         "unpaid_days": leave.unpaid_days,
+        "day_allocations": [item.to_dict() for item in day_allocations],
+        "split_message": policy.format_day_split_message(
+            day_allocations,
+            has_shadow_cases=bool(leave.includes_shadow_cases or leave.service_line == "shadow_support"),
+        ),
         "includes_shadow_cases": leave.includes_shadow_cases,
         "consulted_with_parents": leave.consulted_with_parents,
         "start_date": leave.start_date.isoformat(),
@@ -98,6 +104,7 @@ def _split_response(suggestion: policy.LeaveSplitSuggestion) -> dict:
         "total_days": suggestion.total_days,
         "has_shadow_cases": suggestion.has_shadow_cases,
         "message": suggestion.message,
+        "day_allocations": suggestion.day_allocations,
         "carry_forward_days": 0,
     }
 

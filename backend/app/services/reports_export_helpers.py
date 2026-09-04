@@ -441,25 +441,21 @@ def _leave_days_overlap_month(
     leaves: list[TherapistLeave],
     ym: str,
 ) -> dict[str, int]:
-    from app.services import leave_service
-    from app.services.leave_policy_service import _paid_unpaid_for_leave
+    from app.services.leave_policy_service import (
+        allocations_for_leave,
+        month_paid_unpaid_from_allocations,
+    )
 
     start, end = month_bounds(ym)
-    year = int(ym.split("-")[0])
     paid = unpaid = 0
     for lv in leaves:
-        p, u = _paid_unpaid_for_leave(db, lv, year)
-        overlap_start = max(lv.start_date, start)
-        overlap_end = min(lv.end_date, end)
-        if overlap_end < overlap_start:
-            continue
-        total = leave_service.leave_day_count(overlap_start, overlap_end)
-        if total <= 0:
-            continue
-        full = leave_service.leave_day_count(lv.start_date, lv.end_date) or 1
-        ratio = total / full
-        paid += round(p * ratio)
-        unpaid += round(u * ratio)
+        month_paid, month_unpaid = month_paid_unpaid_from_allocations(
+            allocations_for_leave(db, lv),
+            start,
+            end,
+        )
+        paid += month_paid
+        unpaid += month_unpaid
     return {"paid": paid, "unpaid": unpaid, "carry_forward": 0}
 
 

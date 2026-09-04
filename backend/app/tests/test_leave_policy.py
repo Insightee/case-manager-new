@@ -119,6 +119,30 @@ def test_credits_zero_without_employment_start():
         db.close()
 
 
+def test_allocate_leave_days_paid_first_across_months():
+    days = policy.allocate_leave_days(
+        date(2026, 8, 31),
+        date(2026, 9, 1),
+        paid_days=1,
+        unpaid_days=1,
+    )
+    assert [(item.day, item.status) for item in days] == [
+        (date(2026, 8, 31), "paid"),
+        (date(2026, 9, 1), "unpaid"),
+    ]
+    msg = policy.format_day_split_message(days, has_shadow_cases=True)
+    assert "31 Aug paid" in msg
+    assert "01 Sep unpaid" in msg
+    aug_paid, aug_unpaid = policy.month_paid_unpaid_from_allocations(
+        days, date(2026, 8, 1), date(2026, 8, 31)
+    )
+    sep_paid, sep_unpaid = policy.month_paid_unpaid_from_allocations(
+        days, date(2026, 9, 1), date(2026, 9, 30)
+    )
+    assert (aug_paid, aug_unpaid) == (1, 0)
+    assert (sep_paid, sep_unpaid) == (0, 1)
+
+
 def test_non_shadow_suggest_unpaid():
     db = SessionLocal()
     try:
