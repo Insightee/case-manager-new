@@ -23,6 +23,8 @@ def _prod_baseline(monkeypatch):
     monkeypatch.setattr(settings, "frontend_url", "https://app.example.com")
     monkeypatch.setattr(settings, "seed_demo_data", False)
     monkeypatch.setattr(settings, "email_provider", "smtp")
+    monkeypatch.setattr(settings, "integration_api_enabled", False)
+    monkeypatch.setattr(settings, "mcp_enabled", False)
     monkeypatch.delenv("SMTP_USERNAME", raising=False)
 
 
