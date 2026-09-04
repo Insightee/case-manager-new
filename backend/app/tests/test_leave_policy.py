@@ -111,22 +111,21 @@ def test_monthly_credits_and_consumption():
                     status=SessionStatus.SCHEDULED,
                 )
             )
-        db.add(
-            TherapistLeave(
-                therapist_user_id=user.id,
-                leave_type=LeaveType.ANNUAL,
-                service_line="shadow_support",
-                billing_category=LeaveBillingCategory.PAID,
-                includes_shadow_cases=True,
-                case_id=assignment.case_id,
-                case_ids=[assignment.case_id],
-                paid_days=6,
-                unpaid_days=1,
-                start_date=date(2026, 3, 1),
-                end_date=date(2026, 3, 7),
-                status=LeaveStatus.APPROVED,
-            )
+        leave = TherapistLeave(
+            therapist_user_id=user.id,
+            leave_type=LeaveType.ANNUAL,
+            service_line="shadow_support",
+            billing_category=LeaveBillingCategory.PAID,
+            includes_shadow_cases=True,
+            case_id=assignment.case_id,
+            case_ids=[assignment.case_id],
+            paid_days=6,
+            unpaid_days=1,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 7),
+            status=LeaveStatus.APPROVED,
         )
+        db.add(leave)
         db.commit()
 
         bal = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
@@ -134,6 +133,8 @@ def test_monthly_credits_and_consumption():
         assert bal["paid_leaves_taken"] == before["paid_leaves_taken"] + 6
         assert bal["unpaid_leaves_taken"] == before["unpaid_leaves_taken"] + 1
         assert bal["leave_credit_pending"] == max(earned - bal["paid_leaves_taken"], 0)
+        db.delete(leave)
+        db.commit()
     finally:
         db.close()
 

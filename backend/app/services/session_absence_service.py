@@ -412,7 +412,7 @@ def create_child_absence_backfill(
         raise HTTPException(
             status_code=409,
             detail={
-                "status": existing_day.status.value.lower(),
+                "status": _absence_status_for_leave_ui(existing_day.status).lower(),
                 "message": "Child absence already logged for this case on this day. One leave or child absence is allowed per case each day.",
                 "existing": True,
                 "absence_request": serialized,
@@ -493,7 +493,7 @@ def create_request(
         raise HTTPException(
             status_code=409,
             detail={
-                "status": existing_day.status.value.lower(),
+                "status": _absence_status_for_leave_ui(existing_day.status).lower(),
                 "message": "Child absence already logged for this case on this day. One leave or child absence is allowed per case each day.",
                 "existing": True,
                 "absence_request": serialized,

@@ -359,8 +359,9 @@ def test_missing_employment_start_leaves_all_unpaid():
         profile.employment_start_date = None
         db.commit()
 
-        _add_session(db, case_id=shadow.id, therapist_id=therapist.id, day=FRI)
-        _add_session(db, case_id=shadow.id, therapist_id=therapist.id, day=MON)
+        june_fri, june_mon = date(2026, 6, 5), date(2026, 6, 8)
+        _add_session(db, case_id=shadow.id, therapist_id=therapist.id, day=june_fri)
+        _add_session(db, case_id=shadow.id, therapist_id=therapist.id, day=june_mon)
         bal = policy.get_leave_balance(db, therapist, year=2026, as_of=date(2026, 6, 18))
         assert bal["balance_updated"] is False
         assert bal["credits_earned"] == 0
@@ -368,8 +369,8 @@ def test_missing_employment_start_leaves_all_unpaid():
         split = policy.suggest_leave_split(
             db,
             therapist,
-            start_date=FRI,
-            end_date=MON,
+            start_date=june_fri,
+            end_date=june_mon,
             service_line="shadow_support",
             case_ids=[shadow.id],
         )

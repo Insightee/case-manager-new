@@ -81,6 +81,7 @@ def _fresh_scheduled_session(headers: dict) -> int:
     from app.core.database import SessionLocal
     from app.models.session import Session as TherapySession
     from app.models.session import SessionMode, SessionStatus
+    from app.services.leave_dates_service import active_absence_on_case_day, active_leave_for_case_day
 
     me = client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200, me.text
@@ -97,6 +98,38 @@ def _fresh_scheduled_session(headers: dict) -> int:
         for _attempt in range(24):
             _fresh_session_counter += 1
             case_id = int(case_items[_fresh_session_counter % len(case_items)]["id"])
+            if active_absence_on_case_day(db, case_id, day) or active_leave_for_case_day(
+                db, therapist_id, case_id, day
+            ):
+                from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+                from app.models.case import BillingType, Case, CaseDayType, CaseStatus, CompensationMode
+                from app.models.child import Child
+
+                child = db.scalars(select(Child).limit(1)).first()
+                if not child:
+                    continue
+                fresh_case = Case(
+                    case_code=f"ABSENCE-ISO-{_fresh_session_counter}",
+                    child_id=child.id,
+                    service_type="Homecare",
+                    product_module="homecare",
+                    status=CaseStatus.ACTIVE,
+                    billing_type=BillingType.PER_SESSION,
+                    compensation_mode=CompensationMode.FIXED_LUMP,
+                    day_type=CaseDayType.FULL_DAY,
+                )
+                db.add(fresh_case)
+                db.flush()
+                db.add(
+                    CaseAssignment(
+                        case_id=fresh_case.id,
+                        therapist_user_id=therapist_id,
+                        status=CaseAssignmentStatus.ACTIVE,
+                        start_date=day,
+                    )
+                )
+                db.flush()
+                case_id = fresh_case.id
             hour = 6 + (_fresh_session_counter % 14)
             minute = (_fresh_session_counter * 7) % 50
             end_minute = minute + 25
