@@ -202,8 +202,10 @@ export function TherapistLeaveRequestFields({
         </div>
       ) : null}
 
-      {!hideLeaveCreditDetails && suggestion ? (
-        <p className="therapist-leave-page__suggest">{formatLeaveSplitLabel(suggestion)}</p>
+      {suggestion && formatLeaveSplitLabel(suggestion) ? (
+        <p className="therapist-leave-page__suggest" role="status">
+          {formatLeaveSplitLabel(suggestion)}
+        </p>
       ) : null}
 
       {!hideLeaveCreditDetails && showLeaveType ? (

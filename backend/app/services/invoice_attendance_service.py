@@ -19,6 +19,7 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_billing_service as billing
+from app.services.leave_policy_service import allocations_for_leave
 from app.services.reports_export_helpers import (
     leave_applies_to_case,
     leave_days_in_month,
@@ -590,6 +591,24 @@ def month_attendance_facts(
         case_rejected_notes = [n for n in rejected_notes if n.get("case_code") == case_row.case_code]
         has_activity = _case_has_activity(attendance, pending_approval_lines, case_rejected_notes)
 
+        leave_day_lines: list[dict[str, Any]] = []
+        for lv in case_leaves:
+            if lv.status != LeaveStatus.APPROVED:
+                continue
+            for item in allocations_for_leave(db, lv):
+                if start <= item.day <= end:
+                    leave_day_lines.append(
+                        {
+                            "leave_id": lv.id,
+                            "date": item.day.isoformat(),
+                            "status": item.status,
+                            "ui_label": "Paid leave" if item.status == "paid" else "Unpaid leave",
+                        }
+                    )
+        leave_day_lines.sort(key=lambda row: row["date"])
+        if leave_day_lines:
+            has_activity = True
+
         _merge_attendance(summary, attendance, profile)
 
         case_payloads.append(
@@ -600,6 +619,7 @@ def month_attendance_facts(
                 "attendance": attendance,
                 "pending_approval_lines": pending_approval_lines,
                 "child_absence_lines": child_absence_lines,
+                "leave_day_lines": leave_day_lines,
                 "session_lines": session_lines,
                 "consuming_absences": consuming_absences,
             }

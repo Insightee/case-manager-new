@@ -596,6 +596,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
             "pending_late_inr": pending_case_inr,
             "session_lines": session_lines,
             "child_absence_lines": child_absence_lines,
+            "leave_day_lines": bucket.get("leave_day_lines") or [],
             "pending_approval_lines": pending_approval_lines,
             "pending_late_lines": pending_approval_lines,
             "cycle": {
@@ -627,7 +628,11 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         "pending_late_inr": round(pending_approval_inr, 2),
         "pending_late_count": pending_approval_count,
         "leave_deduction_inr": leave_deduction_inr,
-        "leave_details": [],
+        "leave_details": [
+            {**line, "case_id": group["case_id"], "case_code": group["case_code"]}
+            for group in case_groups
+            for line in (group.get("leave_day_lines") or [])
+        ],
         "leave_balance": leave_balance,
         "attendance_summary": facts.get("attendance_summary") or {},
         "rejected_notes": facts.get("rejected_notes") or [],
@@ -917,6 +922,7 @@ def _merge_case_with_attendance_facts(stored_case: dict, fact_case: dict | None)
         "has_activity",
         "billing_profile",
         "child_absence_lines",
+        "leave_day_lines",
         "pending_approval_lines",
         "pending_approval_inr",
     ):

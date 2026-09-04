@@ -321,11 +321,13 @@ export function InvoiceBreakdownView({
           caseGroup.pending_approval_lines || caseGroup.pending_late_lines || []
         const absenceLines = (caseGroup.child_absence_lines || []).filter((l) => l.included)
         const pendingAbsenceLines = (caseGroup.child_absence_lines || []).filter((l) => !l.included)
+        const leaveDayLines = caseGroup.leave_day_lines || []
         const hasActivity = caseGroup.has_activity !== false && (
           caseGroup.has_activity ||
           (caseGroup.session_lines?.length || 0) > 0 ||
           pendingLines.length > 0 ||
-          (caseGroup.child_absence_lines?.length || 0) > 0
+          (caseGroup.child_absence_lines?.length || 0) > 0 ||
+          leaveDayLines.length > 0
         )
         const attendanceStrip = hasActivity
           ? formatCaseAttendanceStrip(caseGroup.attendance, caseGroup.billing_profile)
@@ -365,6 +367,18 @@ export function InvoiceBreakdownView({
                 editable={editable}
                 onToggle={onToggleSession ? (line) => onToggleSession(caseGroup.case_id, line) : undefined}
               />
+              {leaveDayLines.length > 0 ? (
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase text-slate-700">Leave this month</p>
+                  <ul className="space-y-1 text-sm text-slate-700">
+                    {leaveDayLines.map((line) => (
+                      <li key={`${line.leave_id}-${line.date}`}>
+                        {formatDisplayDate(line.date)} · {line.ui_label || (line.status === 'paid' ? 'Paid leave' : 'Unpaid leave')}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {absenceLines.length > 0 ? (
                 <div className="mt-4 border-t border-indigo-100 pt-3">
                   <p className="mb-2 text-xs font-semibold uppercase text-indigo-800">Child absence</p>

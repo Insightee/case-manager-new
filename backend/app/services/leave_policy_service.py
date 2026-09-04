@@ -1,9 +1,8 @@
 """Monthly leave credit accrual, consumption, and paid/unpaid split suggestions."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
-from typing import Optional
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +17,123 @@ from app.services.leave_bulk_import_service import get_year_snapshot
 SHADOW_SERVICE_LINE = "shadow_support"
 
 
+@dataclass(frozen=True)
+class LeaveDayAllocation:
+    day: date
+    status: str
+
+    def to_dict(self) -> dict:
+        return {"date": self.day.isoformat(), "status": self.status}
+
+
+def iter_leave_dates(start: date, end: date) -> list[date]:
+    if end < start:
+        return []
+    out: list[date] = []
+    cursor = start
+    while cursor <= end:
+        out.append(cursor)
+        cursor += timedelta(days=1)
+    return out
+
+
+def allocate_leave_days(
+    start: date,
+    end: date,
+    *,
+    paid_days: int,
+    unpaid_days: int,
+) -> list[LeaveDayAllocation]:
+    """Assign paid credits to the earliest days; leftover days are unpaid."""
+    dates = iter_leave_dates(start, end)
+    total = len(dates)
+    if total <= 0:
+        return []
+    paid = max(int(paid_days or 0), 0)
+    unpaid = max(int(unpaid_days or 0), 0)
+    if paid + unpaid != total:
+        paid = min(paid, total)
+        unpaid = total - paid
+    return [
+        LeaveDayAllocation(day=day, status="paid" if idx < paid else "unpaid")
+        for idx, day in enumerate(dates)
+    ]
+
+
+def format_day_split_message(
+    allocations: list[LeaveDayAllocation],
+    *,
+    has_shadow_cases: bool,
+) -> str:
+    paid = [a.day for a in allocations if a.status == "paid"]
+    unpaid = [a.day for a in allocations if a.status == "unpaid"]
+
+    def _fmt(days: list[date]) -> str:
+        return ", ".join(d.strftime("%d %b") for d in days)
+
+    if not has_shadow_cases:
+        return "Homecare-only — sessions will be cancelled; no leave credits used."
+    if paid and unpaid:
+        unpaid_word = "day" if len(unpaid) == 1 else "days"
+        return (
+            f"{_fmt(paid)} paid. {_fmt(unpaid)} unpaid — "
+            f"you will not be paid for the unpaid {unpaid_word}."
+        )
+    if paid:
+        return f"{_fmt(paid)} paid leave"
+    if unpaid:
+        unpaid_word = "this day" if len(unpaid) == 1 else "these days"
+        return f"{_fmt(unpaid)} unpaid — you will not be paid for {unpaid_word}."
+    return ""
+
+
+def paid_unpaid_totals_for_leave(db: Session, leave: TherapistLeave) -> tuple[int, int]:
+    total = leave_service.leave_day_count(leave.start_date, leave.end_date)
+    if total <= 0:
+        return 0, 0
+    if leave.paid_days is not None or leave.unpaid_days is not None:
+        paid = max(int(leave.paid_days or 0), 0)
+        unpaid = max(int(leave.unpaid_days or 0), 0)
+        if paid + unpaid != total:
+            paid = min(paid, total)
+            unpaid = total - paid
+        return paid, unpaid
+    includes_shadow = _leave_includes_shadow(db, leave)
+    if not includes_shadow:
+        return 0, total
+    cat = leave.billing_category
+    if cat is None:
+        cat = LeaveBillingCategory.UNPAID if leave.leave_type == LeaveType.UNPAID else LeaveBillingCategory.PAID
+    if cat in (LeaveBillingCategory.PAID, LeaveBillingCategory.CARRY_FORWARD):
+        return total, 0
+    return 0, total
+
+
+def allocations_for_leave(db: Session, leave: TherapistLeave) -> list[LeaveDayAllocation]:
+    paid, unpaid = paid_unpaid_totals_for_leave(db, leave)
+    return allocate_leave_days(
+        leave.start_date,
+        leave.end_date,
+        paid_days=paid,
+        unpaid_days=unpaid,
+    )
+
+
+def month_paid_unpaid_from_allocations(
+    allocations: list[LeaveDayAllocation],
+    start: date,
+    end: date,
+) -> tuple[int, int]:
+    paid = unpaid = 0
+    for item in allocations:
+        if start <= item.day <= end:
+            if item.status == "paid":
+                paid += 1
+            else:
+                unpaid += 1
+    return paid, unpaid
+
+
 @dataclass
 class LeaveSplitSuggestion:
     paid_days: int
@@ -25,11 +141,32 @@ class LeaveSplitSuggestion:
     total_days: int
     has_shadow_cases: bool
     message: str
+    day_allocations: list[dict] = field(default_factory=list)
 
     @property
     def carry_forward_days(self) -> int:
         """Legacy alias — carry forward is not used in v2 policy."""
         return 0
+
+
+def _split_suggestion(
+    *,
+    start: date,
+    end: date,
+    paid_days: int,
+    unpaid_days: int,
+    has_shadow_cases: bool,
+    message: str | None = None,
+) -> LeaveSplitSuggestion:
+    allocations = allocate_leave_days(start, end, paid_days=paid_days, unpaid_days=unpaid_days)
+    return LeaveSplitSuggestion(
+        paid_days=paid_days,
+        unpaid_days=unpaid_days,
+        total_days=paid_days + unpaid_days,
+        has_shadow_cases=has_shadow_cases,
+        message=message or format_day_split_message(allocations, has_shadow_cases=has_shadow_cases),
+        day_allocations=[item.to_dict() for item in allocations],
+    )
 
 
 def is_staff_leave_user(user: User) -> bool:
@@ -85,36 +222,13 @@ def _paid_unpaid_for_leave(db: Session, leave: TherapistLeave, year: int) -> tup
     """Paid/unpaid day counts for a leave row within a calendar year."""
     if leave.status != LeaveStatus.APPROVED:
         return 0, 0
-    days = leave_service.days_in_calendar_year(leave, year)
-    if days <= 0:
-        return 0, 0
-
-    if leave.paid_days is not None or leave.unpaid_days is not None:
-        total = leave_service.leave_day_count(leave.start_date, leave.end_date)
-        if total <= 0:
-            return 0, 0
-        paid = int(leave.paid_days or 0)
-        unpaid = int(leave.unpaid_days or 0)
-        if paid + unpaid != total and total > 0:
-            ratio_paid = paid / total
-            paid = round(days * ratio_paid)
-            unpaid = max(days - paid, 0)
-        else:
-            paid = min(paid, days)
-            unpaid = min(unpaid, max(days - paid, 0))
-        if not _leave_includes_shadow(db, leave):
-            return 0, days
-        return paid, unpaid
-
-    includes_shadow = _leave_includes_shadow(db, leave)
-    cat = leave.billing_category
-    if cat is None:
-        cat = LeaveBillingCategory.UNPAID if leave.leave_type == LeaveType.UNPAID else LeaveBillingCategory.PAID
-    if not includes_shadow:
-        return 0, days
-    if cat in (LeaveBillingCategory.PAID, LeaveBillingCategory.CARRY_FORWARD):
-        return days, 0
-    return 0, days
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    return month_paid_unpaid_from_allocations(
+        allocations_for_leave(db, leave),
+        year_start,
+        year_end,
+    )
 
 
 @dataclass
@@ -323,10 +437,11 @@ def compute_leave_split(
         _, has_shadow, _ = resolve_case_context(db, user.id, case_ids)
 
     if not has_shadow:
-        return LeaveSplitSuggestion(
+        return _split_suggestion(
+            start=start_date,
+            end=end_date,
             paid_days=0,
             unpaid_days=total,
-            total_days=total,
             has_shadow_cases=False,
             message="Homecare-only — sessions will be cancelled; no leave credits used.",
         )
@@ -334,18 +449,12 @@ def compute_leave_split(
     remaining = balance["leave_credit_pending"]
     paid = min(total, remaining)
     unpaid = max(total - paid, 0)
-    if paid and unpaid:
-        msg = f"{paid} paid leave + {unpaid} unpaid leave"
-    elif paid:
-        msg = f"{paid} paid leave day{'s' if paid != 1 else ''}"
-    else:
-        msg = f"{total} unpaid leave day{'s' if total != 1 else ''} — no credits remaining"
-    return LeaveSplitSuggestion(
+    return _split_suggestion(
+        start=start_date,
+        end=end_date,
         paid_days=paid,
         unpaid_days=unpaid,
-        total_days=total,
         has_shadow_cases=True,
-        message=msg,
     )
 
 
@@ -362,10 +471,11 @@ def suggest_leave_split(
     if not case_ids:
         total = leave_service.leave_day_count(start_date, end_date)
         if service_line.strip().lower() != SHADOW_SERVICE_LINE:
-            return LeaveSplitSuggestion(
+            return _split_suggestion(
+                start=start_date,
+                end=end_date,
                 paid_days=0,
                 unpaid_days=total,
-                total_days=total,
                 has_shadow_cases=False,
                 message="No shadow cases — leave will not use credits.",
             )
@@ -374,18 +484,12 @@ def suggest_leave_split(
         remaining = balance["leave_credit_pending"]
         paid = min(total, remaining)
         unpaid = max(total - paid, 0)
-        if paid and unpaid:
-            msg = f"{paid} paid leave + {unpaid} unpaid leave"
-        elif paid:
-            msg = f"{paid} paid leave day{'s' if paid != 1 else ''}"
-        else:
-            msg = f"{total} unpaid leave day{'s' if total != 1 else ''} — no credits remaining"
-        return LeaveSplitSuggestion(
+        return _split_suggestion(
+            start=start_date,
+            end=end_date,
             paid_days=paid,
             unpaid_days=unpaid,
-            total_days=total,
             has_shadow_cases=True,
-            message=msg,
         )
     return compute_leave_split(
         db, user, start_date=start_date, end_date=end_date, case_ids=case_ids, year=year
