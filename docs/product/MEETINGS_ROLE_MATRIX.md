@@ -45,11 +45,11 @@ Unified calendar feed: `GET /api/v1/calendar/events` (`event_type`: `cm_meeting`
 
 ## Slot booking rules
 
-1. Frontend: `BookMeetingModal` calls `GET /api/v1/calendar/availability` with intersected attendee IDs.
-2. Therapist path: CM + booking therapist + parent (only if client invited).
-3. Backend: `create_meeting` / `reschedule` reject times not in `free_slots` for attendees.
+1. Frontend: `BookMeetingModal` calls `GET /api/v1/calendar/availability` with **case manager user id only** (host calendar).
+2. Therapist path: slots reflect the **assigned case manager's** hours — therapist personal availability does not hide CM open times.
+3. Backend: `create_meeting` / `reschedule` validate against **CM host availability**; `check_conflicts` still checks all participants for double-booking.
 4. Configured availability: weekdays without saved rules are **closed** (not default open).
-5. **One rule**: `StaffAvailabilityRule` is canonical; saves sync to `TherapistScheduleTemplate` and session materialization reads staff rules when a booking policy exists.
+5. **One rule**: `StaffAvailabilityRule` is canonical for session materialization; CM meetings use the CM's staff rules as host.
 6. **Weekends**: off by default org-wide (`SCHEDULING_WEEKENDS_ENABLED=false`); when true, default templates include Sat/Sun until staff saves narrower hours.
 
 ## Deferred (next pass)

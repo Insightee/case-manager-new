@@ -30,13 +30,10 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
       return
     }
     setSlotsLoading(true)
-    const adminIds = meeting.admin_user_ids?.length
-      ? meeting.admin_user_ids
-      : (meeting.attendees || []).filter((a) => a.role === 'admin').map((a) => a.user_id)
     const qs = buildSharedAvailabilityQuery({
       targetDate: form.scheduled_date,
       durationMinutes: form.duration_minutes,
-      userIds: [meeting.case_manager_user_id, meeting.therapist_user_id, ...adminIds],
+      userIds: meeting.case_manager_user_id ? [meeting.case_manager_user_id] : [],
     })
     apiFetch(`/api/v1/calendar/availability?${qs}`)
       .then(setSlots)
@@ -46,9 +43,6 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
     form.scheduled_date,
     form.duration_minutes,
     meeting.case_manager_user_id,
-    meeting.therapist_user_id,
-    meeting.admin_user_ids,
-    meeting.attendees,
   ])
 
   async function submit(e) {

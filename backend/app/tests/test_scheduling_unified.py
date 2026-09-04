@@ -6,13 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.database import SessionLocal
 from app.core.scheduling_defaults import default_open_windows, default_weekday_indices
 from app.main import app
 from app.models.user import User
 from app.services import availability_service, availability_sync
 from app.services.slot_calendar_service import get_or_create_template
 from app.tests.conftest import login_headers
-from app.core.database import SessionLocal
 
 client = TestClient(app)
 
@@ -32,6 +32,11 @@ def _get_user(email: str) -> User:
         return user
     finally:
         db.close()
+
+
+def _save_availability(headers: dict[str, str], user_id: int, payload: dict[str, object]) -> None:
+    res = client.put(f"/api/v1/users/{user_id}/availability", headers=headers, json=payload)
+    assert res.status_code == 200, res.text
 
 
 def test_weekends_disabled_by_default():
@@ -156,6 +161,123 @@ def test_materialize_uses_staff_rules_when_policy_exists():
     assert slots_res.status_code == 200, slots_res.text
     starts = {row["start_time"][:5] for row in slots_res.json()}
     assert starts == {"11:00"}
+
+
+def test_therapist_can_book_cm_saturday_without_therapist_saturday():
+    """Therapist booking uses CM host calendar only — therapist Sat closed must not block CM Sat slots."""
+    from datetime import date, timedelta
+
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+    from app.models.user import User
+
+    admin_headers = login_headers(client, "superadmin@demo.com")
+    th_headers = login_headers(client, "therapist@demo.com")
+
+    db = SessionLocal()
+    try:
+        therapist = db.query(User).filter(User.email == "therapist@demo.com").one()
+        case = db.query(Case).filter(Case.case_manager_user_id.isnot(None)).first()
+        assert case is not None
+        cm_user_id = case.case_manager_user_id
+    finally:
+        db.close()
+
+    saturday = date.today()
+    while saturday.weekday() != 5:
+        saturday += timedelta(days=1)
+    if saturday <= date.today():
+        saturday += timedelta(days=7)
+
+    _save_availability(
+        admin_headers,
+        cm_user_id,
+        {
+            "rules": [
+                {
+                    "weekday": 5,
+                    "start_time": "10:00",
+                    "end_time": "12:00",
+                    "slot_granularity_minutes": 30,
+                }
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 0,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    _save_availability(
+        admin_headers,
+        therapist.id,
+        {
+            "rules": [
+                {
+                    "weekday": 0,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 0,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+
+    slots_res = client.get(
+        "/api/v1/calendar/availability",
+        headers=th_headers,
+        params={
+            "user_ids": str(cm_user_id),
+            "date_from": saturday.isoformat(),
+            "date_to": saturday.isoformat(),
+            "duration_minutes": 30,
+        },
+    )
+    assert slots_res.status_code == 200, slots_res.text
+    saturday_times = {slot["time"] for slot in slots_res.json()["slots"]}
+    assert "10:00" in saturday_times
+
+    bookable = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert bookable.status_code == 200, bookable.text
+    case_id = next(
+        (row["id"] for row in bookable.json() if row.get("case_manager_user_id") == cm_user_id),
+        case.id,
+    )
+
+    create_res = client.post(
+        "/api/v1/meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": saturday.isoformat(),
+            "scheduled_time": "10:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "title": "Saturday CM slot test",
+            "meeting_url": "https://meet.google.com/test-saturday-cm",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+            "invite_client": False,
+        },
+    )
+    assert create_res.status_code == 201, create_res.text
+    meeting_id = create_res.json()["id"]
+
+    cancel_res = client.post(
+        f"/api/v1/meetings/{meeting_id}/cancel",
+        headers=th_headers,
+        json={"reason": "Test cleanup"},
+    )
+    assert cancel_res.status_code == 200, cancel_res.text
 
 
 def test_template_days_to_rules_and_back():
