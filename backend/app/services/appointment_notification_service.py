@@ -12,6 +12,11 @@ from app.models.slot import TherapistSlot
 from app.models.user import User
 from app.services import email_service
 from app.services import notification_service
+from app.services.parent_notification_preferences import parent_wants_email
+
+
+def _parent_wants_appointment_email(parent: User) -> bool:
+    return parent_wants_email(parent, "appointments")
 
 
 def _parents_for_case(db: Session, case_id: int) -> list[int]:
@@ -73,13 +78,14 @@ def notify_parents_session_cancelled(
             entity_type="appointment",
             entity_id=slot.id,
         )
-        email_service.booking_cancelled_email(
-            to=parent.email,
-            child_name=child,
-            when=when,
-            reason=reason,
-            portal_url=portal,
-        )
+        if _parent_wants_appointment_email(parent):
+            email_service.booking_cancelled_email(
+                to=parent.email,
+                child_name=child,
+                when=when,
+                reason=reason,
+                portal_url=portal,
+            )
         count += 1
     return count
 
@@ -132,13 +138,14 @@ def notify_parents_therapist_booked(
             entity_type="appointment",
             entity_id=slot.id,
         )
-        email_service.booking_confirmed_email(
-            to=parent.email,
-            child_name=child,
-            therapist_name=therapist_name,
-            when=when,
-            portal_url=portal,
-        )
+        if _parent_wants_appointment_email(parent):
+            email_service.booking_confirmed_email(
+                to=parent.email,
+                child_name=child,
+                therapist_name=therapist_name,
+                when=when,
+                portal_url=portal,
+            )
         count += 1
     return count
 
@@ -169,11 +176,12 @@ def notify_recurring_assigned(
             entity_type="recurring_schedule",
             entity_id=record.id,
         )
-        email_service.send_email(
-            to=parent.email,
-            subject=f"Recurring sessions — {child}",
-            body_text=body + f"\n{portal}\n",
-        )
+        if _parent_wants_appointment_email(parent):
+            email_service.send_email(
+                to=parent.email,
+                subject=f"Recurring sessions — {child}",
+                body_text=body + f"\n{portal}\n",
+            )
         count += 1
     if therapist:
         notification_service.create_notification(
@@ -216,13 +224,14 @@ def notify_parents_session_rescheduled(
             entity_type="appointment",
             entity_id=new_slot.id,
         )
-        email_service.booking_rescheduled_email(
-            to=parent.email,
-            child_name=child,
-            old_when=old_when,
-            new_when=new_when,
-            portal_url=portal,
-        )
+        if _parent_wants_appointment_email(parent):
+            email_service.booking_rescheduled_email(
+                to=parent.email,
+                child_name=child,
+                old_when=old_when,
+                new_when=new_when,
+                portal_url=portal,
+            )
         count += 1
     return count
 
@@ -312,7 +321,8 @@ def notify_parents_reschedule_pending(
             entity_type="appointment",
             entity_id=new_slot.id,
         )
-        email_service.send_email(to=parent.email, subject="Reschedule pending", body_text=body)
+        if _parent_wants_appointment_email(parent):
+            email_service.send_email(to=parent.email, subject="Reschedule pending", body_text=body)
         count += 1
     return count
 
@@ -370,5 +380,5 @@ def notify_parents_reschedule_declined(
             db, user_id=uid, title="Reschedule declined", body=body, entity_type="appointment", entity_id=old_slot.id
         )
         u = db.get(User, uid)
-        if u:
+        if u and _parent_wants_appointment_email(u):
             email_service.send_email(to=u.email, subject="Reschedule declined", body_text=body)

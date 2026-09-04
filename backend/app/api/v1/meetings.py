@@ -599,6 +599,47 @@ def check_conflicts(
     return False, None
 
 
+def _validate_slot_in_availability(
+    db: Session,
+    *,
+    target_date: date,
+    target_time: time,
+    duration_minutes: int,
+    host_user_id: int | None,
+    user: User,
+) -> None:
+    """Ensure the requested start time falls in the case manager's (host) availability."""
+    if not host_user_id or not target_time:
+        return
+    from datetime import datetime
+
+    from app.core.timezone import IST, now_ist
+
+    start_dt = datetime.combine(target_date, target_time, tzinfo=IST)
+    if start_dt <= now_ist():
+        return
+    slots_payload = availability_service.free_slots(
+        db,
+        [host_user_id],
+        target_date,
+        target_date,
+        duration_minutes,
+        user,
+        ignore_busy=True,
+    )
+    requested = target_time.strftime("%H:%M")
+    allowed = {
+        slot["time"]
+        for slot in slots_payload.get("slots", [])
+        if slot.get("date") == target_date.isoformat()
+    }
+    if requested not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="That time isn't open on the case manager's calendar — pick one of the available slots.",
+        )
+
+
 @router.get("/meetings/bookable-cases")
 @compat_router.get("/cm-meetings/bookable-cases")
 def list_bookable_cases_for_meetings(
@@ -636,19 +677,13 @@ def get_meetings_availability(
     _require_meetings_read(user)
     _validate_meeting_duration(duration_minutes)
 
-    attendees = []
-    if case_manager_id:
-        attendees.append(case_manager_id)
-    if therapist_id:
-        attendees.append(therapist_id)
-    if parent_id:
-        attendees.append(parent_id)
-    if mentor_id:
-        attendees.append(mentor_id)
-    attendees.extend(admin_ids)
+    # CM meetings are booked against the case manager's calendar (host), not attendee intersection.
+    host_id = case_manager_id
+    if not host_id:
+        raise HTTPException(status_code=400, detail="case_manager_id is required")
     return availability_service.free_slots(
         db,
-        attendees,
+        [host_id],
         target_date,
         target_date,
         duration_minutes,
@@ -749,6 +784,14 @@ def create_meeting(
             attendees.append(payload.mentor_user_id)
         attendees.extend(payload.admin_user_ids)
 
+        _validate_slot_in_availability(
+            db,
+            target_date=payload.scheduled_date,
+            target_time=payload.scheduled_time,
+            duration_minutes=payload.duration_minutes,
+            host_user_id=cm_id,
+            user=user,
+        )
         conflicted, reason = check_conflicts(db, payload.scheduled_date, payload.scheduled_time, payload.duration_minutes, attendees)
         if conflicted:
             raise HTTPException(status_code=400, detail=f"Double booking error: {reason}")
@@ -831,6 +874,14 @@ def reschedule_meeting(
     # Prevent double booking on new slot
     attendees = list(meeting_participant_user_ids(meeting))
 
+    _validate_slot_in_availability(
+        db,
+        target_date=payload.scheduled_date,
+        target_time=payload.scheduled_time,
+        duration_minutes=payload.duration_minutes,
+        host_user_id=meeting.case_manager_user_id,
+        user=user,
+    )
     conflicted, reason = check_conflicts(
         db,
         payload.scheduled_date,

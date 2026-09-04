@@ -19,6 +19,7 @@ from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.services import case_service, log_service, notification_service
 from app.services import parent_service
+from app.services.parent_notification_preferences import parent_wants_email
 from app.services.email.service import (
     session_log_published_parent_email,
     session_log_submitted_parent_email,
@@ -250,7 +251,7 @@ def notify_parents_session_log_submitted(
             entity_id=log.id,
         )
         parent_user = db.get(User, uid)
-        if parent_user and parent_user.email:
+        if parent_user and parent_user.email and parent_wants_email(parent_user, "session_logs"):
             session_log_submitted_parent_email(
                 to=parent_user.email,
                 parent_name=parent_user.full_name or parent_user.email,
@@ -299,7 +300,7 @@ def notify_parents_session_log_approved(
         )
         if send_email:
             parent_user = db.get(User, uid)
-            if parent_user and parent_user.email:
+            if parent_user and parent_user.email and parent_wants_email(parent_user, "session_logs"):
                 session_log_reviewed_parent_email(
                     to=parent_user.email,
                     parent_name=parent_user.full_name or parent_user.email,

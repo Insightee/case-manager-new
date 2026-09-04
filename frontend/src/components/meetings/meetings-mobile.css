@@ -1,0 +1,122 @@
+/* Mobile-first meetings modals and layout (thumb-zone friendly) */
+
+.meetings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  padding: 0;
+}
+
+.meetings-modal-panel {
+  width: 100%;
+  max-width: 540px;
+  max-height: 92vh;
+  overflow-y: auto;
+  background: #fff;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  padding: 20px 18px 24px;
+  box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+}
+
+.meetings-modal-panel__title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 16px;
+}
+
+.meetings-modal-panel__subtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin: -12px 0 20px;
+}
+
+.meetings-modal-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.meetings-modal-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), #fff 40%);
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.meetings-modal-actions button[type='submit'] {
+  flex: 1;
+  min-height: 46px;
+}
+
+.meetings-availability-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.meetings-availability-exceptions-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.meetings-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .meetings-modal-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .meetings-availability-policy-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .meetings-availability-exceptions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .meetings-modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .meetings-modal-actions button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .admin-reports__kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 641px) {
+  .meetings-modal-backdrop {
+    align-items: center;
+    padding: 16px;
+  }
+
+  .meetings-modal-panel {
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  }
+}

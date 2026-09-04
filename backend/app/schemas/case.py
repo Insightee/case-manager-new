@@ -74,6 +74,7 @@ class CaseRead(CaseBillingFields):
     case_manager_name: Optional[str] = None
     case_manager_email: Optional[str] = None
     access_as_mentor: bool = False
+    primary_parent_user_id: Optional[int] = None
     parent_contact: Optional[CaseContactRead] = None
     therapist_contact: Optional[CaseContactRead] = None
     notes: Optional[str] = None

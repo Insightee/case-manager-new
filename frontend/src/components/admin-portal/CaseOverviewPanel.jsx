@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
+import { displayCaseClientName } from '../../lib/adminCasePipeline.js'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { CaseZohoIdForm } from './CaseZohoIdForm.jsx'
@@ -28,7 +29,7 @@ function contactBlock(contact) {
 
   return (
     <div className="admin-case-overview__contact">
-      <p className="admin-case-overview__contact-name">{contact.name || 'Unlinked'}</p>
+      <p className="admin-case-overview__contact-name">{displayCaseClientName(contact.name) || 'Unlinked'}</p>
       <p className="admin-case-overview__contact-links">
         {contact.phone ? (
           <a href={contactHref('phone', contact.phone)} className="admin-case-overview__contact-link">

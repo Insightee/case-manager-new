@@ -105,8 +105,6 @@ export function defaultOpenedRange(referenceDate = new Date()) {
   return { from: isoDay(start), to: isoDay(today) }
 }
 
-const DEFAULT_OPENED = defaultOpenedRange()
-
 const EMPTY_FILTERS = {
   queue: 'all',
   search: '',
@@ -115,11 +113,11 @@ const EMPTY_FILTERS = {
   caseManagerId: 'all',
   therapistId: 'all',
   childId: 'all',
-  openedPreset: 'custom',
+  openedPreset: 'all',
   openedMonth: 'all',
   openedYear: 'all',
-  dateFrom: DEFAULT_OPENED.from,
-  dateTo: DEFAULT_OPENED.to,
+  dateFrom: '',
+  dateTo: '',
   operationalStage: 'all',
   unassignedCmOnly: false,
   unassignedTherapistOnly: false,
@@ -196,6 +194,14 @@ const STAFF_ROLES_BLOCKING_CM_ONLY = new Set([
 export function isCaseManagerOnlyRole(roles = []) {
   if (!roles.includes('CASE_MANAGER')) return false
   return !roles.some((r) => STAFF_ROLES_BLOCKING_CM_ONLY.has(r))
+}
+
+/** Collapse duplicated import labels like "Acme Acme" for case headers. */
+export function displayCaseClientName(name) {
+  if (!name) return ''
+  const text = String(name).trim().replace(/\s+/g, ' ')
+  const repeated = text.match(/^(.+?)\s+\1$/)
+  return repeated ? repeated[1] : text
 }
 
 export function defaultCaseManagerFilterId(user) {
@@ -403,12 +409,9 @@ export function countActivePipelineFilters(filters = {}) {
   if (f.caseManagerId !== 'all') n += 1
   if (f.therapistId !== 'all') n += 1
   if (f.childId !== 'all') n += 1
-  const defaultRange = defaultOpenedRange()
-  if (f.openedPreset === 'all') {
-    n += 1
-  } else if (f.openedPreset === 'custom') {
-    if (f.dateFrom !== defaultRange.from || f.dateTo !== defaultRange.to) n += 1
-  } else if (f.openedPreset !== 'this_month') {
+  if (f.openedPreset === 'custom') {
+    if (f.dateFrom || f.dateTo) n += 1
+  } else if (f.openedPreset !== 'all' && f.openedPreset !== 'this_month') {
     n += 1
   }
   if (f.openedMonth !== 'all') n += 1
@@ -465,7 +468,7 @@ export async function activateCaseAllotment(caseId) {
 /**
  * Primary + secondary actions for a pipeline row (no navigation on row click).
  */
-export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false }) {
+export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false, cmFocused = false }) {
   if (detailsOnly) {
     return [{ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` }]
   }
@@ -473,9 +476,9 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
     const actions = [
       {
         id: 'transition',
-        label: 'Manage transition',
+        label: cmFocused ? 'View case' : 'Manage transition',
         variant: 'primary',
-        href: `/admin/cases/${row.id}?tab=scheduling`,
+        href: cmFocused ? `/admin/cases/${row.id}` : `/admin/cases/${row.id}?tab=scheduling`,
       },
       { id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` },
     ]
@@ -491,7 +494,7 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
   const actions = []
   const col = row.pipeline_column
-  const write = canWrite && canAssign
+  const write = canWrite && canAssign && !cmFocused
   const writeCase = canWrite && canUpdate
   const writeCreate = canWrite && canCreate
 

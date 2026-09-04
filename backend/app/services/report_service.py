@@ -176,20 +176,25 @@ def notify_parents_monthly_report_published(
     from app.models.user import User
     from app.services.email.service import enqueue_report_published_email
 
-    rows = db.execute(
-        select(User.email, User.full_name)
-        .select_from(parent_child_link)
-        .join(ParentGuardian, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
-        .join(User, ParentGuardian.user_id == User.id)
+    rows = db.scalars(
+        select(User)
+        .join(ParentGuardian, ParentGuardian.user_id == User.id)
+        .join(parent_child_link, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
         .where(parent_child_link.c.child_id == case.child_id)
     ).all()
     child_name = case.child.full_name if case.child else "your child"
     report_label = report.month or f"Report #{report.id}"
     portal_url = f"{settings.frontend_url.rstrip('/')}/parent/reports"
     log_ids: list[int] = []
-    for email, full_name in rows:
-        if not email:
+    from app.services.parent_notification_preferences import parent_wants_email
+
+    for parent_user in rows:
+        if not parent_user.email:
             continue
+        if not parent_wants_email(parent_user, "reports"):
+            continue
+        email = parent_user.email
+        full_name = parent_user.full_name
         payload = {
             "parent_name": full_name or "there",
             "child_name": child_name,

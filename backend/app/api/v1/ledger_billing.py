@@ -10,7 +10,7 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.feature_flags import require_billing_ledger_writes
 from app.core.module_write import ensure_billing_write_access
-from app.core.permissions import require_mutation_permission, require_permission
+from app.core.permissions import require_any_permission, require_mutation_permission, require_permission
 from app.models.user import User
 from app.schemas.ledger_billing import (
     CarePackageAdminCreate,
@@ -42,7 +42,7 @@ def _billing_write(user: User) -> None:
 def list_product_rules(
     product_module: Optional[str] = None,
     active_only: bool = True,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_any_permission("invoice.approve", "case.billing.update", "case.update")),
     db: Session = Depends(get_db),
 ):
     return product_billing_rule_service.list_rules(db, active_only=active_only, product_module=product_module)

@@ -236,6 +236,79 @@ def test_parent_profile_secondary_contact():
     assert body["secondary_contact_email"] == "spouse@example.com"
 
 
+def test_parent_profile_email_preferences():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+    prefs = profile.get("email_preferences") or {}
+    assert prefs.get("appointments") is True
+    assert profile.get("receive_log_leave_emails") is True
+
+    off = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "full_name": profile["full_name"],
+            "email_preferences": {
+                "appointments": False,
+                "session_logs": False,
+                "therapist_leave": False,
+                "billing": False,
+                "reports": False,
+                "meetings": False,
+            },
+        },
+    )
+    assert off.status_code == 200, off.text
+    body = off.json()
+    assert body["email_preferences"]["appointments"] is False
+    assert body["email_preferences"]["session_logs"] is False
+    assert body["receive_log_leave_emails"] is False
+
+    partial = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "full_name": profile["full_name"],
+            "email_preferences": {"appointments": True},
+        },
+    )
+    assert partial.status_code == 200, partial.text
+    assert partial.json()["email_preferences"]["appointments"] is True
+    assert partial.json()["email_preferences"]["billing"] is False
+
+    legacy = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": True},
+    )
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["receive_log_leave_emails"] is True
+    assert legacy.json()["email_preferences"]["session_logs"] is True
+    assert legacy.json()["email_preferences"]["therapist_leave"] is True
+
+
+def test_parent_profile_log_leave_email_preference_legacy_field():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+    assert profile.get("receive_log_leave_emails") is True
+
+    off = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": False},
+    )
+    assert off.status_code == 200, off.text
+    assert off.json()["receive_log_leave_emails"] is False
+
+    on = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": True},
+    )
+    assert on.status_code == 200, on.text
+    assert on.json()["receive_log_leave_emails"] is True
+
+
 def test_parent_profile_home_and_school_addresses_are_separate():
     headers = _login("parent@demo.com")
     r = client.patch(

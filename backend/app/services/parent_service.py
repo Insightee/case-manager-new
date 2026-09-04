@@ -18,7 +18,13 @@ from app.models.report import MonthlyReport, ReportStatus
 from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
-from app.schemas.parent_profile import ParentProfileRead
+from app.schemas.parent_profile import ParentEmailPreferencesRead, ParentProfileRead
+from app.services.parent_notification_preferences import (
+    apply_parent_email_preferences,
+    apply_parent_log_leave_emails,
+    read_parent_email_preferences,
+    read_parent_log_leave_emails,
+)
 from app.services import address_service
 from app.services.address_service import user_home_address_read, user_school_address_read
 
@@ -531,6 +537,8 @@ def get_parent_profile(db: Session, user: User) -> ParentProfileRead:
         children=children,
         services=services,
         homecare_cases=homecare_cases,
+        email_preferences=ParentEmailPreferencesRead(**read_parent_email_preferences(user)),
+        receive_log_leave_emails=read_parent_log_leave_emails(user),
     )
 
 
@@ -605,6 +613,12 @@ def update_parent_profile(db: Session, user: User, payload: dict[str, Any]) -> P
             raise HTTPException(status_code=400, detail="No address fields provided")
         address_service.validate_service_address_payload(service_data, case)
         address_service.apply_service_address_to_case(case, service_data)
+
+    email_pref_payload = payload.get("email_preferences")
+    if isinstance(email_pref_payload, dict):
+        apply_parent_email_preferences(user, email_pref_payload)
+    elif "receive_log_leave_emails" in payload:
+        apply_parent_log_leave_emails(user, bool(payload.get("receive_log_leave_emails")))
 
     db.flush()
     return get_parent_profile(db, user)

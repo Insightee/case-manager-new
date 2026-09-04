@@ -94,6 +94,82 @@ def test_min_notice_and_max_days_ahead_block_booking():
     assert body["freebusy_stale"] is False
 
 
+def test_configured_weekday_without_rule_is_closed():
+    headers = login_headers(client, "casemanager@demo.com")
+    user = _get_user("casemanager@demo.com")
+    tuesday = _next_weekday(date.today(), 1)
+    monday = tuesday - timedelta(days=1)
+
+    _save_availability(
+        headers,
+        user.id,
+        {
+            "rules": [
+                {"weekday": tuesday.weekday(), "start_time": "14:00", "end_time": "16:00", "slot_granularity_minutes": 30},
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+
+    monday_res = client.get(
+        "/api/v1/calendar/availability",
+        headers=headers,
+        params={
+            "user_ids": str(user.id),
+            "date_from": monday.isoformat(),
+            "date_to": monday.isoformat(),
+            "duration_minutes": 30,
+        },
+    )
+    assert monday_res.status_code == 200, monday_res.text
+    assert monday_res.json()["slots"] == []
+
+    tuesday_res = client.get(
+        "/api/v1/calendar/availability",
+        headers=headers,
+        params={
+            "user_ids": str(user.id),
+            "date_from": tuesday.isoformat(),
+            "date_to": tuesday.isoformat(),
+            "duration_minutes": 30,
+        },
+    )
+    assert tuesday_res.status_code == 200, tuesday_res.text
+    tuesday_times = {slot["time"] for slot in tuesday_res.json()["slots"]}
+    assert tuesday_times == {"14:00", "14:30", "15:00", "15:30"}
+
+    admin_headers = login_headers(client, "superadmin@demo.com")
+    restore = client.put(
+        f"/api/v1/users/{user.id}/availability",
+        headers=admin_headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday_index,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+                for weekday_index in range(5)
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert restore.status_code == 200, restore.text
+
+
 def test_closed_exception_removes_the_day():
     headers = login_headers(client, "superadmin@demo.com")
     user = _get_user("superadmin@demo.com")

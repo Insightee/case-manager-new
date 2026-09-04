@@ -226,17 +226,23 @@ def test_other_meeting_type_accepts_title_fallback():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Create meeting
+    # Create meeting in the recent past so completion rules can be exercised.
+    from datetime import timedelta
+
+    from app.core.timezone import now_ist
+
+    started = now_ist() - timedelta(hours=1)
     res = client.post(
         "/api/v1/meetings",
         headers=headers,
         json={
-            "scheduled_date": today_meeting_date(),
-            "scheduled_time": "00:01:00",
+            "scheduled_date": started.date().isoformat(),
+            "scheduled_time": started.time().replace(microsecond=0).isoformat(timespec="seconds"),
             "duration_minutes": 30,
-            "meeting_type": "PROGRESS_REVIEW"
-        }
+            "meeting_type": "PROGRESS_REVIEW",
+        },
     )
+    assert res.status_code == 201, res.text
     mid = res.json()["id"]
 
     # Try to mark COMPLETED without outcomes/summary

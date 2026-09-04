@@ -13,6 +13,11 @@ import {
   hasCoordinates,
 } from '../shared/AddressFormFields.jsx'
 import './parent-profile.css'
+import {
+  ParentEmailPreferencesSection,
+  DEFAULT_PARENT_EMAIL_PREFERENCES,
+  emailPreferencesFromApi,
+} from './ParentEmailPreferencesSection.jsx'
 
 function dedupeChildren(list) {
   const byId = new Map()
@@ -150,6 +155,7 @@ export function ParentProfilePage() {
   const [addressType, setAddressType] = useState('home') // which address is shown / preferred for visits
   const [billingSame, setBillingSame] = useState(true)
   const [billingAddr, setBillingAddr] = useState(emptyAddress())
+  const [emailPreferences, setEmailPreferences] = useState(DEFAULT_PARENT_EMAIL_PREFERENCES)
   const [homecareCases, setHomecareCases] = useState([])
 
   const loadProfile = useCallback(async () => {
@@ -162,6 +168,7 @@ export function ParentProfilePage() {
       setPhone(p.phone || '')
       setSecondaryContactName(p.secondary_contact_name || '')
       setSecondaryContactEmail(p.secondary_contact_email || '')
+      setEmailPreferences(emailPreferencesFromApi(p.email_preferences, p.receive_log_leave_emails))
       setChildren(
         dedupeChildren(p.children).map((c) => ({
           id: c.id,
@@ -252,6 +259,7 @@ export function ParentProfilePage() {
         phone: phone.trim() || null,
         secondary_contact_name: secondaryContactName.trim() || null,
         secondary_contact_email: secondaryContactEmail.trim() || null,
+        email_preferences: emailPreferences,
         address_type: addressType,
         ...addressToPayload(homeAddr, 'home_'),
         ...addressToPayload(schoolAddr, 'school_'),
@@ -490,6 +498,12 @@ export function ParentProfilePage() {
             )}
           </div>
         </section>
+
+        <ParentEmailPreferencesSection
+          preferences={emailPreferences}
+          onChange={setEmailPreferences}
+          disabled={saving}
+        />
 
         <div className="parent-profile__save-bar">
           <button type="submit" className="parent-profile__save" disabled={saving}>

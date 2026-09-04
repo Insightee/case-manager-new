@@ -1,3 +1,4 @@
+import { displayCaseClientName } from '../../lib/adminCasePipeline.js'
 import { StatusBadge } from './ui/index.js'
 import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 
@@ -8,7 +9,7 @@ export function AdminCaseDetailMobileHeader({ caseRow, activeAssignment }) {
 
   return (
     <header className="admin-case-detail-summary admin-case-detail__mobile-only">
-      <h1 className="admin-case-detail-summary__name">{caseRow.child_name}</h1>
+      <h1 className="admin-case-detail-summary__name">{displayCaseClientName(caseRow.child_name)}</h1>
       <p className="admin-case-detail-summary__code">{caseRow.case_code}</p>
       <div className="admin-case-detail-summary__row">
         {caseRow.day_type ? <CaseDayTypeBadge dayType={caseRow.day_type} /> : null}

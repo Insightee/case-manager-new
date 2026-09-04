@@ -148,6 +148,7 @@ Setup: [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md)
 | `TICKET_ATTACHMENT_MAX_FILES` | no | `3` | Max attachments per ticket. |
 | `CASE_DOCUMENT_MAX_BYTES` | no | 5 MiB | Max case document upload size. |
 | `MEETING_INVITE_CALENDAR_TIMEZONE` | no | `Asia/Kolkata` | Google Calendar `ctz` for CM meeting invites. |
+| `SCHEDULING_WEEKENDS_ENABLED` | no | `false` | When true, default staff availability and session templates include Saturday/Sunday until a user saves narrower hours. |
 
 ### SQLite dev-only
 
@@ -262,6 +263,12 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `PAYOUT_PROVIDER` | `MOCK` | `MOCK` or `RAZORPAY` (stub until live wiring). |
 | `PAYOUT_PROVIDER_LIVE` | `false` | When true with `RAZORPAY`, uses live provider adapter (cutover only). |
 | `FINANCE_DEFAULT_TDS_RATE_PERCENT` | `10` | Default TDS rate when therapist profile has no override. |
+| `INVOICE_COMPANY_NAME` | `Insighte Childcare Pvt Ltd` | Letterhead on therapist statement PDF. |
+| `INVOICE_COMPANY_ADDRESS` | AECS Layout address | PDF company address line. |
+| `INVOICE_COMPANY_EMAIL` | `techsupport@insighte.org` | PDF contact email. |
+| `INVOICE_COMPANY_PHONE` | `+91 63646 56234` | PDF contact phone. |
+| `INVOICE_COMPANY_WEBSITE` | `www.insighte.org` | PDF website. |
+| `INVOICE_COMPANY_GSTIN` | empty | Optional GSTIN on PDF. |
 | `BILLING_DISPUTE_LEGACY_ADJUSTMENT` | `false` | When false, admin dispute resolve rejects free-field `adjustment_inr` — use finance correction instead. |
 
 Cutover sequence: see [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md). **Stage 1 snapshot on insighte.org:** see [FINANCE_SNAPSHOT_PROD_CUTOVER.md](./FINANCE_SNAPSHOT_PROD_CUTOVER.md) (`ENABLE_BILLING=true` + both Vite prod opt-in flags; ledger writes stay off).

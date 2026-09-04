@@ -24,6 +24,13 @@ SHADOW_HALF_DAY_REFERENCE_MINS = 300
 SHADOW_FULL_DAY_REFERENCE_MINS = 600
 HOMECARE_MIN_MINS = 60
 HOMECARE_MAX_MINS = 240
+SCHEDULED_DURATION_TOLERANCE_MINS = 15
+
+
+def _enum_value(value) -> str | None:
+    if value is None:
+        return None
+    return getattr(value, "value", value)
 
 EXCLUDED_SESSION_STATUSES = frozenset(
     {
@@ -131,13 +138,13 @@ def expected_duration_bounds(case: Case, session: TherapySession) -> ExpectedDur
         )
         sched_mins = max(1, sched_mins)
         return ExpectedDurationBounds(
-            min_mins=sched_mins,
-            max_mins=sched_mins,
+            min_mins=max(1, sched_mins - SCHEDULED_DURATION_TOLERANCE_MINS),
+            max_mins=sched_mins + SCHEDULED_DURATION_TOLERANCE_MINS,
             reference_label=f"scheduled {sched_mins} min",
             has_schedule=True,
         )
     if module == "shadow_support":
-        day_type = case.day_type.value if case.day_type else CaseDayType.FULL_DAY.value
+        day_type = _enum_value(case.day_type) or CaseDayType.FULL_DAY.value
         if day_type == CaseDayType.HALF_DAY.value:
             ref = SHADOW_HALF_DAY_REFERENCE_MINS
             return ExpectedDurationBounds(
@@ -184,28 +191,18 @@ def duration_compliance_warning(
 
     if actual_mins < bounds.min_mins:
         code = "under_minimum"
-        if bounds.has_schedule:
-            message = (
-                f"This visit clocked {actual_mins} min — shorter than the scheduled "
-                f"{bounds.min_mins} min. Review session times before submitting."
-            )
-        else:
-            message = (
-                f"This visit clocked {actual_mins} min — below the expected "
-                f"{bounds.reference_label}. Review session times before submitting."
-            )
+        message = (
+            f"{actual_mins} min vs {bounds.reference_label} (±{SCHEDULED_DURATION_TOLERANCE_MINS})."
+            if bounds.has_schedule
+            else f"{actual_mins} min — below {bounds.reference_label}."
+        )
     else:
         code = "over_maximum"
-        if bounds.has_schedule:
-            message = (
-                f"This visit clocked {actual_mins} min — longer than the scheduled "
-                f"{bounds.max_mins} min. Review session times before submitting."
-            )
-        else:
-            message = (
-                f"This visit clocked {actual_mins} min — above the expected "
-                f"{bounds.reference_label}. Review session times before submitting."
-            )
+        message = (
+            f"{actual_mins} min vs {bounds.reference_label} (±{SCHEDULED_DURATION_TOLERANCE_MINS})."
+            if bounds.has_schedule
+            else f"{actual_mins} min — above {bounds.reference_label}."
+        )
 
     return {
         "code": code,

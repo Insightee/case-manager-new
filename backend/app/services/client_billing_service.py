@@ -30,14 +30,88 @@ from app.models.client_billing import (
     PaymentMethod,
 )
 from app.models.daily_log import DailyLog
+from app.models.invoice import Invoice, InvoiceStatus
+from app.models.invoice_line import InvoiceCaseLine
 from app.models.user import User
 from app.core.config import settings
 from app.services import billing_composer_service, notification_service, parent_service, product_billing_rule_service
 from app.services.email.service import enqueue_parent_invoice_email, parent_invoice_ready_email
+from app.services.parent_notification_preferences import parent_wants_email
 
 logger = logging.getLogger("insightcase.client_billing")
 
 _OPEN_DISPUTE_STATUSES = frozenset({BillingDisputeStatus.OPEN, BillingDisputeStatus.UNDER_REVIEW})
+
+_CANCELLED_SESSION_STATUSES = frozenset(
+    {
+        "CLIENT_ABSENT",
+        "CANCELLED",
+        "ABSENT",
+        "CHILD_ABSENT",
+        "THERAPIST_LEAVE",
+        "LEAVE",
+        "NO_SHOW",
+    }
+)
+
+
+def _parent_session_status_label(raw: str | None, *, amount_inr: float) -> str:
+    token = str(raw or "").strip().upper().replace(" ", "_")
+    if token in _CANCELLED_SESSION_STATUSES or (amount_inr == 0 and token and token not in {"COMPLETED", "PRESENT"}):
+        if token in {"COMPLETED", "PRESENT"}:
+            return "Session completed"
+        return "Session cancelled"
+    if token in {"COMPLETED", "PRESENT", ""} or not token:
+        return "Session completed" if token in {"COMPLETED", "PRESENT"} or amount_inr > 0 else "Session"
+    # Friendly title-case fallback without raw enums looking harsh
+    if token == "SCHEDULED":
+        return "Scheduled"
+    return str(raw or "Session").replace("_", " ").title()
+
+
+def _therapist_next_month_session_count(db: Session, *, case_id: int, billing_month: str | None) -> int | None:
+    """Read session_count from latest therapist invoice snapshot for this case/month."""
+    if not billing_month:
+        return None
+    # billing_month is usually YYYY-MM; therapist invoices use "Mon YYYY"
+    month_label = billing_month
+    try:
+        if len(billing_month) == 7 and billing_month[4] == "-":
+            y, m = int(billing_month[:4]), int(billing_month[5:7])
+            month_label = date(y, m, 1).strftime("%b %Y")
+    except ValueError:
+        pass
+    case_line = db.scalars(
+        select(InvoiceCaseLine)
+        .join(Invoice, Invoice.id == InvoiceCaseLine.invoice_id)
+        .where(
+            InvoiceCaseLine.case_id == case_id,
+            Invoice.month == month_label,
+            Invoice.status.in_(
+                [
+                    InvoiceStatus.IN_REVIEW,
+                    InvoiceStatus.APPROVED,
+                    InvoiceStatus.PAID,
+                    InvoiceStatus.QUERIED,
+                ]
+            ),
+        )
+        .order_by(Invoice.id.desc())
+    ).first()
+    if not case_line or not isinstance(case_line.billing_snapshot, dict):
+        return None
+    plan = case_line.billing_snapshot.get("next_month_session_plan") or {}
+    if not isinstance(plan, dict):
+        return None
+    if plan.get("session_count") is not None:
+        try:
+            return max(0, int(plan.get("session_count") or 0))
+        except (TypeError, ValueError):
+            return None
+    sessions = plan.get("sessions")
+    if isinstance(sessions, list):
+        return len(sessions)
+    return None
 
 
 def _payment_tds_inr(payment: ClientPayment) -> float:
@@ -282,13 +356,15 @@ def _serialize_parent_line(line: ClientInvoiceLine, *, held_line_ids: set[int]) 
     hold_reason = None
     if is_held:
         hold_reason = "needs_review" if _line_is_unreconciled(line) else "disputed"
+    amount = float(line.amount_inr or 0)
     return {
         "id": line.id,
         "sessionDate": line.session_date.isoformat(),
         "therapistName": line.therapist_name,
         "serviceLabel": line.service_label,
-        "sessionStatus": line.session_status,
-        "amountInr": float(line.amount_inr),
+        "sessionStatus": _parent_session_status_label(line.session_status, amount_inr=amount),
+        "sessionStatusRaw": line.session_status,
+        "amountInr": amount,
         "packageDeducted": line.package_deducted,
         "parentSummary": line.parent_summary,
         "sessionId": line.session_id,
@@ -417,6 +493,9 @@ def get_invoice_detail(db: Session, user: User, invoice_id: int) -> dict:
             "notes": inv.notes,
             "lines": [_serialize_parent_line(line, held_line_ids=held_line_ids) for line in lines],
             "payments": [_serialize_client_payment(p) for p in inv.payments],
+            "plannedSessionsNextMonth": _therapist_next_month_session_count(
+                db, case_id=inv.case_id, billing_month=inv.billing_month
+            ),
             "disputes": [
                 {
                     "id": d.id,
@@ -726,10 +805,11 @@ def notify_parent_invoice_issued(
         is_overdue=is_overdue,
         payments_url=url,
     )
-    if background_tasks is not None:
-        enqueue_parent_invoice_email(background_tasks, db, **email_kwargs)
-    else:
-        parent_invoice_ready_email(**email_kwargs)
+    if parent_wants_email(parent, "billing"):
+        if background_tasks is not None:
+            enqueue_parent_invoice_email(background_tasks, db, **email_kwargs)
+        else:
+            parent_invoice_ready_email(**email_kwargs)
     now = datetime.now(timezone.utc)
     inv.sent_at = now
     if inv.status in (ClientInvoiceStatus.GENERATED, ClientInvoiceStatus.DRAFT):
@@ -2129,15 +2209,16 @@ def send_payment_reminder(
     )
     from app.services.email.service import send_payment_reminder_email
 
-    send_payment_reminder_email(
-        background_tasks,
-        db,
-        to=parent.email,
-        parent_name=parent.full_name or parent.email,
-        invoice_number=inv.invoice_number,
-        balance_inr=balance,
-        payments_url="/parent/billing",
-    )
+    if parent_wants_email(parent, "billing"):
+        send_payment_reminder_email(
+            background_tasks,
+            db,
+            to=parent.email,
+            parent_name=parent.full_name or parent.email,
+            invoice_number=inv.invoice_number,
+            balance_inr=balance,
+            payments_url="/parent/billing",
+        )
     db.flush()
     return {"status": "sent", "balanceInr": balance}
 

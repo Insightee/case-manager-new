@@ -6,6 +6,7 @@ import {
   countActivePipelineFilters,
   defaultOpenedRange,
   defaultPipelineFilters,
+  displayCaseClientName,
   deriveOpenedYearOptions,
   filterPipelineRows,
   filterPipelineRowsForQueueCounts,
@@ -138,6 +139,16 @@ test('filterPipelineRows applies case state and queue together', () => {
   assert.equal(pipelineActiveNeedsAction.length, 0)
 })
 
+describe('displayCaseClientName', () => {
+  it('collapses duplicated labels from bad imports', () => {
+    assert.equal(
+      displayCaseClientName('Tattva Swayam Open Learning Resource Centre Tattva Swayam Open Learning Resource Centre'),
+      'Tattva Swayam Open Learning Resource Centre',
+    )
+    assert.equal(displayCaseClientName('Ava Demo'), 'Ava Demo')
+  })
+})
+
 describe('defaultOpenedRange', () => {
   it('returns first of month through reference day', () => {
     const range = defaultOpenedRange(new Date('2026-08-29T12:00:00Z'))
@@ -147,11 +158,10 @@ describe('defaultOpenedRange', () => {
 })
 
 describe('filterPipelineRows opened date range', () => {
-  it('defaults to current month window', () => {
+  it('defaults to all cases without an opened-date window', () => {
     const filters = defaultPipelineFilters()
     const rows = filterPipelineRows(datedSampleRows, filters)
-    assert.equal(rows.length, 1)
-    assert.equal(rows[0].case_code, 'IC-2026-001')
+    assert.equal(rows.length, 2)
   })
 
   it('includes older cases when preset is all', () => {
@@ -165,9 +175,10 @@ describe('countActivePipelineFilters date defaults', () => {
     assert.equal(countActivePipelineFilters(defaultPipelineFilters()), 0)
   })
 
-  it('counts custom range when dates differ from default', () => {
+  it('counts custom range when dates are set', () => {
     const n = countActivePipelineFilters({
       ...defaultPipelineFilters(),
+      openedPreset: 'custom',
       dateFrom: '2026-01-01',
       dateTo: '2026-01-31',
     })
@@ -183,5 +194,13 @@ describe('buildPipelineActions', () => {
     )
     assert.ok(!actions.some((a) => a.id === 'close'))
     assert.ok(actions.some((a) => a.id === 'case'))
+  })
+
+  it('hides assign actions for case-manager-only users', () => {
+    const actions = buildPipelineActions(
+      { id: 2, pipeline_column: 'needs_therapist', product_module: 'homecare' },
+      { canAssign: true, canUpdate: true, canCreate: true, canWrite: true, cmFocused: true },
+    )
+    assert.ok(!actions.some((a) => a.id === 'reallot'))
   })
 })

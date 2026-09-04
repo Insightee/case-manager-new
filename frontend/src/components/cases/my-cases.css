@@ -2623,14 +2623,14 @@
 }
 
 .ic-session-log-panel__banner {
-  margin: 0 0 16px;
-  padding: 12px 14px;
+  margin: 0 0 8px;
+  padding: 8px 12px;
   border-radius: 10px;
   background: #fff7ed;
   border: 1px solid #fed7aa;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: #9a3412;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .ic-session-log-panel__banner--muted {

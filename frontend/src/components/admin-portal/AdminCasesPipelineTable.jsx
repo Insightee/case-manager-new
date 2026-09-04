@@ -16,6 +16,7 @@ import {
   filterPipelineRowsForQueueCounts,
   filterPipelineRowsWithoutQueue,
   flattenPipelineBoard,
+  isCaseManagerOnlyRole,
   pipelineQueueCounts,
   pipelineStatusBadgeVariant,
   sortPipelineRows,
@@ -61,7 +62,8 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const { options: programmeOptions } = useClinicalProductModules()
   const navigate = useNavigate()
   const financeDesk = isFinanceDeskUser(user)
-  const canAssign = can('case.assign') && !isViewOnly && !financeDesk
+  const cmFocused = isCaseManagerOnlyRole(user?.roles || [])
+  const canAssign = can('case.assign') && !isViewOnly && !financeDesk && !cmFocused
   const canUpdate = can('case.update') && !isViewOnly && !financeDesk
   const canCreate = can('case.create') && !isViewOnly && !financeDesk
   const [board, setBoard] = useState(null)
@@ -521,6 +523,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                   canCreate,
                   canWrite: rowCanWrite,
                   detailsOnly: financeDesk,
+                  cmFocused,
                 })
                 const selectable =
                   canAssign && rowCanWrite && ['needs_therapist', 'reassignment'].includes(row.pipeline_column)
@@ -653,6 +656,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                   canCreate,
                   canWrite: rowCanWrite,
                   detailsOnly: financeDesk,
+                  cmFocused,
                 })
                 return (
                   <li key={row.id}>

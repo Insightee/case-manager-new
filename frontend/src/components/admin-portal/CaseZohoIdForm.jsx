@@ -36,12 +36,11 @@ export function CaseZohoIdForm({ caseItem, canEdit, onSaved }) {
   }
 
   return (
-    <form className="admin-panel" style={{ padding: 16 }} onSubmit={handleSubmit}>
-      <h3 style={{ marginTop: 0 }}>Zoho ID</h3>
-      <p className="admin-muted" style={{ marginTop: 0, fontSize: '0.8rem' }}>
+    <form className="admin-case-overview__zoho-form" onSubmit={handleSubmit}>
+      <p className="admin-muted" style={{ margin: 0, fontSize: '0.8rem' }}>
         Client billing identifier. Stored on this case for later Zoho Pay — not used for invoices yet.
       </p>
-      <label htmlFor={`case-zoho-id-${caseItem.id}`} style={{ display: 'block', maxWidth: 320 }}>
+      <label htmlFor={`case-zoho-id-${caseItem.id}`}>
         Zoho ID
         <input
           id={`case-zoho-id-${caseItem.id}`}
@@ -57,10 +56,10 @@ export function CaseZohoIdForm({ caseItem, canEdit, onSaved }) {
           disabled={!canEdit}
         />
       </label>
-      {error ? <p style={{ color: '#b91c1c', fontSize: '0.85rem' }}>{error}</p> : null}
-      {saved ? <p className="admin-muted" style={{ fontSize: '0.85rem' }}>Zoho ID saved.</p> : null}
+      {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
+      {saved ? <p className="admin-muted" style={{ fontSize: '0.85rem', margin: 0 }}>Zoho ID saved.</p> : null}
       {canEdit ? (
-        <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving} style={{ marginTop: 8 }}>
+        <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving}>
           {saving ? 'Saving…' : 'Save Zoho ID'}
         </button>
       ) : null}

@@ -67,6 +67,8 @@ def _session_read(
         case_id=s.case_id,
         case_code=case.case_code if case else None,
         child_name=child_name,
+        product_module=case.product_module if case else None,
+        day_type=getattr(case.day_type, "value", case.day_type) if case and case.day_type else None,
         therapist_user_id=s.therapist_user_id,
         therapist_name=therapist_name,
         scheduled_date=s.scheduled_date,

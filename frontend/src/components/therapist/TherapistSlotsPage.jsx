@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { BookSlotModal } from './BookSlotModal.jsx'
 import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
@@ -37,6 +37,12 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
           <p className="mt-1 text-sm text-slate-500">Tap an empty cell to add a slot, or tap a slot to manage it.</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+          <Link
+            to="/therapist/meetings?availability=1"
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-800 hover:bg-slate-50 sm:w-auto"
+          >
+            My availability
+          </Link>
           <button
             type="button"
             onClick={() => {

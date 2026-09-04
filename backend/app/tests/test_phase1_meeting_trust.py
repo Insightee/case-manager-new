@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
+from app.tests.conftest import future_meeting_date
 
 client = TestClient(app)
 
@@ -39,13 +40,13 @@ def _create_meeting(
     email: str = "superadmin@demo.com",
     *,
     case_id: int | None = None,
-    scheduled_date: str = "2026-09-12",
+    scheduled_date: str | None = None,
     scheduled_time: str = "10:00:00",
     duration_minutes: int = 30,
     meeting_type: str = "PARENT_MEETING",
 ):
     payload = {
-        "scheduled_date": scheduled_date,
+        "scheduled_date": scheduled_date or future_meeting_date(14),
         "scheduled_time": scheduled_time,
         "duration_minutes": duration_minutes,
         "meeting_type": meeting_type,
@@ -59,14 +60,14 @@ def _create_meeting(
 
 def test_reschedule_ignores_self_conflict_and_preserves_series_id():
     case_id = _first_bookable_case_id("superadmin@demo.com")
-    meeting = _create_meeting(case_id=case_id, scheduled_date="2026-09-15", scheduled_time="10:00:00", duration_minutes=30)
+    meeting = _create_meeting(case_id=case_id, scheduled_date=future_meeting_date(15), scheduled_time="10:00:00", duration_minutes=30)
 
     response = client.post(
         f"/api/v1/meetings/{meeting['id']}/reschedule",
         headers=_headers("superadmin@demo.com"),
         json={
-            "scheduled_date": "2026-09-15",
-            "scheduled_time": "10:15:00",
+            "scheduled_date": future_meeting_date(15),
+            "scheduled_time": "10:30:00",
             "duration_minutes": 30,
             "reschedule_reason": "Shifted by 15 minutes",
         },
@@ -81,7 +82,7 @@ def test_reschedule_ignores_self_conflict_and_preserves_series_id():
 
 def test_patch_scheduled_date_returns_400():
     case_id = _first_bookable_case_id("superadmin@demo.com")
-    meeting = _create_meeting(case_id=case_id, scheduled_date="2026-09-16", scheduled_time="11:00:00")
+    meeting = _create_meeting(case_id=case_id, scheduled_date=future_meeting_date(16), scheduled_time="11:00:00")
 
     response = client.patch(
         f"/api/v1/meetings/{meeting['id']}",
@@ -94,7 +95,7 @@ def test_patch_scheduled_date_returns_400():
 
 def test_cancel_requires_reason_and_succeeds():
     case_id = _first_bookable_case_id("superadmin@demo.com")
-    meeting = _create_meeting(case_id=case_id, scheduled_date="2026-09-18", scheduled_time="12:00:00")
+    meeting = _create_meeting(case_id=case_id, scheduled_date=future_meeting_date(18), scheduled_time="12:00:00")
 
     missing = client.post(
         f"/api/v1/meetings/{meeting['id']}/cancel",
@@ -117,7 +118,7 @@ def test_cancel_requires_reason_and_succeeds():
 
 def test_action_upsert_preserves_id_and_status():
     case_id = _first_bookable_case_id("superadmin@demo.com")
-    meeting = _create_meeting(case_id=case_id, scheduled_date="2026-09-19", scheduled_time="13:00:00")
+    meeting = _create_meeting(case_id=case_id, scheduled_date=future_meeting_date(19), scheduled_time="13:00:00")
 
     created = client.patch(
         f"/api/v1/meetings/{meeting['id']}",
@@ -177,7 +178,7 @@ def test_get_meeting_returns_404_for_other_case_manager():
     meeting = _create_meeting(
         email="casemanager@demo.com",
         case_id=case_id,
-        scheduled_date="2026-09-20",
+        scheduled_date=future_meeting_date(20),
         scheduled_time="14:00:00",
     )
 

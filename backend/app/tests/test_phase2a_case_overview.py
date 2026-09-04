@@ -12,7 +12,7 @@ from app.models.case import Case
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.services import parent_service
-from app.tests.conftest import cm_headers_for_case, login_headers
+from app.tests.conftest import cm_headers_for_case, future_meeting_date, login_headers
 
 client = TestClient(app)
 
@@ -105,11 +105,12 @@ def test_mentor_can_list_and_read_meetings_for_mentored_case():
         headers=admin_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": str(date.today()),
-            "scheduled_time": "10:00:00",
+            "scheduled_date": future_meeting_date(14),
+            "scheduled_time": "14:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "title": "Mentor scope test meeting",
+            "invite_client": False,
         },
     )
     assert created.status_code == 201, created.text
@@ -149,11 +150,12 @@ def test_therapist_meeting_list_and_detail_hide_cm_notes():
         headers=admin_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": str(date.today()),
-            "scheduled_time": "11:00:00",
+            "scheduled_date": future_meeting_date(10),
+            "scheduled_time": "14:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "title": "Therapist notes masking test",
+            "meeting_url": "https://meet.google.com/notes-masking-test",
         },
     )
     assert meeting_res.status_code == 201, meeting_res.text

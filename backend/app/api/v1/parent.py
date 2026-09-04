@@ -159,6 +159,8 @@ def parent_profile_update(
             "case_id": payload.service_address.case_id,
             "address": payload.service_address.address.model_dump(exclude_unset=True),
         }
+    if payload.email_preferences is not None:
+        data["email_preferences"] = payload.email_preferences.model_dump(exclude_unset=True)
     result = parent_service.update_parent_profile(db, user, data)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update_parent_profile", entity_type="user", entity_id=user.id, **meta)
