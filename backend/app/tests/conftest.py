@@ -102,9 +102,9 @@ def cm_headers_for_case(client, case_id: int, password: str = "demo123") -> dict
 def future_meeting_date(days_ahead: int = 14) -> str:
     """ISO date for tests that hardcode 11:00 without reading the host calendar.
 
-    Saturday meetings are allowed when the case manager's calendar is open.
-    Default unsaved hours are Mon–Fri, so hardcoded 11:00 lands on a weekday.
-    Use ``first_meeting_slot`` when the test should accept a Saturday CM slot.
+    Weekends are open by default. This helper still prefers a weekday so
+    hardcoded 11:00 stays valid if a fixture later closed Sat/Sun.
+    Use ``first_meeting_slot`` to accept a Saturday CM slot when it is open.
     """
     from datetime import date, timedelta
 

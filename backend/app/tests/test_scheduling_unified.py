@@ -39,18 +39,82 @@ def _save_availability(headers: dict[str, str], user_id: int, payload: dict[str,
     assert res.status_code == 200, res.text
 
 
-def test_weekends_disabled_by_default():
-    assert settings.scheduling_weekends_enabled is False
+def test_weekends_enabled_by_default():
+    assert settings.scheduling_weekends_enabled is True
+    assert 5 in default_open_windows()
+    assert 6 in default_open_windows()
+    assert default_weekday_indices() == list(range(7))
+
+
+def test_weekends_can_be_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "scheduling_weekends_enabled", False)
     assert 5 not in default_open_windows()
     assert 6 not in default_open_windows()
     assert default_weekday_indices() == [0, 1, 2, 3, 4]
 
 
-def test_weekends_enabled_when_configured(monkeypatch):
-    monkeypatch.setattr(settings, "scheduling_weekends_enabled", True)
-    assert 5 in default_open_windows()
-    assert 6 in default_open_windows()
-    assert default_weekday_indices() == list(range(7))
+def test_default_saturday_slots_until_staff_closes_them():
+    from app.models.calendar_availability import StaffAvailabilityRule, StaffBookingPolicy
+
+    headers = login_headers(client, "casemanager@demo.com")
+    user = _get_user("casemanager@demo.com")
+    db = SessionLocal()
+    try:
+        db.query(StaffAvailabilityRule).filter(StaffAvailabilityRule.user_id == user.id).delete()
+        db.query(StaffBookingPolicy).filter(StaffBookingPolicy.user_id == user.id).delete()
+        db.commit()
+    finally:
+        db.close()
+    saturday = _next_weekday(date.today(), 5)
+
+    open_res = client.get(
+        "/api/v1/calendar/availability",
+        headers=headers,
+        params={
+            "user_ids": str(user.id),
+            "date_from": saturday.isoformat(),
+            "date_to": saturday.isoformat(),
+            "duration_minutes": 30,
+        },
+    )
+    assert open_res.status_code == 200, open_res.text
+    assert {slot["time"] for slot in open_res.json()["slots"]}, "default product rule opens Saturday"
+
+    _save_availability(
+        headers,
+        user.id,
+        {
+            "rules": [
+                {
+                    "weekday": weekday,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+                for weekday in range(5)
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 0,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+
+    closed_res = client.get(
+        "/api/v1/calendar/availability",
+        headers=headers,
+        params={
+            "user_ids": str(user.id),
+            "date_from": saturday.isoformat(),
+            "date_to": saturday.isoformat(),
+            "duration_minutes": 30,
+        },
+    )
+    assert closed_res.status_code == 200, closed_res.text
+    assert closed_res.json()["slots"] == []
 
 
 def test_save_availability_syncs_template():

@@ -13,6 +13,8 @@ SESSION_SLOT_DEFAULT_WINDOW = (time(8, 0), time(20, 0))
 
 
 def weekends_enabled() -> bool:
+    """Sat/Sun are open unless SCHEDULING_WEEKENDS_ENABLED is false."""
+    # Imported here to avoid a circular import with Settings.
     from app.core.config import settings
 
     return bool(settings.scheduling_weekends_enabled)

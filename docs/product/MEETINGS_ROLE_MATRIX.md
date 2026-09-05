@@ -50,7 +50,7 @@ Unified calendar feed: `GET /api/v1/calendar/events` (`event_type`: `cm_meeting`
 3. Backend: `create_meeting` / `reschedule` validate against **CM host availability**; `check_conflicts` still checks all participants for double-booking.
 4. Configured availability: weekdays without saved rules are **closed** (not default open).
 5. **One rule**: `StaffAvailabilityRule` is canonical for session materialization; CM meetings use the CM's staff rules as host.
-6. **Saturday meetings**: therapists and CMs book against the **CM host** calendar. A therapist's own Saturday being closed does **not** hide CM Saturday slots. Org-wide default unsaved hours are Mon–Fri (`SCHEDULING_WEEKENDS_ENABLED=false`); tick Saturday on the CM calendar (or set that flag) to open Sat/Sun by default.
+6. **Weekends**: product default is Sat/Sun **open** (`SCHEDULING_WEEKENDS_ENABLED=true`) for every staff calendar (CM, therapist, admin) until that person unchecks the day. Therapists still book CM meetings against the **CM host** calendar — a therapist's closed Saturday does not hide CM Saturday slots.
 
 ## Deferred (next pass)
 

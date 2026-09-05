@@ -128,8 +128,8 @@ class Settings(BaseSettings):
     google_calendar_client_secret: str = ""
     # When false, booking slots use Insighte availability + meetings only (Google free/busy optional).
     google_calendar_freebusy_enabled: bool = False
-    # When true, default staff availability and session templates include Saturday/Sunday.
-    scheduling_weekends_enabled: bool = False
+    # Product default: Sat/Sun are open until staff unchecks them on their calendar.
+    scheduling_weekends_enabled: bool = True
 
     # External integration API + remote MCP (read-only). Off by default in production-like envs
     # until explicitly enabled; tests/dev set INTEGRATION_API_ENABLED=true.
