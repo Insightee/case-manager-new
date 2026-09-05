@@ -100,11 +100,15 @@ def cm_headers_for_case(client, case_id: int, password: str = "demo123") -> dict
 
 
 def future_meeting_date(days_ahead: int = 14) -> str:
-    """ISO date safely in the future for meeting booking tests."""
+    """ISO date for tests that hardcode 11:00 without reading the host calendar.
+
+    Saturday meetings are allowed when the case manager's calendar is open.
+    Default unsaved hours are Mon–Fri, so hardcoded 11:00 lands on a weekday.
+    Use ``first_meeting_slot`` when the test should accept a Saturday CM slot.
+    """
     from datetime import date, timedelta
 
     target = date.today() + timedelta(days=days_ahead)
-    # Availability defaults are weekday-only; keep meeting tests off Sat/Sun.
     while target.weekday() >= 5:
         target += timedelta(days=1)
     return target.isoformat()
@@ -133,21 +137,24 @@ def first_meeting_slot(
     duration_minutes: int = 30,
     slot_index: int = 0,
 ) -> tuple[str, str]:
-    """Return a bookable (date, time) tuple from shared attendee availability."""
-    target_date = future_meeting_date(days_ahead)
+    """Return a bookable (date, time) from the host calendar, including Saturday if open."""
+    from datetime import date, timedelta
+
+    start = date.today() + timedelta(days=days_ahead)
+    end = start + timedelta(days=6)
     res = client.get(
         "/api/v1/calendar/availability",
         headers=headers,
         params={
             "user_ids": ",".join(str(uid) for uid in user_ids),
-            "date_from": target_date,
-            "date_to": target_date,
+            "date_from": start.isoformat(),
+            "date_to": end.isoformat(),
             "duration_minutes": duration_minutes,
         },
     )
     assert res.status_code == 200, res.text
     slots = res.json().get("slots", [])
-    assert slots, f"Expected availability slots for users {user_ids} on {target_date}"
+    assert slots, f"Expected availability slots for users {user_ids} between {start} and {end}"
     slot = slots[min(slot_index, len(slots) - 1)]
     return slot["date"], f"{slot['time']}:00"
 
@@ -187,8 +194,6 @@ def meeting_slot_near_minutes_ahead(
 
     for day_offset in day_offsets:
         day = (now + timedelta(days=day_offset)).date()
-        if day.weekday() >= 5:
-            continue
         res = client.get(
             "/api/v1/calendar/availability",
             headers=headers,

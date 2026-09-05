@@ -264,8 +264,8 @@ def test_meeting_booked_30_minutes_ahead_sends_reminder_at_booking(monkeypatch):
 
     from app.core.timezone import IST
 
-    # Freeze to a weekday so default Mon–Fri availability has a 30-minute slot.
-    # Weekend CI (Sat/Sun) has no open calendar windows unless weekends are enabled.
+    # Pin reminder timing: create-hook fires when the meeting is < 60 minutes away.
+    # Saturday booking stays allowed when the CM host calendar is open.
     fixed_now = datetime(2026, 9, 4, 10, 30, 0, tzinfo=IST)
 
     def _fixed_now():
