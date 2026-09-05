@@ -199,6 +199,69 @@ def test_calendar_day_unpaid_leave_deduction():
         db.close()
 
 
+def test_month_spanning_leave_uses_day_status_in_billing():
+    from app.services.reports_export_helpers import leave_days_in_month_for_case
+
+    db = SessionLocal()
+    try:
+        therapist, case = _isolated_shadow_calendar_case(db)
+        for day in (date(2099, 8, 31), date(2099, 9, 1)):
+            db.add(
+                TherapySession(
+                    case_id=case.id,
+                    therapist_user_id=therapist.id,
+                    scheduled_date=day,
+                    start_time=time(9, 0),
+                    end_time=time(10, 0),
+                    mode=SessionMode.SCHOOL,
+                    status=SessionStatus.SCHEDULED,
+                )
+            )
+        leave = TherapistLeave(
+            therapist_user_id=therapist.id,
+            case_id=case.id,
+            case_ids=[case.id],
+            leave_type=LeaveType.ANNUAL,
+            billing_category=LeaveBillingCategory.PAID,
+            start_date=date(2099, 8, 31),
+            end_date=date(2099, 9, 1),
+            paid_days=1,
+            unpaid_days=1,
+            reason="Month-spanning mixed leave",
+            status=LeaveStatus.APPROVED,
+            includes_shadow_cases=True,
+        )
+        db.add(leave)
+        db.commit()
+
+        august = leave_days_in_month_for_case(db, therapist.id, case.id, "2099-08")
+        september = leave_days_in_month_for_case(db, therapist.id, case.id, "2099-09")
+        assert august == {"paid": 1, "unpaid": 0, "carry_forward": 0}
+        assert september == {"paid": 0, "unpaid": 1, "carry_forward": 0}
+
+        aug_preview = billing.build_month_preview(db, therapist.id, "2099-08")
+        sep_preview = billing.build_month_preview(db, therapist.id, "2099-09")
+        assert aug_preview["attendance_summary"].get("paid_leaves") == 1
+        assert not aug_preview["attendance_summary"].get("unpaid_leaves")
+        assert aug_preview["leave_deduction_inr"] == 0
+        assert sep_preview["attendance_summary"].get("unpaid_leaves") == 1
+        assert sep_preview["leave_deduction_inr"] > 0
+
+        aug_case = next(c for c in aug_preview["cases"] if c["case_id"] == case.id)
+        sep_case = next(c for c in sep_preview["cases"] if c["case_id"] == case.id)
+        assert [(row["date"], row["status"]) for row in aug_case["leave_day_lines"]] == [
+            ("2099-08-31", "paid")
+        ]
+        assert [(row["date"], row["status"]) for row in sep_case["leave_day_lines"]] == [
+            ("2099-09-01", "unpaid")
+        ]
+
+        db.delete(leave)
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_pending_submitted_log_in_pending_approval():
     db = SessionLocal()
     try:

@@ -147,13 +147,6 @@ export function BookMeetingModal({
     return user?.id || null
   }, [caseDetail, user, bookAsCaseManager, bookAsAdmin, selectedStaffIds, staffUsers])
 
-  const availabilityAdminIds = useMemo(() => {
-    if (bookAsAdmin || (attendees.inviteStaff && selectedStaffIds.length > 0)) {
-      return selectedStaffIds
-    }
-    return []
-  }, [bookAsAdmin, attendees.inviteStaff, selectedStaffIds])
-
   useEffect(() => {
     if (isTherapistBooking && !form.case_id) {
       setStaffSlots(null)
@@ -164,23 +157,11 @@ export function BookMeetingModal({
       return
     }
     setSlotsLoading(true)
-    const userIds = isTherapistBooking
-      ? [
-        caseManagerId,
-        user?.id,
-        ...(attendees.client && caseDetail?.primary_parent_user_id
-          ? [caseDetail.primary_parent_user_id]
-          : []),
-      ].filter(Boolean)
-      : [
-        caseManagerId,
-        attendees.therapist && therapistUserId ? Number(therapistUserId) : null,
-        ...(attendees.inviteStaff ? availabilityAdminIds : []),
-      ].filter(Boolean)
+    const hostUserId = caseManagerId
     const qs = buildSharedAvailabilityQuery({
       targetDate: form.scheduled_date,
       durationMinutes: form.duration_minutes,
-      userIds,
+      userIds: hostUserId ? [hostUserId] : [],
     })
     apiFetch(`/api/v1/calendar/availability?${qs}`)
       .then(setStaffSlots)
@@ -192,13 +173,6 @@ export function BookMeetingModal({
     form.scheduled_date,
     form.duration_minutes,
     caseManagerId,
-    attendees.client,
-    attendees.therapist,
-    attendees.inviteStaff,
-    therapistUserId,
-    availabilityAdminIds,
-    caseDetail?.primary_parent_user_id,
-    user?.id,
   ])
 
   function addGuestEmail() {
@@ -333,9 +307,7 @@ export function BookMeetingModal({
   const autoTitle = [typeLabel, clientName ? `for ${clientName}` : '', cmName ? `— case of ${cmName}` : ''].filter(Boolean).join(' ')
 
   const activeSlots = staffSlots
-  const slotLabel = isTherapistBooking
-    ? `Available slots — ${caseDetail?.case_manager_name || 'Case manager'}`
-    : `Available slots — ${caseDetail?.case_manager_name || 'Your calendar'}`
+  const slotLabel = `Available slots — ${caseDetail?.case_manager_name || (isTherapistBooking ? 'Case manager' : 'Your calendar')}`
 
   return (
     <div className="meetings-modal-backdrop">
@@ -623,7 +595,7 @@ export function BookMeetingModal({
           ) : null}
           {activeSlots?.freebusy_stale ? (
             <p style={{ margin: '-6px 0 10px', fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 12px' }}>
-              Google Calendar was temporarily unavailable for at least one attendee, so these slots were calculated from local availability first.
+              Google Calendar was temporarily unavailable for the case manager, so these slots were calculated from local availability first.
             </p>
           ) : null}
 

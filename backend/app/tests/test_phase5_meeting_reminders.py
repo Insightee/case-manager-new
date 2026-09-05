@@ -173,8 +173,34 @@ def _meeting(meeting_id: int) -> CaseManagerMeeting:
         db.close()
 
 
-def test_meeting_62_minutes_out_gets_one_reminder_per_participant():
-    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json=_future_payload(62))
+def test_meeting_62_minutes_out_gets_one_reminder_per_participant(monkeypatch):
+    from datetime import datetime
+
+    from app.core.timezone import IST
+
+    # Freeze clock so 11:30 is exactly 62 min ahead (batch window 55–70, create hook skips >=60).
+    fixed_now = datetime(2026, 9, 4, 10, 28, 0, tzinfo=IST)
+
+    def _fixed_now():
+        return fixed_now
+
+    monkeypatch.setattr("app.core.timezone.now_ist", _fixed_now)
+    monkeypatch.setattr("app.services.availability_service.now_ist", _fixed_now)
+    monkeypatch.setattr("app.services.cm_meeting_service.now_ist", _fixed_now)
+    monkeypatch.setattr("app.api.v1.meetings.now_ist", _fixed_now)
+
+    create = client.post(
+        "/api/v1/meetings",
+        headers=_headers("superadmin@demo.com"),
+        json={
+            "case_id": _bookable_case_id(),
+            "invite_client": False,
+            "scheduled_date": "2026-09-04",
+            "scheduled_time": "11:30:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+        },
+    )
     assert create.status_code == 201, create.text
     meeting_id = create.json()["id"]
 
@@ -183,10 +209,10 @@ def test_meeting_62_minutes_out_gets_one_reminder_per_participant():
         meeting = db.get(CaseManagerMeeting, meeting_id)
         assert meeting is not None
         participants = meeting_participant_user_ids(meeting)
-        stats = send_due_meeting_reminders(db, now_ist())
+        stats = send_due_meeting_reminders(db, fixed_now)
         db.commit()
         db.refresh(meeting)
-        second = send_due_meeting_reminders(db, now_ist())
+        second = send_due_meeting_reminders(db, fixed_now)
         db.commit()
 
         reminders = _reminder_notifications(db, meeting_id)

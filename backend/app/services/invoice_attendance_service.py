@@ -19,7 +19,9 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_billing_service as billing
+from app.services import leave_dates_service as leave_dates
 from app.services import therapist_invoice_labels as labels
+from app.services.leave_policy_service import allocations_for_leave
 from app.services.reports_export_helpers import (
     is_homecare_case,
     is_shadow_case,
@@ -369,8 +371,6 @@ def _iter_leave_dates(
     case_id: int | None = None,
 ) -> list[date]:
     if db is not None:
-        from app.services import leave_dates_service as leave_dates
-
         return leave_dates.billable_leave_dates(
             db, leave, case_id=case_id, from_date=start, to_date=end
         )
@@ -402,8 +402,6 @@ def build_leave_lines_for_case(
     shadow = is_shadow_case(case) or payout_cycle.uses_calendar_day_pay(case)
     day_rate = _day_rate_inr(case, db=db, as_of=month_end)
     lines: list[dict[str, Any]] = []
-
-    from app.services.leave_policy_service import _paid_unpaid_for_leave
 
     for lv in leaves:
         dates = _iter_leave_dates(
@@ -451,21 +449,10 @@ def build_leave_lines_for_case(
         if lv.status != LeaveStatus.APPROVED:
             continue
 
-        year = month_start.year
-        paid_days, unpaid_days = _paid_unpaid_for_leave(db, lv, year)
         if not dates:
             continue
 
-        all_dates = _iter_leave_dates(
-            lv, lv.start_date, lv.end_date, db=db if shadow else None, case_id=case.id if shadow else None
-        )
-        paid_n = max(0, int(lv.paid_days or 0))
-        if unpaid_days <= 0:
-            paid_left = len(dates)
-        elif paid_days <= 0:
-            paid_left = 0
-        else:
-            paid_left = sum(1 for d in dates if d in all_dates and all_dates.index(d) < paid_n)
+        status_by_day = {item.day: item.status for item in allocations_for_leave(db, lv)}
         if not shadow:
             for d in dates:
                 lines.append(
@@ -487,8 +474,8 @@ def build_leave_lines_for_case(
                 )
             continue
 
-        for idx, d in enumerate(dates):
-            is_paid = idx < paid_left
+        for d in dates:
+            is_paid = status_by_day.get(d) == "paid"
             if is_paid:
                 lines.append(
                     {
@@ -527,12 +514,6 @@ def build_leave_lines_for_case(
                     }
                 )
     return lines
-
-
-def leave_service_day_count(leave: TherapistLeave) -> int:
-    from app.services import leave_service
-
-    return leave_service.leave_day_count(leave.start_date, leave.end_date) or 0
 
 
 def compute_leave_deduction_inr(
@@ -789,6 +770,27 @@ def month_attendance_facts(
         case_rejected_notes = [n for n in rejected_notes if n.get("case_code") == case_row.case_code]
         has_activity = _case_has_activity(attendance, pending_approval_lines, case_rejected_notes)
 
+        leave_day_lines: list[dict[str, Any]] = []
+        for lv in case_leaves:
+            if lv.status != LeaveStatus.APPROVED:
+                continue
+            case_days = None
+            if profile == BillingProfile.CALENDAR_DAY:
+                case_days = set(leave_dates.billable_leave_dates(db, lv, case_id=case_id))
+            for item in allocations_for_leave(db, lv):
+                if start <= item.day <= end and (case_days is None or item.day in case_days):
+                    leave_day_lines.append(
+                        {
+                            "leave_id": lv.id,
+                            "date": item.day.isoformat(),
+                            "status": item.status,
+                            "ui_label": "Paid leave" if item.status == "paid" else "Unpaid leave",
+                        }
+                    )
+        leave_day_lines.sort(key=lambda row: row["date"])
+        if leave_day_lines:
+            has_activity = True
+
         _merge_attendance(summary, attendance, profile)
 
         case_payloads.append(
@@ -799,6 +801,7 @@ def month_attendance_facts(
                 "attendance": attendance,
                 "pending_approval_lines": pending_approval_lines,
                 "child_absence_lines": child_absence_lines,
+                "leave_day_lines": leave_day_lines,
                 "leave_lines": leave_lines,
                 "session_lines": session_lines,
                 "consuming_absences": consuming_absences,

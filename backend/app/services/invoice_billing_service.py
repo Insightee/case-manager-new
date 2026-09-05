@@ -636,6 +636,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
             "pending_late_inr": pending_case_inr,
             "session_lines": session_lines,
             "child_absence_lines": child_absence_lines,
+            "leave_day_lines": bucket.get("leave_day_lines") or [],
             "leave_lines": leave_lines,
             "pending_approval_lines": pending_approval_lines,
             "pending_late_lines": pending_approval_lines,
@@ -669,7 +670,11 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         "pending_late_inr": round(pending_approval_inr, 2),
         "pending_late_count": pending_approval_count,
         "leave_deduction_inr": leave_deduction_inr,
-        "leave_details": [],
+        "leave_details": [
+            {**line, "case_id": group["case_id"], "case_code": group["case_code"]}
+            for group in case_groups
+            for line in (group.get("leave_day_lines") or [])
+        ],
         "leave_balance": leave_balance,
         "attendance_summary": facts.get("attendance_summary") or {},
         "rejected_notes": facts.get("rejected_notes") or [],
@@ -901,6 +906,7 @@ def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: 
             snapshot["next_month_session_plan"] = _normalize_next_month_plan(plan)
         # Freeze leave / absence display with the submitted totals (avoid live drift).
         snapshot["leave_lines"] = list(case_group.get("leave_lines") or [])
+        snapshot["leave_day_lines"] = list(case_group.get("leave_day_lines") or [])
         snapshot["child_absence_lines"] = list(case_group.get("child_absence_lines") or [])
         case_line = InvoiceCaseLine(
             invoice_id=invoice.id,
@@ -1100,6 +1106,7 @@ def _case_group_from_case_line(db: Session, cl: InvoiceCaseLine) -> tuple[dict, 
         "pending_approval_lines": pending_late_lines,
         "pending_late_lines": pending_late_lines,
         "leave_lines": list(snapshot.get("leave_lines") or []) if isinstance(snapshot, dict) else [],
+        "leave_day_lines": list(snapshot.get("leave_day_lines") or []) if isinstance(snapshot, dict) else [],
         "child_absence_lines": list(snapshot.get("child_absence_lines") or [])
         if isinstance(snapshot, dict)
         else [],

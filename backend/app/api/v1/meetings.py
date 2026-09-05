@@ -605,11 +605,11 @@ def _validate_slot_in_availability(
     target_date: date,
     target_time: time,
     duration_minutes: int,
-    attendee_ids: list[int],
+    host_user_id: int | None,
     user: User,
 ) -> None:
-    """Ensure the requested start time falls in shared attendee availability."""
-    if not attendee_ids or not target_time:
+    """Ensure the requested start time falls in the case manager's (host) availability."""
+    if not host_user_id or not target_time:
         return
     from datetime import datetime
 
@@ -620,7 +620,7 @@ def _validate_slot_in_availability(
         return
     slots_payload = availability_service.free_slots(
         db,
-        attendee_ids,
+        [host_user_id],
         target_date,
         target_date,
         duration_minutes,
@@ -677,19 +677,13 @@ def get_meetings_availability(
     _require_meetings_read(user)
     _validate_meeting_duration(duration_minutes)
 
-    attendees = []
-    if case_manager_id:
-        attendees.append(case_manager_id)
-    if therapist_id:
-        attendees.append(therapist_id)
-    if parent_id:
-        attendees.append(parent_id)
-    if mentor_id:
-        attendees.append(mentor_id)
-    attendees.extend(admin_ids)
+    # CM meetings are booked against the case manager's calendar (host), not attendee intersection.
+    host_id = case_manager_id
+    if not host_id:
+        raise HTTPException(status_code=400, detail="case_manager_id is required")
     return availability_service.free_slots(
         db,
-        attendees,
+        [host_id],
         target_date,
         target_date,
         duration_minutes,
@@ -795,7 +789,7 @@ def create_meeting(
             target_date=payload.scheduled_date,
             target_time=payload.scheduled_time,
             duration_minutes=payload.duration_minutes,
-            attendee_ids=attendees,
+            host_user_id=cm_id,
             user=user,
         )
         conflicted, reason = check_conflicts(db, payload.scheduled_date, payload.scheduled_time, payload.duration_minutes, attendees)
@@ -885,7 +879,7 @@ def reschedule_meeting(
         target_date=payload.scheduled_date,
         target_time=payload.scheduled_time,
         duration_minutes=payload.duration_minutes,
-        attendee_ids=attendees,
+        host_user_id=meeting.case_manager_user_id,
         user=user,
     )
     conflicted, reason = check_conflicts(

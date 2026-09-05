@@ -6,7 +6,7 @@ import { formatDisplayDate } from '../../lib/datetime.js'
 import { fetchAllPages } from '../../lib/listApi.js'
 import { isLeaveBalanceUpdated, leaveCreditPendingLabel, unpaidBreakdownLabel } from '../../lib/leaveBalanceDisplay.js'
 import { migrationBannerMessage } from '../../lib/leaveMigration.js'
-import { categoryLabel } from '../../lib/leaveFormUtils.js'
+import { categoryLabel, formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
 import { HIDE_THERAPIST_LEAVE_CREDITS_UI } from '../../lib/productFeatureFlags.js'
 import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
 import { MigrationBackfillBanner } from './MigrationBackfillBanner.jsx'
@@ -507,7 +507,14 @@ export function TherapistLeavePage() {
                       <td style={{ color: '#6b7280', fontSize: '0.8rem' }}>{l.service_line || '—'}</td>
                       <td>{formatDisplayDate(l.start_date)}</td>
                       <td>{formatDisplayDate(l.end_date)}</td>
-                      <td>{l.day_count ?? '—'}</td>
+                      <td>
+                        <div>{l.day_count ?? '—'}</div>
+                        {formatLeaveRecordSplit(l) !== '—' ? (
+                          <div style={{ fontSize: '0.75rem', color: '#4b5563', marginTop: 2 }}>
+                            {formatLeaveRecordSplit(l)}
+                          </div>
+                        ) : null}
+                      </td>
                       <td style={{ color: '#6b7280' }}>{l.reason || '—'}</td>
                       <td>
                         <span className="therapist-leave-page__pill" style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>

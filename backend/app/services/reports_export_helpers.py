@@ -444,19 +444,25 @@ def _leave_days_overlap_month(
     case_id: int | None = None,
 ) -> dict[str, int]:
     from app.services import leave_dates_service as leave_dates
+    from app.services.leave_policy_service import (
+        allocations_for_leave,
+        month_paid_unpaid_from_allocations,
+    )
 
     start, end = month_bounds(ym)
     paid = unpaid = 0
     for lv in leaves:
-        all_dates = leave_dates.billable_leave_dates(db, lv, case_id=case_id)
-        paid_n = max(0, int(lv.paid_days or 0))
-        for day in all_dates:
-            if day < start or day > end:
-                continue
-            if all_dates.index(day) < paid_n:
-                paid += 1
-            else:
-                unpaid += 1
+        allocations = allocations_for_leave(db, lv)
+        if case_id is not None:
+            case_days = set(leave_dates.billable_leave_dates(db, lv, case_id=case_id))
+            allocations = [item for item in allocations if item.day in case_days]
+        month_paid, month_unpaid = month_paid_unpaid_from_allocations(
+            allocations,
+            start,
+            end,
+        )
+        paid += month_paid
+        unpaid += month_unpaid
     return {"paid": paid, "unpaid": unpaid, "carry_forward": 0}
 
 
