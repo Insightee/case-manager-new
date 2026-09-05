@@ -15,7 +15,7 @@ from app.main import app
 from app.models.role import Role
 from app.models.user import User
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_first_case_id, api_items
+from app.tests.conftest import api_first_case_id, api_items, future_meeting_date
 
 client = TestClient(app)
 
@@ -129,7 +129,7 @@ def test_module_admin_can_list_and_create_meetings():
     bookable = cases.json()
     assert bookable, "module admin needs at least one bookable case"
     case_id = bookable[0]["id"]
-    day = (date.today() + timedelta(days=21)).isoformat()
+    day = future_meeting_date(21)
     created = client.post(
         "/api/v1/meetings",
         headers=headers,

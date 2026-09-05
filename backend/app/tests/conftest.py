@@ -187,6 +187,8 @@ def meeting_slot_near_minutes_ahead(
 
     for day_offset in day_offsets:
         day = (now + timedelta(days=day_offset)).date()
+        if day.weekday() >= 5:
+            continue
         res = client.get(
             "/api/v1/calendar/availability",
             headers=headers,

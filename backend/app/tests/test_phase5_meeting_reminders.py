@@ -259,8 +259,35 @@ def test_cancelled_meeting_gets_no_reminder():
         db.close()
 
 
-def test_meeting_booked_30_minutes_ahead_sends_reminder_at_booking():
-    create = client.post("/api/v1/meetings", headers=_headers("superadmin@demo.com"), json=_future_payload(30))
+def test_meeting_booked_30_minutes_ahead_sends_reminder_at_booking(monkeypatch):
+    from datetime import datetime
+
+    from app.core.timezone import IST
+
+    # Freeze to a weekday so default Mon–Fri availability has a 30-minute slot.
+    # Weekend CI (Sat/Sun) has no open calendar windows unless weekends are enabled.
+    fixed_now = datetime(2026, 9, 4, 10, 30, 0, tzinfo=IST)
+
+    def _fixed_now():
+        return fixed_now
+
+    monkeypatch.setattr("app.core.timezone.now_ist", _fixed_now)
+    monkeypatch.setattr("app.services.availability_service.now_ist", _fixed_now)
+    monkeypatch.setattr("app.services.cm_meeting_service.now_ist", _fixed_now)
+    monkeypatch.setattr("app.api.v1.meetings.now_ist", _fixed_now)
+
+    create = client.post(
+        "/api/v1/meetings",
+        headers=_headers("superadmin@demo.com"),
+        json={
+            "case_id": _bookable_case_id(),
+            "invite_client": False,
+            "scheduled_date": "2026-09-04",
+            "scheduled_time": "11:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+        },
+    )
     assert create.status_code == 201, create.text
     meeting_id = create.json()["id"]
 
