@@ -161,11 +161,25 @@ def test_calendar_day_unpaid_leave_deduction():
     try:
         therapist, case = _isolated_shadow_calendar_case(db)
         ym = "2099-08"
+        for day in (date(2099, 8, 10), date(2099, 8, 11)):
+            db.add(
+                TherapySession(
+                    case_id=case.id,
+                    therapist_user_id=therapist.id,
+                    scheduled_date=day,
+                    start_time=time(9, 0),
+                    end_time=time(10, 0),
+                    mode=SessionMode.SCHOOL,
+                    status=SessionStatus.SCHEDULED,
+                )
+            )
         leave = TherapistLeave(
             therapist_user_id=therapist.id,
             case_id=case.id,
             leave_type=LeaveType.UNPAID,
             billing_category=LeaveBillingCategory.UNPAID,
+            paid_days=0,
+            unpaid_days=2,
             start_date=date(2099, 8, 10),
             end_date=date(2099, 8, 11),
             reason="Shadow unpaid leave",
@@ -191,6 +205,18 @@ def test_month_spanning_leave_uses_day_status_in_billing():
     db = SessionLocal()
     try:
         therapist, case = _isolated_shadow_calendar_case(db)
+        for day in (date(2099, 8, 31), date(2099, 9, 1)):
+            db.add(
+                TherapySession(
+                    case_id=case.id,
+                    therapist_user_id=therapist.id,
+                    scheduled_date=day,
+                    start_time=time(9, 0),
+                    end_time=time(10, 0),
+                    mode=SessionMode.SCHOOL,
+                    status=SessionStatus.SCHEDULED,
+                )
+            )
         leave = TherapistLeave(
             therapist_user_id=therapist.id,
             case_id=case.id,

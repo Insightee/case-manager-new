@@ -141,6 +141,7 @@ export function TherapistLeavePage() {
 
   async function submitLeave(e) {
     e.preventDefault()
+    if (submitting) return
     if (assignedCases.length && !form.case_ids.length) {
       setError('Select at least one case, or use Select all.')
       return

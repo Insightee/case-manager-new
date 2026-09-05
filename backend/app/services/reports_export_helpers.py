@@ -440,7 +440,10 @@ def _leave_days_overlap_month(
     db: Session,
     leaves: list[TherapistLeave],
     ym: str,
+    *,
+    case_id: int | None = None,
 ) -> dict[str, int]:
+    from app.services import leave_dates_service as leave_dates
     from app.services.leave_policy_service import (
         allocations_for_leave,
         month_paid_unpaid_from_allocations,
@@ -449,8 +452,12 @@ def _leave_days_overlap_month(
     start, end = month_bounds(ym)
     paid = unpaid = 0
     for lv in leaves:
+        allocations = allocations_for_leave(db, lv)
+        if case_id is not None:
+            case_days = set(leave_dates.billable_leave_dates(db, lv, case_id=case_id))
+            allocations = [item for item in allocations if item.day in case_days]
         month_paid, month_unpaid = month_paid_unpaid_from_allocations(
-            allocations_for_leave(db, lv),
+            allocations,
             start,
             end,
         )
@@ -493,8 +500,12 @@ def leave_days_in_month_for_case(
             TherapistLeave.end_date >= start,
         )
     ).all()
-    scoped = [lv for lv in leaves if leave_applies_to_case(lv, case_id)]
-    return _leave_days_overlap_month(db, scoped, ym)
+    scoped = [
+        lv
+        for lv in leaves
+        if leave_applies_to_case(lv, case_id) or (not lv.case_id and not lv.case_ids)
+    ]
+    return _leave_days_overlap_month(db, scoped, ym, case_id=case_id)
 
 
 def is_shadow_case(case: Case | None) -> bool:

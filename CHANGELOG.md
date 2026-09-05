@@ -15,6 +15,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Production CORS / frontend guards treat **only** `insightes-projects/frontend` as the Vercel UI (`frontend*.vercel.app` + `insighte.org`). Retired `insightecasestaging` / `insightecasetesting` hosts no longer match the default regex and fail Railway startup if listed in `CORS_ORIGINS` or `FRONTEND_URL`.
 - CM meeting booking: slot picker and validation use the **case manager host calendar** only (therapist/parent availability no longer hides CM open times); conflict checks still apply to all attendees.
 - Scheduling: unified staff availability across CM meetings, therapist meeting requests, parent slot booking, and session materialization; `SCHEDULING_WEEKENDS_ENABLED` org default for Sat/Sun; therapists manage hours on `/therapist/meetings?availability=1` with sync to weekly schedule template.
 - Meetings: therapist booking uses the same CM availability API as case managers; unchecked weekdays stay closed after CM saves availability; CM-only availability/Google UI hidden on therapist portal; mobile bottom-sheet modals for book/reschedule/cancel. `Session cancelled` / `Paid leave` / `Unpaid leave` (no extra Still paid / Not billed chips); shadow may choose unpaid while credits remain (paid default); parent invoice lines use the same cancelled wording and show planned next-month session count when present.
@@ -33,7 +34,8 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
-- Month-spanning leave applies paid credits to the earliest days and bills each month by that day’s real paid/unpaid status (no 50/50 rounding that zeroed mixed leave on both invoices).
+- Leave and child absence are unique per **case×day** (disjoint cases the same day stay allowed). Shadow leave counts only dates with a session or booked slot, so a Saturday without a session is not deducted. Paid/unpaid days recompute on approve from live monthly credits; invoice copy explains missing employment start date vs remaining credits.
+- Month-spanning leave applies paid credits to the earliest billable days and bills each month by that day’s real paid/unpaid status (no 50/50 rounding that zeroed mixed leave on both invoices).
 - Meetings: slot validation no longer blocks double-booking conflict messages; `min_notice_minutes=0` saves correctly; therapist slot picker respects assigned case manager availability windows.
 - Therapist session-log submit no longer stops on the duration warning: the banner still prompts a time review, but the first Submit posts the log. Scheduled visits warn only outside a ±15 minute window (not exact scheduled minutes). Session start/end payloads now include `product_module` and `day_type`; therapist home/workspace serialize `day_type` even when Postgres returns a plain string.
 - Starting a session when a previous visit still needs a log opens that pending log form first (same Submit) instead of only showing an error. Portal install control is a dropdown with both **Install** and **Refresh**; the primary icon is Install in the browser and Refresh in the installed dock/PWA. Production service workers apply waiting updates automatically.

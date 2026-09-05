@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
+import { invoiceLeaveCreditBanner } from '../../lib/leaveBalanceDisplay.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import {
   isHomecareCaseGroup,
@@ -358,26 +358,20 @@ export function InvoiceBreakdownView({
   }
 
   const leaveBalance = data.leave_balance
+  const leaveCreditBanner = invoiceLeaveCreditBanner(leaveBalance)
   const rejectedNotes = data.rejected_notes || []
   const hasShadowCase = (data.cases || []).some(isShadowCaseGroup)
 
   return (
     <div className="space-y-6">
-      {leaveBalance && hasShadowCase ? (
+      {leaveCreditBanner && hasShadowCase ? (
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-700">
           <p className="text-xs font-semibold uppercase text-indigo-700">Leave credits ({leaveBalance.year})</p>
           <p className="mt-1">
-            Remaining: <strong>{leaveBalanceRemainingLabel(leaveBalance)}</strong>
-            {!isLeaveBalanceUpdated(leaveBalance) ? (
-              <span className="ml-2 font-semibold text-amber-700">To be updated</span>
-            ) : (
-              <>
-                {' · '}
-                Used: {leaveBalance.paid_used_effective ?? leaveBalance.paid_leaves_taken ?? 0}
-              </>
-            )}
+            Remaining: <strong>{leaveCreditBanner.remainingLabel}</strong>
           </p>
-          <p className="mt-1 text-xs text-slate-500">Credits reset each January.</p>
+          <p className="mt-1 text-xs text-slate-600">{leaveCreditBanner.detail}</p>
+          <p className="mt-1 text-xs text-slate-500">Credits reset each January. Unused credits do not carry forward.</p>
         </div>
       ) : null}
 

@@ -478,11 +478,30 @@ def test_leave_days_in_month_for_case_scoped():
             pytest.skip("Need therapist and two cases")
         case_a, case_b = cases[0], cases[1]
         ym = "2026-09"
+        from datetime import time as dt_time
+
+        from app.models.session import Session as TherapySession
+        from app.models.session import SessionMode, SessionStatus
+
+        for day in (date(2026, 9, 5), date(2026, 9, 6)):
+            db.add(
+                TherapySession(
+                    case_id=case_a.id,
+                    therapist_user_id=therapist.id,
+                    scheduled_date=day,
+                    start_time=dt_time(9, 0),
+                    end_time=dt_time(10, 0),
+                    mode=SessionMode.SCHOOL,
+                    status=SessionStatus.SCHEDULED,
+                )
+            )
         db.add(
             TherapistLeave(
                 therapist_user_id=therapist.id,
                 leave_type=LeaveType.ANNUAL,
                 billing_category=LeaveBillingCategory.UNPAID,
+                paid_days=0,
+                unpaid_days=2,
                 start_date=date(2026, 9, 5),
                 end_date=date(2026, 9, 6),
                 status=LeaveStatus.APPROVED,

@@ -177,7 +177,7 @@ Alembic: single head verified. Fresh empty-SQLite `upgrade head` still hits **pr
 
 ### Vercel checks
 
-GitHub CI jobs `frontend` + `vercel-monorepo-build` **pass**. Some Vercel project-level preview deployments may still report author access policy blocks for individual Git authors; that is orthogonal to merge readiness of the engine code.
+GitHub CI jobs `frontend` + `vercel-monorepo-build` **pass**. Extra GitHub checks named `Vercel – insightecasestaging` / `Vercel – insightecasetesting` are leftover Git integrations on unused Vercel apps — not required, and not part of `insightes-projects/frontend`. Disconnect those Git apps to stop the failed checks.
 
 ### Files changed for CI repair
 

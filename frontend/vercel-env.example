@@ -1,6 +1,7 @@
-# Vercel project: insightes-projects / frontend
+# Vercel project: insightes-projects / frontend (the only UI project)
+# There is no separate insightecasestaging / insightecasetesting Vercel app.
 # Production: VITE_API_URL only — billing gated in code on insighte.org (reports + revamp are live)
-# Preview/Staging: add VITE_APP_ENV=staging, VITE_ENABLE_CLIENT_BILLING=true
+# Preview (same frontend project): add VITE_APP_ENV=staging, VITE_ENABLE_CLIENT_BILLING=true
 # Finance Control Tower + snapshot: defaults ON in non-prod when VITE_ENABLE_FINANCE_DASHBOARD_V1 is unset.
 # Canonical production stays off unless both are set (deliberate cutover):
 #   VITE_ENABLE_FINANCE_DASHBOARD_V1=true

@@ -19,6 +19,7 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.services import finance_payout_preview_service as payout_cycle
 from app.services import invoice_billing_service as billing
+from app.services import leave_dates_service as leave_dates
 from app.services import therapist_invoice_labels as labels
 from app.services.leave_policy_service import allocations_for_leave
 from app.services.reports_export_helpers import (
@@ -362,7 +363,17 @@ def build_pending_approval_line(
     return line
 
 
-def _iter_leave_dates(leave: TherapistLeave, start: date, end: date) -> list[date]:
+def _iter_leave_dates(
+    leave: TherapistLeave,
+    start: date,
+    end: date,
+    db: Session | None = None,
+    case_id: int | None = None,
+) -> list[date]:
+    if db is not None:
+        return leave_dates.billable_leave_dates(
+            db, leave, case_id=case_id, from_date=start, to_date=end
+        )
     overlap_start = max(leave.start_date, start)
     overlap_end = min(leave.end_date, end)
     if overlap_end < overlap_start:
@@ -393,8 +404,11 @@ def build_leave_lines_for_case(
     lines: list[dict[str, Any]] = []
 
     for lv in leaves:
+        dates = _iter_leave_dates(
+            lv, month_start, month_end, db=db if shadow else None, case_id=case.id if shadow else None
+        )
         if lv.status == LeaveStatus.PENDING:
-            for d in _iter_leave_dates(lv, month_start, month_end):
+            for d in dates:
                 if not shadow:
                     lines.append(
                         {
@@ -435,7 +449,6 @@ def build_leave_lines_for_case(
         if lv.status != LeaveStatus.APPROVED:
             continue
 
-        dates = _iter_leave_dates(lv, month_start, month_end)
         if not dates:
             continue
 
@@ -761,8 +774,11 @@ def month_attendance_facts(
         for lv in case_leaves:
             if lv.status != LeaveStatus.APPROVED:
                 continue
+            case_days = None
+            if profile == BillingProfile.CALENDAR_DAY:
+                case_days = set(leave_dates.billable_leave_dates(db, lv, case_id=case_id))
             for item in allocations_for_leave(db, lv):
-                if start <= item.day <= end:
+                if start <= item.day <= end and (case_days is None or item.day in case_days):
                     leave_day_lines.append(
                         {
                             "leave_id": lv.id,

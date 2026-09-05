@@ -11,6 +11,7 @@ from app.models.case import Case
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
+from app.services import leave_dates_service as leave_dates
 from app.services import leave_service
 from app.services.leave_bulk_import_service import get_year_snapshot
 
@@ -38,15 +39,16 @@ def iter_leave_dates(start: date, end: date) -> list[date]:
 
 
 def allocate_leave_days(
-    start: date,
-    end: date,
+    start: date | None = None,
+    end: date | None = None,
     *,
     paid_days: int,
     unpaid_days: int,
+    dates: list[date] | None = None,
 ) -> list[LeaveDayAllocation]:
     """Assign paid credits to the earliest days; leftover days are unpaid."""
-    dates = iter_leave_dates(start, end)
-    total = len(dates)
+    days = list(dates) if dates is not None else iter_leave_dates(start, end)
+    total = len(days)
     if total <= 0:
         return []
     paid = max(int(paid_days or 0), 0)
@@ -56,7 +58,7 @@ def allocate_leave_days(
         unpaid = total - paid
     return [
         LeaveDayAllocation(day=day, status="paid" if idx < paid else "unpaid")
-        for idx, day in enumerate(dates)
+        for idx, day in enumerate(days)
     ]
 
 
@@ -88,7 +90,11 @@ def format_day_split_message(
 
 
 def paid_unpaid_totals_for_leave(db: Session, leave: TherapistLeave) -> tuple[int, int]:
-    total = leave_service.leave_day_count(leave.start_date, leave.end_date)
+    includes_shadow = _leave_includes_shadow(db, leave)
+    if includes_shadow:
+        total = len(leave_dates.billable_leave_dates(db, leave, shadow_only=True))
+    else:
+        total = leave_service.leave_day_count(leave.start_date, leave.end_date)
     if total <= 0:
         return 0, 0
     if leave.paid_days is not None or leave.unpaid_days is not None:
@@ -98,7 +104,6 @@ def paid_unpaid_totals_for_leave(db: Session, leave: TherapistLeave) -> tuple[in
             paid = min(paid, total)
             unpaid = total - paid
         return paid, unpaid
-    includes_shadow = _leave_includes_shadow(db, leave)
     if not includes_shadow:
         return 0, total
     cat = leave.billing_category
@@ -111,11 +116,18 @@ def paid_unpaid_totals_for_leave(db: Session, leave: TherapistLeave) -> tuple[in
 
 def allocations_for_leave(db: Session, leave: TherapistLeave) -> list[LeaveDayAllocation]:
     paid, unpaid = paid_unpaid_totals_for_leave(db, leave)
+    includes_shadow = _leave_includes_shadow(db, leave)
+    dates = (
+        leave_dates.billable_leave_dates(db, leave, shadow_only=True)
+        if includes_shadow
+        else iter_leave_dates(leave.start_date, leave.end_date)
+    )
     return allocate_leave_days(
         leave.start_date,
         leave.end_date,
         paid_days=paid,
         unpaid_days=unpaid,
+        dates=dates,
     )
 
 
@@ -157,8 +169,11 @@ def _split_suggestion(
     unpaid_days: int,
     has_shadow_cases: bool,
     message: str | None = None,
+    dates: list[date] | None = None,
 ) -> LeaveSplitSuggestion:
-    allocations = allocate_leave_days(start, end, paid_days=paid_days, unpaid_days=unpaid_days)
+    allocations = allocate_leave_days(
+        start, end, paid_days=paid_days, unpaid_days=unpaid_days, dates=dates
+    )
     return LeaveSplitSuggestion(
         paid_days=paid_days,
         unpaid_days=unpaid_days,
@@ -287,7 +302,9 @@ def computed_consumption_detail(
             credits_left = max(credits_left - p, 0)
             continue
 
-        days = leave_service.days_in_calendar_year(lv, year)
+        days = leave_service.days_in_calendar_year(
+            lv, year, db, shadow_only=includes_shadow
+        )
         if days <= 0:
             continue
         if not includes_shadow:
@@ -428,15 +445,16 @@ def compute_leave_split(
     year: int | None = None,
 ) -> LeaveSplitSuggestion:
     year = year or start_date.year
-    total = leave_service.leave_day_count(start_date, end_date)
     profile = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == user.id)).first()
     balance = get_leave_balance(db, user, year=year, profile=profile)
 
     has_shadow = False
+    cases: list[Case] = []
     if case_ids:
-        _, has_shadow, _ = resolve_case_context(db, user.id, case_ids)
+        cases, has_shadow, _ = resolve_case_context(db, user.id, case_ids)
 
     if not has_shadow:
+        total = leave_service.leave_day_count(start_date, end_date)
         return _split_suggestion(
             start=start_date,
             end=end_date,
@@ -446,6 +464,18 @@ def compute_leave_split(
             message="Homecare-only — sessions will be cancelled; no leave credits used.",
         )
 
+    shadow_ids = [
+        c.id for c in cases if (c.product_module or "").strip().lower() == SHADOW_SERVICE_LINE
+    ]
+    scheduled = leave_dates.scheduled_dates_in_range(
+        db,
+        therapist_user_id=user.id,
+        start=start_date,
+        end=end_date,
+        case_ids=shadow_ids or case_ids,
+        shadow_only=True,
+    )
+    total = len(scheduled)
     remaining = balance["leave_credit_pending"]
     paid = min(total, remaining)
     unpaid = max(total - paid, 0)
@@ -455,6 +485,7 @@ def compute_leave_split(
         paid_days=paid,
         unpaid_days=unpaid,
         has_shadow_cases=True,
+        dates=scheduled,
     )
 
 
@@ -469,8 +500,8 @@ def suggest_leave_split(
     year: int | None = None,
 ) -> LeaveSplitSuggestion:
     if not case_ids:
-        total = leave_service.leave_day_count(start_date, end_date)
         if service_line.strip().lower() != SHADOW_SERVICE_LINE:
+            total = leave_service.leave_day_count(start_date, end_date)
             return _split_suggestion(
                 start=start_date,
                 end=end_date,
@@ -479,6 +510,15 @@ def suggest_leave_split(
                 has_shadow_cases=False,
                 message="No shadow cases — leave will not use credits.",
             )
+        scheduled = leave_dates.scheduled_dates_in_range(
+            db,
+            therapist_user_id=user.id,
+            start=start_date,
+            end=end_date,
+            case_ids=None,
+            shadow_only=True,
+        )
+        total = len(scheduled)
         profile = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == user.id)).first()
         balance = get_leave_balance(db, user, year=year or start_date.year, profile=profile)
         remaining = balance["leave_credit_pending"]
@@ -490,6 +530,7 @@ def suggest_leave_split(
             paid_days=paid,
             unpaid_days=unpaid,
             has_shadow_cases=True,
+            dates=scheduled,
         )
     return compute_leave_split(
         db, user, start_date=start_date, end_date=end_date, case_ids=case_ids, year=year
@@ -523,6 +564,25 @@ def resolve_billing_category(
     if split.unpaid_days > 0:
         return LeaveBillingCategory.PAID, split.paid_days, split.unpaid_days, split.has_shadow_cases
     return LeaveBillingCategory.PAID, split.paid_days, split.unpaid_days, split.has_shadow_cases
+
+
+def apply_live_paid_unpaid(db: Session, leave: TherapistLeave, user: User) -> TherapistLeave:
+    """Recompute paid/unpaid from live remaining credits (call on approve)."""
+    requested = leave.billing_category if leave.billing_category == LeaveBillingCategory.UNPAID else None
+    billing, paid_days, unpaid_days, includes_shadow = resolve_billing_category(
+        db,
+        user,
+        start_date=leave.start_date,
+        end_date=leave.end_date,
+        service_line=(leave.service_line or SHADOW_SERVICE_LINE),
+        case_ids=_leave_case_ids(leave) or None,
+        requested_category=requested,
+    )
+    leave.billing_category = billing
+    leave.paid_days = paid_days
+    leave.unpaid_days = unpaid_days
+    leave.includes_shadow_cases = includes_shadow
+    return leave
 
 
 def map_leave_type_from_billing(cat: LeaveBillingCategory) -> LeaveType:

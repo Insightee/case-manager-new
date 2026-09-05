@@ -81,18 +81,51 @@ def test_monthly_credits_and_consumption():
         assert earned == 6
         before = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
 
-        db.add(
-            TherapistLeave(
-                therapist_user_id=user.id,
-                leave_type=LeaveType.ANNUAL,
-                service_line="shadow_support",
-                billing_category=LeaveBillingCategory.PAID,
-                includes_shadow_cases=True,
-                start_date=date(2026, 3, 1),
-                end_date=date(2026, 3, 7),
-                status=LeaveStatus.APPROVED,
+        from datetime import time as dt_time
+
+        from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+        from app.models.case import Case
+        from app.models.session import Session as TherapySession
+        from app.models.session import SessionMode, SessionStatus
+
+        assignment = db.scalars(
+            select(CaseAssignment)
+            .join(Case, Case.id == CaseAssignment.case_id)
+            .where(
+                CaseAssignment.therapist_user_id == user.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                Case.product_module == "shadow_support",
             )
+        ).first()
+        assert assignment
+        for offset in range(7):
+            day = date(2026, 3, 1) + timedelta(days=offset)
+            db.add(
+                TherapySession(
+                    case_id=assignment.case_id,
+                    therapist_user_id=user.id,
+                    scheduled_date=day,
+                    start_time=dt_time(9, 0),
+                    end_time=dt_time(10, 0),
+                    mode=SessionMode.SCHOOL,
+                    status=SessionStatus.SCHEDULED,
+                )
+            )
+        leave = TherapistLeave(
+            therapist_user_id=user.id,
+            leave_type=LeaveType.ANNUAL,
+            service_line="shadow_support",
+            billing_category=LeaveBillingCategory.PAID,
+            includes_shadow_cases=True,
+            case_id=assignment.case_id,
+            case_ids=[assignment.case_id],
+            paid_days=6,
+            unpaid_days=1,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 7),
+            status=LeaveStatus.APPROVED,
         )
+        db.add(leave)
         db.commit()
 
         bal = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
@@ -100,6 +133,8 @@ def test_monthly_credits_and_consumption():
         assert bal["paid_leaves_taken"] == before["paid_leaves_taken"] + 6
         assert bal["unpaid_leaves_taken"] == before["unpaid_leaves_taken"] + 1
         assert bal["leave_credit_pending"] == max(earned - bal["paid_leaves_taken"], 0)
+        db.delete(leave)
+        db.commit()
     finally:
         db.close()
 
