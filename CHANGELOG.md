@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Mentor CM clinical parity: mentors (`therapist_profiles.mentor_user_id`) may book CM meetings, approve/reject session logs, and manage tickets/incidents on mentored therapists’ active cases while primary CM retains billing, allotment, and reassignment. New mentor roster API (`/api/v1/admin/mentor/therapists*`) and admin page `/admin/cm/therapists`; CM home caseload includes mentored cases.
 - Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
 - Expandable Description cells on People & HR report previews (parent support tickets + incident reports).
