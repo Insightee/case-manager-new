@@ -1881,10 +1881,17 @@ def deactivate_user(
     current: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.models.user import EmploymentStatus
+    from app.services.therapist_eligibility_service import apply_therapist_exit
+
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     target.is_active = False
+    if "THERAPIST" in (target.role_names or []):
+        if target.employment_status in (None, EmploymentStatus.ACTIVE):
+            target.employment_status = EmploymentStatus.SUSPENDED
+        apply_therapist_exit(db, target.id, reason="Admin deactivated user")
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="deactivate", entity_type="user", entity_id=user_id, **meta)
     db.commit()
@@ -2545,6 +2552,9 @@ def admin_pause_profile(
     profile.reviewed_at = datetime.now(timezone.utc)
     if payload.admin_note:
         profile.admin_note = payload.admin_note
+    from app.services.therapist_eligibility_service import apply_therapist_exit
+
+    apply_therapist_exit(db, profile.user_id, reason="Therapist profile paused")
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="pause_profile", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()
@@ -2598,6 +2608,9 @@ def admin_delete_therapist_profile(
         **meta,
     )
     profile_svc.soft_delete_profile(profile)
+    from app.services.therapist_eligibility_service import apply_therapist_exit
+
+    apply_therapist_exit(db, profile.user_id, reason="Therapist profile deleted")
     db.commit()
 
 

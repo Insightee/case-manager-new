@@ -9,9 +9,10 @@ from app.models.user import User
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
+    """Return user when credentials match. Caller must enforce login eligibility separately."""
     stmt = (
         select(User)
-        .where(User.email == email.lower(), User.is_active.is_(True))
+        .where(User.email == email.lower())
         .options(selectinload(User.roles).selectinload(Role.permissions))
     )
     user = db.scalars(stmt).first()

@@ -69,21 +69,10 @@ def get_pending_for_case(db: Session, case_id: int) -> CaseStatusRequest | None:
 
 
 def assert_case_allows_new_session(db: Session, case_id: int) -> None:
-    case = db.get(Case, case_id)
-    if case is not None:
-        current = case.status.value if hasattr(case.status, "value") else str(case.status)
-        if current == CaseStatus.DEACTIVATED.value:
-            raise ValueError("Case is deactivated — no new sessions can be created")
-        if current == CaseStatus.CLOSED.value:
-            raise ValueError("Case is closed — no new sessions can be created")
+    """Delegate to canonical operational gate (DEC-02)."""
+    from app.services.session_operational_gate_service import assert_case_allows_new_session as _assert
 
-    pending = get_pending_for_case(db, case_id)
-    if not pending:
-        return
-    if pending.to_status in (CaseStatus.SUSPENDED.value, CaseStatus.CLOSED.value):
-        raise ValueError(
-            "A pause or close request is pending admin approval — you cannot start a new session until it is reviewed"
-        )
+    _assert(db, case_id)
 
 
 def list_for_case(db: Session, case_id: int, limit: int = 10) -> list[dict]:

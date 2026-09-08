@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.module_access import case_product_module_allowed
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.services.case_portal_visibility import is_case_hidden_from_client_portals
 from app.models.user import User
 
@@ -303,19 +303,22 @@ def get_active_assignment(
 
 
 def case_scope_check(db: Session, user: User, case: Case) -> bool:
-    if is_case_hidden_from_client_portals(case) and not (
-        user_has_permission(user, "admin.override")
-        or user_has_permission(user, "case.read.all")
-        or user_has_permission(user, "case.read.team")
-        or user_has_permission(user, "case.read.scoped")
-    ):
-        return False
     # Global case readers (admin/HR/finance) see all cases regardless of product module.
     if user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
         return True
-    if user_has_permission(user, "case.read.assigned"):
-        if get_active_assignment(db, case.id, user.id):
+    # Assigned therapists keep operational access on SUSPENDED cases (DEC-02): they must
+    # finish IN_PROGRESS visits and receive an explicit start gate — not a portal 403.
+    # Client-portal hide for parents/schools is enforced in parent/school list APIs.
+    if user_has_permission(user, "case.read.assigned") and get_active_assignment(db, case.id, user.id):
+        status = case.status.value if hasattr(case.status, "value") else str(case.status)
+        if status == CaseStatus.SUSPENDED.value or not is_case_hidden_from_client_portals(case):
             return True
+        return False
+    if is_case_hidden_from_client_portals(case) and not (
+        user_has_permission(user, "case.read.team")
+        or user_has_permission(user, "case.read.scoped")
+    ):
+        return False
     if user_has_permission(user, "case.read.team"):
         if case.case_manager_user_id == user.id:
             return True

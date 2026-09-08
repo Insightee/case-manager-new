@@ -573,6 +573,8 @@ class _LocationBody(BaseModel):
 
 class SessionStartBody(_LocationBody):
     allow_duplicate: bool = False
+    admin_override: bool = False
+    override_reason: Optional[str] = None
 
 
 @router.post("/{session_id}/start", response_model=SessionRead)
@@ -594,6 +596,16 @@ def start_session(
     case = session.case
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
+    want_override = bool(payload.admin_override)
+    if want_override and not (
+        user_has_permission(user, "admin.override") or user_has_permission(user, "case.status_manage")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin or case-status managers can override a paused or closed case start.",
+        )
+    from app.services.session_operational_gate_service import SessionStartBlockedError
+
     try:
         session = session_service.start_session(
             db,
@@ -603,6 +615,8 @@ def start_session(
             lng=payload.lng,
             idempotency_key=idempotency_key,
             allow_duplicate=payload.allow_duplicate,
+            admin_override=want_override,
+            override_reason=payload.override_reason,
         )
     except SessionStartConflict as e:
         raise HTTPException(status_code=409, detail=e.as_dict())
@@ -610,6 +624,8 @@ def start_session(
         raise HTTPException(status_code=409, detail=e.as_dict())
     except ChildAbsenceBlockError as e:
         raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
+    except SessionStartBlockedError as e:
+        raise HTTPException(status_code=400, detail=e.as_dict())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     invite_sent, invite_email = (False, None)

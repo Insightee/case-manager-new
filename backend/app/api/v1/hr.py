@@ -313,7 +313,7 @@ def update_therapist(
             target.employment_status = EmploymentStatus(payload.employment_status)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid employment_status value")
-        target.is_active = (target.employment_status == EmploymentStatus.ACTIVE)
+        target.is_active = target.employment_status == EmploymentStatus.ACTIVE
     if payload.region is not None:
         target.region = payload.region
     if payload.location is not None:
@@ -326,6 +326,16 @@ def update_therapist(
         )
     if payload.is_active is not None:
         target.is_active = payload.is_active
+        if not payload.is_active and target.employment_status == EmploymentStatus.ACTIVE:
+            target.employment_status = EmploymentStatus.SUSPENDED
+
+    from app.services.therapist_eligibility_service import maybe_apply_exit_after_status_change
+
+    maybe_apply_exit_after_status_change(
+        db,
+        target.id,
+        reason="HR therapist status update",
+    )
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update_therapist", entity_type="user", entity_id=user_id, **meta)

@@ -150,6 +150,46 @@ def test_parent_cases_hide_closed_and_suspended():
     detail = client.get(f"/api/v1/parent/cases/{case_id}", headers=parent)
     assert detail.status_code == 404
 
+    # DEC-02: SUSPENDED cases are also hidden from parent portal (PENDING_REPLACEMENT stays visible).
+    suspend_b = client.post(
+        f"/api/v1/cases/{case_id_b}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "SUSPENDED",
+            "effective_date": date.today().isoformat(),
+            "reason": "Test suspend for parent portal visibility",
+        },
+    )
+    assert suspend_b.status_code == 200, suspend_b.text
+    visible_after_suspend = client.get("/api/v1/parent/cases", headers=parent).json()
+    assert all(row["id"] != case_id_b for row in visible_after_suspend)
+    detail_b = client.get(f"/api/v1/parent/cases/{case_id_b}", headers=parent)
+    assert detail_b.status_code == 404
+
+    # PENDING_REPLACEMENT remains accessible to the family.
+    reopen = client.post(
+        f"/api/v1/cases/{case_id_b}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "ACTIVE",
+            "effective_date": date.today().isoformat(),
+            "reason": "Reactivate before replacement status",
+        },
+    )
+    assert reopen.status_code == 200, reopen.text
+    replace = client.post(
+        f"/api/v1/cases/{case_id_b}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "PENDING_REPLACEMENT",
+            "effective_date": date.today().isoformat(),
+            "reason": "Waiting for new therapist",
+        },
+    )
+    assert replace.status_code == 200, replace.text
+    visible_replace = client.get("/api/v1/parent/cases", headers=parent).json()
+    assert any(row["id"] == case_id_b for row in visible_replace)
+
 
 def test_parent_report_detail_and_other_family_denied():
     parent_h = _login("parent@demo.com")

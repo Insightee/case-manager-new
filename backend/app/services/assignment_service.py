@@ -213,6 +213,9 @@ def add_assignment_to_service(
     reason_for_change: str | None = None,
     notes: str | None = None,
 ) -> CaseAssignment:
+    from app.services.therapist_eligibility_service import assert_therapist_may_hold_case
+
+    assert_therapist_may_hold_case(db, therapist_user_id=therapist_user_id, case_id=case_id)
     # Prevent duplicate active assignment for same therapist and service line.
     duplicate_active = db.scalars(
         select(CaseAssignment).where(
@@ -255,6 +258,9 @@ def replace_assignment_in_service(
 ) -> CaseAssignment:
     from app.core.billing_validation import case_billing_dict
     from app.services import therapist_transition_service
+    from app.services.therapist_eligibility_service import assert_therapist_may_hold_case
+
+    assert_therapist_may_hold_case(db, therapist_user_id=therapist_user_id, case_id=case_id)
 
     if therapist_transition_service.active_transition_for_case(db, case_id):
         raise ValueError(
