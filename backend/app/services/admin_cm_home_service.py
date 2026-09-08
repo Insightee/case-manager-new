@@ -17,7 +17,7 @@ from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.user import User
 from app.services import admin_case_pipeline_service as pipeline_svc
 from app.services import admin_workbench_service as workbench_svc
-from app.services.admin_scope_service import apply_case_scope
+from app.services.admin_scope_service import apply_case_scope, team_case_access_clause
 
 ACTION_COLUMNS = frozenset(
     {
@@ -62,9 +62,10 @@ SECTION_ORDER = [
 
 def _cm_caseload_stmt(user: User):
     stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
-    stmt = apply_case_scope(stmt, user)
     if user_has_permission(user, "case.read.team") and not user_has_permission(user, "case.read.all"):
-        stmt = stmt.where(Case.case_manager_user_id == user.id)
+        stmt = stmt.where(team_case_access_clause(user))
+    else:
+        stmt = apply_case_scope(stmt, user)
     return stmt
 
 

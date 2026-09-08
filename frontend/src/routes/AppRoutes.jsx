@@ -159,6 +159,11 @@ const AdminCmLogReviewPage = lazy(() =>
     default: m.AdminCmLogReviewPage,
   }))
 )
+const AdminMentorTherapistsPage = lazy(() =>
+  import('../components/admin-portal/AdminMentorTherapistsPage.jsx').then((m) => ({
+    default: m.AdminMentorTherapistsPage,
+  }))
+)
 const LeaveManagementPage = lazy(() =>
   import('../components/hr-portal/LeaveManagementPage.jsx').then((m) => ({ default: m.LeaveManagementPage }))
 )
@@ -406,6 +411,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminCmLogReviewPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="cm/therapists"
+          element={
+            <Lazy>
+              <AdminMentorTherapistsPage />
             </Lazy>
           }
         />

@@ -140,6 +140,9 @@ export function AdminCaseManagerHomePage() {
             <Link to="/admin/cases" className="admin-btn admin-btn--secondary admin-btn--sm">
               All cases
             </Link>
+            <Link to="/admin/cm/therapists" className="admin-btn admin-btn--ghost admin-btn--sm">
+              My therapists
+            </Link>
           </div>
         }
       />
@@ -183,7 +186,7 @@ export function AdminCaseManagerHomePage() {
                   <span className="admin-home-queue__role-pill">dashboard</span>
                 </h2>
                 <p className="admin-home-queue__sub">
-                  Session logs, reports, and support — scoped to your assigned caseload.
+                  Session logs, reports, and support — scoped to your assigned and mentored caseload.
                 </p>
               </div>
               <Link to="/admin/cm/logs" className="admin-btn admin-btn--primary admin-home-queue__cta">

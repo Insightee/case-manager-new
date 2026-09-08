@@ -625,6 +625,77 @@ def admin_cm_log_review_queue(
     return admin_cm_log_review_service.build_cm_log_review_queue(db, user)
 
 
+@router.get("/mentor/therapists")
+def mentor_list_therapists(
+    user: User = Depends(_require_case_manager_home),
+    db: Session = Depends(get_db),
+):
+    from app.services import mentor_roster_service
+
+    return mentor_roster_service.list_mentored_therapists(db, user)
+
+
+@router.get("/mentor/therapists/available")
+def mentor_list_available_therapists(
+    user: User = Depends(_require_case_manager_home),
+    db: Session = Depends(get_db),
+):
+    from app.services import mentor_roster_service
+
+    return mentor_roster_service.list_available_therapists_for_mentor(db, user)
+
+
+@router.post("/mentor/therapists/{therapist_user_id}")
+def mentor_assign_therapist(
+    therapist_user_id: int,
+    request: Request,
+    user: User = Depends(_require_case_manager_home),
+    db: Session = Depends(get_db),
+):
+    from app.services import mentor_roster_service
+
+    result = mentor_roster_service.assign_mentor(db, user, therapist_user_id)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="mentor_assign",
+        entity_type="therapist_profile",
+        entity_id=str(result["therapist"]["profile_id"]),
+        new_value={
+            "therapist_user_id": therapist_user_id,
+            "mentor_user_id": result["mentor_user_id"],
+        },
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@router.delete("/mentor/therapists/{therapist_user_id}")
+def mentor_unassign_therapist(
+    therapist_user_id: int,
+    request: Request,
+    user: User = Depends(_require_case_manager_home),
+    db: Session = Depends(get_db),
+):
+    from app.services import mentor_roster_service
+
+    result = mentor_roster_service.unassign_mentor(db, user, therapist_user_id)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="mentor_unassign",
+        entity_type="therapist_profile",
+        entity_id=str(result["therapist"]["profile_id"]),
+        old_value={"mentor_user_id": result["previous_mentor_user_id"]},
+        **meta,
+    )
+    db.commit()
+    return result
+
+
 @router.get("/audit")
 def admin_audit_list(
     entity_type: Optional[str] = None,

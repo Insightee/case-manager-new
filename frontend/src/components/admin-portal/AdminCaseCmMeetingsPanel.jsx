@@ -70,9 +70,14 @@ export function AdminCaseCmMeetingsPanel({ caseId }) {
           <p className="admin-muted" style={{ margin: 0 }}>
             Case manager meetings for this case.
           </p>
-          <Link to={meetingHref(caseId)} className="admin-btn admin-btn--ghost admin-btn--sm">
-            Open meetings hub
-          </Link>
+          <div className="admin-btn-group">
+            <Link to={`${meetingHref(caseId)}&book=1`} className="admin-btn admin-btn--primary admin-btn--sm">
+              Schedule meeting
+            </Link>
+            <Link to={meetingHref(caseId)} className="admin-btn admin-btn--ghost admin-btn--sm">
+              Open meetings hub
+            </Link>
+          </div>
         </div>
       </div>
 

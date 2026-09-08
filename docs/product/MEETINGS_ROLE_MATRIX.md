@@ -13,19 +13,20 @@ Unified calendar feed: `GET /api/v1/calendar/events` (`event_type`: `cm_meeting`
 
 ## Capability matrix
 
-| Capability | Super Admin / Admin | Case Manager | Therapist | Parent |
-|------------|---------------------|--------------|-----------|--------|
-| View scoped meetings | Yes (team/global) | Yes (caseload) | Yes (assigned cases) | Yes (child) |
-| Calendar week/month | Yes | Yes | Yes | List-first (calendar deferred) |
-| Book CM meeting | Yes | Yes | Yes (request for own cases) | No |
-| Set staff availability (meetings + sessions) | Own + override | Own | Own (`/therapist/meetings?availability=1`) | No |
-| Google Calendar sync (availability) | Own | Own | Optional (same panel) | No |
-| CM shared minutes / complete | Yes | Yes | No | No |
-| Therapist private notes | No | No | Yes (own meetings) | No |
-| Reschedule / cancel | Yes | Yes | Yes (participant) | No (contact CM) |
-| Export CSV/Excel | Yes | Yes | Yes (scoped list) | No |
-| Staff filter / admin queue | Yes | No | No | No |
-| Home upcoming widget | Admin dashboard | CM home | Therapist dashboard | Deferred |
+| Capability | Super Admin / Admin | Case Manager | Mentor CM (mentored therapist cases) | Therapist | Parent |
+|------------|---------------------|--------------|--------------------------------------|-----------|--------|
+| View scoped meetings | Yes (team/global) | Yes (caseload) | Yes (mentored caseload) | Yes (assigned cases) | Yes (child) |
+| Calendar week/month | Yes | Yes | Yes | Yes | List-first (calendar deferred) |
+| Book CM meeting | Yes | Yes | Yes (mentored cases; host = assigned CM) | Yes (request for own cases) | No |
+| Set staff availability (meetings + sessions) | Own + override | Own | Own | Own (`/therapist/meetings?availability=1`) | No |
+| Google Calendar sync (availability) | Own | Own | Own | Optional (same panel) | No |
+| CM shared minutes / complete | Yes | Yes | Yes (mentored cases) | No | No |
+| Therapist private notes | No | No | No | Yes (own meetings) | No |
+| Reschedule / cancel | Yes | Yes | Yes (mentored cases) | Yes (participant) | No (contact CM) |
+| Export CSV/Excel | Yes | Yes | Yes (scoped list) | Yes (scoped list) | No |
+| Staff filter / admin queue | Yes | No | No | No | No |
+| Home upcoming widget | Admin dashboard | CM home | CM home (mentored + assigned) | Therapist dashboard | Deferred |
+| My therapists roster | Admin assign | — | `/admin/cm/therapists` (self + admin) | No | No |
 
 ## Notes visibility (API)
 

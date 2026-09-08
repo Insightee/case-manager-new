@@ -95,7 +95,7 @@ def test_mentor_sees_mentored_therapist_cases_read_only():
     assert "view-only" in patch.json()["detail"].lower() or "Mentor" in patch.json()["detail"]
 
 
-def test_mentor_can_mark_log_reviewed_without_approving():
+def test_mentor_can_approve_log_on_mentored_case():
     with SessionLocal() as db:
         primary, mentor = _two_case_managers(db)
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
@@ -135,22 +135,5 @@ def test_mentor_can_mark_log_reviewed_without_approving():
 
     mentor_headers = _login(mentor_email)
     approve = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=mentor_headers)
-    assert approve.status_code == 403
-
-    marked = client.post(f"/api/v1/daily-logs/{log_id}/mentor-review", headers=mentor_headers)
-    assert marked.status_code == 200
-    assert marked.json()["mentor_reviewed"] is True
-    assert marked.json()["approval_status"] == "PENDING"
-
-    again = client.post(f"/api/v1/daily-logs/{log_id}/mentor-review", headers=mentor_headers)
-    assert again.status_code == 400
-
-    cm_headers = _login(primary_email)
-    cm_log = client.get(f"/api/v1/daily-logs/{log_id}", headers=cm_headers)
-    assert cm_log.status_code == 200
-    assert cm_log.json()["mentor_reviewed"] is True
-
-    th_headers = _login(therapist_email)
-    th_log = client.get(f"/api/v1/daily-logs/{log_id}", headers=th_headers)
-    assert th_log.status_code == 200
-    assert th_log.json()["mentor_reviewed"] is True
+    assert approve.status_code == 200
+    assert approve.json()["status"] == "approved"

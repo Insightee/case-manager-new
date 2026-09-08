@@ -32,6 +32,13 @@ def _guard_ticket_staff_write(user: User, ticket: SupportTicket, db: Session) ->
         or user_has_permission(user, "admin.override")
     ):
         return
+    if ticket.case_id:
+        case = case_service.get_case(db, ticket.case_id)
+        if case:
+            from app.services.mentor_scope_service import can_mentor_write_feature
+
+            if can_mentor_write_feature(db, user, case, "tickets"):
+                return
     ensure_feature_write_access(user, "tickets", product_module=ticket.product_module, db=db)
 
 

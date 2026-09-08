@@ -352,7 +352,8 @@ export function AdminCmLogReviewPage() {
 
                   {caseIsMentorView ? (
                     <p className="admin-cm-log-review__notice" role="status">
-                      You are viewing this as a mentor — you can mark logs as reviewed, but cannot approve or reject.
+                      Mentor view — you can approve logs and schedule meetings; billing and assignments stay with
+                      the assigned case manager.
                     </p>
                   ) : null}
 

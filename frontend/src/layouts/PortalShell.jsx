@@ -64,6 +64,7 @@ const ADMIN_CM_MOBILE_NAV = [
 function caseManagerNav(clinicalModuleIds) {
   return [
     { to: '/admin/cm', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard' },
+    { to: '/admin/cm/therapists', label: 'My therapists', perm: 'case.read.team', feature: null, icon: 'people' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases' },
     { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid' },

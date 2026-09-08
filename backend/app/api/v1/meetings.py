@@ -40,7 +40,7 @@ from app.services.cm_meeting_service import meeting_participant_user_ids, parse_
 from app.services.cm_meeting_service import user_can_view_meeting, notify_meeting_cancellation
 from app.services.cm_meeting_service import send_meeting_reminder_if_within_hour
 from app.services.admin_scope_service import scoped_case_ids_subquery, user_sees_global_cases
-from app.services.mentor_scope_service import mentor_case_ids_subquery
+from app.services.mentor_scope_service import is_mentor_on_case, mentor_case_ids_subquery
 from app.services.reports_export_helpers import parse_int_list
 from app.services import case_document_service as doc_svc
 
@@ -237,7 +237,9 @@ def _bookable_cases_stmt(
             raise HTTPException(status_code=403, detail="Not allowed")
         stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
     elif _is_case_manager_scoped(user):
-        stmt = stmt.where(Case.case_manager_user_id == user.id)
+        from app.services.admin_scope_service import team_case_access_clause
+
+        stmt = stmt.where(team_case_access_clause(user))
     elif role == RoleName.THERAPIST.value:
         stmt = (
             stmt.join(
@@ -249,7 +251,9 @@ def _bookable_cases_stmt(
             .distinct()
         )
     elif user_has_permission(user, "case.read.team") and not user_sees_global_cases(user):
-        stmt = stmt.where(Case.case_manager_user_id == user.id)
+        from app.services.admin_scope_service import team_case_access_clause
+
+        stmt = stmt.where(team_case_access_clause(user))
     elif not user_sees_global_cases(user):
         stmt = apply_case_scope(stmt, user)
     stmt = stmt.where(Case.status != CaseStatus.CLOSED)
@@ -285,10 +289,28 @@ def _meeting_start_dt(meeting_date: date | None, meeting_time: time | None) -> d
     return datetime.combine(meeting_date, start_time, tzinfo=IST)
 
 
-def _can_complete_meeting(user: User, meeting: CaseManagerMeeting) -> bool:
+def _can_complete_meeting(user: User, meeting: CaseManagerMeeting, db: Session | None = None) -> bool:
     if user_has_permission(user, "admin.override"):
         return True
-    return has_role(user, RoleName.CASE_MANAGER) and meeting.case_manager_user_id == user.id
+    if not has_role(user, RoleName.CASE_MANAGER):
+        return False
+    if meeting.case_manager_user_id == user.id:
+        return True
+    if db is not None and meeting.case_id:
+        case = db.get(Case, meeting.case_id)
+        if case and is_mentor_on_case(db, user, case):
+            return True
+    return False
+
+
+def _can_act_on_meeting_as_cm(user: User, meeting: CaseManagerMeeting, db: Session) -> bool:
+    """Assigned CM host or mentor on the meeting's case."""
+    if meeting.case_manager_user_id == user.id:
+        return True
+    if not meeting.case_id:
+        return False
+    case = db.get(Case, meeting.case_id)
+    return bool(case and is_mentor_on_case(db, user, case))
 
 
 def _viewer_is_therapist(user: User | None) -> bool:
@@ -752,11 +774,16 @@ def create_meeting(
 
     # Auto-resolve CM
     cm_id = None
+    case = None
     if payload.case_id:
         case = db.get(Case, payload.case_id)
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
         cm_id = case.case_manager_user_id
+
+    mentor_user_id = payload.mentor_user_id
+    if case and mentor_user_id is None and is_mentor_on_case(db, user, case):
+        mentor_user_id = user.id
     
     if not cm_id:
         if has_any_role(
@@ -782,6 +809,8 @@ def create_meeting(
                 attendees.append(parent_uid)
         if payload.mentor_user_id:
             attendees.append(payload.mentor_user_id)
+        elif mentor_user_id:
+            attendees.append(mentor_user_id)
         attendees.extend(payload.admin_user_ids)
 
         _validate_slot_in_availability(
@@ -804,7 +833,7 @@ def create_meeting(
         case_id=payload.case_id,
         parent_user_id=None,
         therapist_user_id=None,
-        mentor_user_id=payload.mentor_user_id,
+        mentor_user_id=mentor_user_id,
         scheduled_date=payload.scheduled_date,
         scheduled_time=payload.scheduled_time,
         duration_minutes=payload.duration_minutes,
@@ -1209,7 +1238,7 @@ def update_meeting(
     _guard_meeting_write(user, meeting.case_id, db, meeting=meeting)
     role = effective_role(user)
     is_therapist = role == RoleName.THERAPIST.value
-    if _is_case_manager_scoped(user) and meeting.case_manager_user_id != user.id:
+    if _is_case_manager_scoped(user) and not _can_act_on_meeting_as_cm(user, meeting, db):
         raise HTTPException(status_code=403, detail="Not your meeting")
 
     if any(
@@ -1258,7 +1287,7 @@ def update_meeting(
         _validate_meeting_link(payload.platform or meeting.platform, payload.meeting_url)
 
     completing = payload.status == MeetingStatus.COMPLETED
-    if completing and not _can_complete_meeting(user, meeting):
+    if completing and not _can_complete_meeting(user, meeting, db):
         raise HTTPException(status_code=403, detail="Only the assigned case manager can complete this meeting")
     if completing:
         meeting_start = _meeting_start_dt(meeting.scheduled_date, meeting.scheduled_time)
@@ -1456,7 +1485,7 @@ def cancel_meeting_post(
         raise HTTPException(status_code=404, detail="Meeting not found")
 
     _guard_meeting_write(user, meeting.case_id, db, meeting=meeting)
-    if _is_case_manager_scoped(user) and meeting.case_manager_user_id != user.id:
+    if _is_case_manager_scoped(user) and not _can_act_on_meeting_as_cm(user, meeting, db):
         raise HTTPException(status_code=403, detail="Not your meeting")
 
     reason = (payload.reason or "").strip()

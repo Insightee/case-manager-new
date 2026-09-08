@@ -44,6 +44,7 @@ Subagent runs (tests, explore, CI fix) informed implementation but are not cited
 | **Incidents on all relevant lines** | Strong | Shadow + homecare (not one product only). |
 | **Legacy roles** | Medium | Migrate `ADMIN` → `MODULE_ADMIN`, `VIEWER`/`SUPERVISOR` → `CASE_MANAGER` in prod; see `backend/scripts/migrate_staff_roles.py`. |
 | **Staff tiers** | Strong | SUPER_ADMIN, MODULE_ADMIN (module-scoped), CASE_MANAGER, support-style module admins, FINANCE, HR, THERAPIST, PARENT. |
+| **Mentor CM clinical parity** | Strong | Mentors are `CASE_MANAGER` users linked via `therapist_profiles.mentor_user_id` (not a separate role). Primary CM (`supervisor_user_id` → `cases.case_manager_user_id`) keeps billing, allotment, and reassignment. Mentors get clinical/ops write on mentored therapists’ active cases: meetings, log approve/reject, tickets, incidents. UI flag `access_as_mentor` hides billing/scheduling only. Roster: `/admin/cm/therapists` + `/api/v1/admin/mentor/therapists*`. |
 
 ### Billing & invoices
 

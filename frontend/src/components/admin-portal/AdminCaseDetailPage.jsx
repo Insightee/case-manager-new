@@ -192,8 +192,7 @@ export function AdminCaseDetailPage() {
       can('daily_log.review') &&
       !isViewOnly &&
       !financeDesk &&
-      !accessAsMentor &&
-      (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
+      (canReviewLogs(caseRow.product_module) || isAssignedCaseManager || accessAsMentor),
   )
 
   function openScheduleTab() {
@@ -250,8 +249,8 @@ export function AdminCaseDetailPage() {
 
       {caseRow.access_as_mentor ? (
         <p className="admin-alert admin-alert--info" role="status">
-          You are viewing this case as a mentor. You can open cases, logs, and reports, and mark logs as
-          reviewed — other changes stay with the assigned case manager.
+          You are viewing this case as a mentor. You can review logs, schedule meetings, manage support
+          tickets, and open reports — billing and therapist assignment stay with the assigned case manager.
         </p>
       ) : null}
       <AdminCaseDetailQuickStats

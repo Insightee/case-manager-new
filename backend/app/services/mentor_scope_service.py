@@ -1,11 +1,21 @@
 """Therapist mentor (CM) caseload scope and write gates.
 
 Mentors are assigned on therapist_profiles.mentor_user_id and must be CASE_MANAGER.
-They may read cases / logs / reports for therapists they mentor; mutations stay with
-the assigned case manager except mark-as-reviewed on daily logs.
+They may read cases for therapists they mentor and perform clinical/ops actions
+(meetings, session log review, tickets, incidents) while primary CM retains billing,
+allotment, and case reassignment.
 """
 
 from __future__ import annotations
+
+MENTOR_WRITABLE_FEATURES = frozenset(
+    {
+        "cm_meetings",
+        "session_logs",
+        "tickets",
+        "incidents",
+    }
+)
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -88,6 +98,22 @@ def is_mentor_only_on_case(db: Session, user: User, case: Case) -> bool:
     if is_assigned_case_manager(user, case):
         return False
     return is_mentor_on_case(db, user, case)
+
+
+def can_mentor_write_feature(db: Session, user: User, case: Case, feature: str) -> bool:
+    """True when mentor-only on case and feature is in the mentor clinical/ops allowlist."""
+    if feature not in MENTOR_WRITABLE_FEATURES:
+        return False
+    return is_mentor_only_on_case(db, user, case)
+
+
+def mentor_blocks_case_write(db: Session, user: User, case: Case, *, feature: str | None = None) -> bool:
+    """Whether mentor-only access should block a write (general case vs feature-scoped)."""
+    if not is_mentor_only_on_case(db, user, case):
+        return False
+    if feature and feature in MENTOR_WRITABLE_FEATURES:
+        return False
+    return True
 
 
 def can_mark_log_mentor_reviewed(

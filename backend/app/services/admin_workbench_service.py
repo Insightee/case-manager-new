@@ -623,7 +623,15 @@ def build_workbench_summary(db: Session, user: User) -> dict:
         )
         role = user.roles[0].name if user.roles else ""
         if role == "CASE_MANAGER" and not user_has_permission(user, "admin.override"):
-            meet_stmt = meet_stmt.where(CaseManagerMeeting.case_manager_user_id == user.id)
+            from app.services.mentor_scope_service import mentor_case_ids_subquery
+            from sqlalchemy import or_
+
+            meet_stmt = meet_stmt.where(
+                or_(
+                    CaseManagerMeeting.case_manager_user_id == user.id,
+                    CaseManagerMeeting.case_id.in_(mentor_case_ids_subquery(user.id)),
+                )
+            )
         elif role == "SUPERVISOR" and not user_has_permission(user, "admin.override"):
             meet_stmt = apply_case_scope(meet_stmt, user)
         meet_rows = db.execute(meet_stmt).all()

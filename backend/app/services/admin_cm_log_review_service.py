@@ -109,7 +109,7 @@ def build_cm_log_review_queue(db: Session, user: User) -> dict:
                 "pending_count": 0,
                 "logs": [],
                 "access_as_mentor": is_mentor_only_on_case(db, user, case),
-                "can_approve": not is_mentor_only_on_case(db, user, case),
+                "can_approve": True,
             }
             cases_map[case.id] = bucket
         if log.transition:
