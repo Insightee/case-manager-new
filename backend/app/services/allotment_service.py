@@ -13,6 +13,7 @@ from app.models.therapist_profile import TherapistProfile, TherapistProfileStatu
 from app.models.user import User
 from app.services import address_service, assignment_service, billing_approval_service, case_code_service, case_service
 from app.services.case_day_type_service import validate_allotment_day_type
+from app.services.therapist_eligibility_service import therapist_may_hold_case
 
 _SERVICE_ADDRESS_KEYS = frozenset(
     {
@@ -52,6 +53,8 @@ def list_allotment_therapists(
     result = []
     for t in therapists:
         prof = profiles.get(t.id)
+        if not therapist_may_hold_case(db, t.id):
+            continue
         if not therapist_eligible_for_product_module(
             db,
             services_offered=prof.services_offered if prof else None,

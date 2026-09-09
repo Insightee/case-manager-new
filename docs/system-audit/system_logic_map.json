@@ -1,0 +1,198 @@
+{
+  "meta": {
+    "product": "InsighteCase",
+    "audit_date": "2026-08-29",
+    "repo_birth": "2026-05-16",
+    "evidence_window": "2026-05-16/2026-08-29",
+    "overall_health": "AMBER",
+    "coherence": "PARTIALLY",
+    "finance_trust": "WITH_CONDITIONS",
+    "case_status_trust": "WITH_CONDITIONS",
+    "therapist_status_trust": "WITH_CONDITIONS",
+    "product_logic_shared": "PARTLY",
+    "inspection_only": true,
+    "docs": [
+      "00_FOUNDER_DIAGNOSIS.md",
+      "01_CURRENT_SYSTEM_MAP.md",
+      "02_BUSINESS_LOGIC_REGISTRY.md",
+      "03_CHANGE_TIMELINE_90_120_DAYS.md",
+      "04_CONFLICT_AND_LEGACY_REGISTER.md",
+      "05_CROSS_TEAM_CONTRACTS.md",
+      "06_PRODUCT_LOGIC_COMPARISON.md",
+      "07_DATA_INTEGRITY_AUDIT.md",
+      "08_FINANCE_LOGIC_AUDIT.md",
+      "09_TEST_AND_REGRESSION_MAP.md",
+      "10_FOUNDER_DECISIONS_REQUIRED.md",
+      "11_REMEDIATION_ROADMAP.md"
+    ]
+  },
+  "architecture": {
+    "backend": "FastAPI",
+    "frontend": "Vite React JSX",
+    "orm": "SQLAlchemy",
+    "migrations": "Alembic",
+    "database_prod": "Postgres",
+    "cache": "Redis",
+    "queue": "none_celery",
+    "jobs": [
+      {"id": "email-cron", "file": "backend/railway.email-cron.toml", "schedule": "*/10 * * * * UTC"},
+      {"id": "meeting-reminders", "file": "backend/railway.meeting-reminders-cron.toml", "schedule": "*/10 * * * * UTC"},
+      {"id": "session-day-end", "file": "backend/railway.session-day-end-cron.toml", "schedule": "30 16 * * * UTC"}
+    ],
+    "storage": ["local", "cloudflare_r2"],
+    "deploy": {"api": "Railway", "ui": "Vercel insightes-projects/frontend"},
+    "integrations": {
+      "email": "zepto_or_smtp",
+      "whatsapp_sms": false,
+      "llm": false,
+      "payments": "MockPaymentProvider",
+      "zoho_id": "cases.zoho_id",
+      "zoho_books": "env_gated_noop_default",
+      "mcp": "read_only"
+    },
+    "lead_crm": false
+  },
+  "feature_flags": {
+    "enable_billing": {"default": false, "file": "backend/app/core/config.py"},
+    "billing_ledger_writes": {"default": false, "file": "backend/app/core/config.py"},
+    "billing_ledger_drafts": {"default": true},
+    "finance_cutover_complete": {"default": false},
+    "payout_export_enabled": {"default": false},
+    "payout_release_enabled": {"default": false},
+    "acceptance_gating_enabled": {"default": false},
+    "enable_clinical_reports_engine": {"default": false},
+    "enable_structured_evidence": {"default": false}
+  },
+  "domains": ["CASE", "HR", "FIN", "CLIN", "AUTH", "AUTO", "CRM"],
+  "roles": [
+    "SUPER_ADMIN",
+    "MODULE_ADMIN",
+    "ADMIN",
+    "VIEWER",
+    "CASE_MANAGER",
+    "SUPERVISOR",
+    "THERAPIST",
+    "FINANCE",
+    "HR",
+    "PARENT",
+    "SCHOOL_COORDINATOR"
+  ],
+  "products": [
+    {"id": "homecare", "kind": "clinical", "day_type_required": false, "payout_unit": "per_session_or_package", "leave_credits": "unpaid_if_homecare_only"},
+    {"id": "shadow_support", "kind": "clinical", "day_type_required": true, "payout_unit": "calendar_day", "leave_credits": "monthly_if_shadow"},
+    {"id": "b2b", "kind": "clinical", "day_type_required": true, "payout_unit": "calendar_day"},
+    {"id": "billing", "kind": "org_capability"},
+    {"id": "people_admin", "kind": "org_capability"},
+    {"id": "hr_ops", "kind": "org_capability"},
+    {"id": "service_catalog_admin", "kind": "org_capability"}
+  ],
+  "entities": [
+    {"name": "Case", "table": "cases", "sot_fields": ["status", "billing_type", "product_module"], "file": "backend/app/models/case.py"},
+    {"name": "CaseAssignment", "table": "case_assignments", "sot_for": "therapist_on_case", "file": "backend/app/models/assignment.py"},
+    {"name": "Session", "table": "sessions", "file": "backend/app/models/session.py"},
+    {"name": "DailyLog", "table": "daily_logs", "file": "backend/app/models/daily_log.py"},
+    {"name": "User", "table": "users", "sot_fields": ["is_active", "employment_status"], "file": "backend/app/models/user.py"},
+    {"name": "TherapistProfile", "table": "therapist_profiles", "file": "backend/app/models/therapist_profile.py"},
+    {"name": "ClientInvoice", "table": "client_invoices", "sot_for": "money_in_document", "file": "backend/app/models/client_billing.py"},
+    {"name": "TherapistInvoice", "table": "invoices", "sot_for": "money_out_claim", "file": "backend/app/models/invoice.py"},
+    {"name": "BillingLedger", "table": "billing_ledger", "sot_for": "intended_client_event", "writes_default": false, "file": "backend/app/models/ledger_billing.py"},
+    {"name": "CarePackage", "table": "care_packages", "sot_for": "displayed_remaining", "file": "backend/app/models/client_billing.py"},
+    {"name": "ClientPackageCycle", "table": "client_package_cycles", "sot_for": "stale_if_consume_only", "file": "backend/app/models/client_package_cycle.py"},
+    {"name": "ParentBillingStatement", "table": "parent_billing_statements", "legacy": true, "file": "backend/app/models/parent_billing.py"}
+  ],
+  "statuses": {
+    "CaseStatus": ["PENDING_ALLOTMENT", "ACTIVE", "SUSPENDED", "PENDING_REPLACEMENT", "DEACTIVATED", "CLOSED"],
+    "SessionStatus": ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW", "RESCHEDULED", "CLIENT_ABSENT", "THERAPIST_LEAVE"],
+    "unused_session_writes": ["NO_SHOW", "RESCHEDULED"],
+    "EmploymentStatus": ["ACTIVE", "SUSPENDED", "ARCHIVED"],
+    "TherapistProfileStatus": ["DRAFT", "PENDING", "APPROVED", "PAUSED", "DELETED"],
+    "LeaveStatus": ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+    "ClientInvoiceStatus": ["see client_billing.py"],
+    "InvoiceStatus": ["DRAFT", "IN_REVIEW", "APPROVED", "EXPORTING", "PAID", "QUERIED", "REJECTED"],
+    "ReportStatus": ["DRAFT", "UNDER_REVIEW", "APPROVED", "REJECTED", "PUBLISHED"],
+    "ClinicalReportStatus": ["draft", "in_progress", "submitted_for_review", "returned_for_changes", "approved", "locked", "archived"]
+  },
+  "transitions": {
+    "case_admin": {
+      "PENDING_ALLOTMENT": ["ACTIVE"],
+      "ACTIVE": ["SUSPENDED", "PENDING_REPLACEMENT", "CLOSED"],
+      "SUSPENDED": ["ACTIVE", "CLOSED"],
+      "PENDING_REPLACEMENT": ["ACTIVE", "CLOSED"],
+      "CLOSED": ["PENDING_ALLOTMENT"],
+      "DEACTIVATED": ["PENDING_ALLOTMENT"]
+    },
+    "case_therapist_request": {
+      "ACTIVE": ["SUSPENDED", "CLOSED"],
+      "SUSPENDED": ["ACTIVE"]
+    },
+    "source": "backend/app/services/client_status_service.py"
+  },
+  "source_of_truth": [
+    {"concept": "case_or_client_status", "location": "cases.status", "competing": ["case_status_requests", "case_client_status_audit"], "verdict": "one_live_field_two_write_paths"},
+    {"concept": "therapist_on_case", "location": "case_assignments.status=ACTIVE", "competing": [], "verdict": "ssot"},
+    {"concept": "package_remaining", "location": "care_packages.used_sessions", "competing": ["client_package_cycles.remaining_sessions"], "verdict": "competing"},
+    {"concept": "money_in", "location": "client_invoices+confirmed payments", "competing": ["billing_ledger", "parent_billing_statements", "zoho"], "verdict": "competing"},
+    {"concept": "money_out", "location": "submitted invoices snapshots", "competing": ["live preview", "payout batches", "payouts table"], "verdict": "snapshot_after_submit"},
+    {"concept": "employee_active", "location": "users.is_active", "competing": ["employment_status", "therapist_profiles.status"], "verdict": "competing_meanings"},
+    {"concept": "official_report", "location": "unclear", "competing": ["monthly_reports", "clinical_reports", "iep_plans", "case_documents"], "verdict": "competing"}
+  ],
+  "rules": [
+    {"id": "CASE-020", "domain": "CASE", "summary": "Start blocked for CLOSED/DEACTIVATED not SUSPENDED/PENDING_REPLACEMENT", "files": ["backend/app/services/session_service.py"], "conflict": true, "severity": "HIGH"},
+    {"id": "CASE-003", "domain": "CASE", "summary": "Assign can promote PENDING_ALLOTMENT to ACTIVE", "files": ["backend/app/api/v1/assignments.py"], "conflict": true, "severity": "HIGH"},
+    {"id": "CASE-031", "domain": "CASE", "summary": "Assignment API skips allotment eligibility", "files": ["backend/app/services/assignment_service.py", "backend/app/services/allotment_service.py"], "conflict": true, "severity": "HIGH"},
+    {"id": "HR-003", "domain": "HR", "summary": "Inactive does not end assignments", "files": ["backend/app/api/v1/hr.py"], "conflict": true, "severity": "HIGH"},
+    {"id": "FIN-005", "domain": "FIN", "summary": "Package consume on log approve", "files": ["backend/app/api/v1/daily_logs.py", "backend/app/services/billing_ledger_service.py"], "conflict": true, "severity": "CRITICAL"},
+    {"id": "FIN-006", "domain": "FIN", "summary": "Package cycles not updated on consume", "files": ["backend/app/services/client_package_cycle_service.py"], "conflict": true, "severity": "CRITICAL"},
+    {"id": "FIN-014", "domain": "FIN", "summary": "resolve_session_financial_effect unused", "files": ["backend/app/services/billing_ledger_service.py"], "conflict": true, "severity": "CRITICAL"},
+    {"id": "FIN-002", "domain": "FIN", "summary": "Billing and ledger writes default off", "files": ["backend/app/core/config.py", "backend/app/core/feature_flags.py"], "conflict": false, "severity": "CRITICAL"}
+  ],
+  "dependencies": [
+    {"from": "Case", "to": "CaseAssignment"},
+    {"from": "CaseAssignment", "to": "Session"},
+    {"from": "Session", "to": "DailyLog"},
+    {"from": "DailyLog", "to": "CarePackage", "via": "consume_package_session"},
+    {"from": "DailyLog", "to": "TherapistInvoice"},
+    {"from": "Session", "to": "BillingLedger", "gated_by": "billing_ledger_writes"},
+    {"from": "BillingLedger", "to": "ClientInvoice"},
+    {"from": "Case", "to": "ClientInvoice", "via": "case_defaults_path"},
+    {"from": "Leave", "to": "TherapistInvoice", "via": "calendar_day_deduction"},
+    {"from": "Case.status", "to": "User.is_active", "via": "parent_auto_suspend"}
+  ],
+  "conflicts": [
+    {"id": "A-02", "class": "A", "severity": "HIGH", "related_rules": ["CASE-008", "CASE-020"]},
+    {"id": "B-01", "class": "B", "severity": "CRITICAL", "related_rules": ["FIN-005", "FIN-006"]},
+    {"id": "B-02", "class": "B", "severity": "HIGH", "related_rules": ["CLIN-001", "CLIN-002"]},
+    {"id": "C-04", "class": "C", "severity": "HIGH", "related_rules": ["FIN-014", "FIN-015"]},
+    {"id": "I-01", "class": "I", "severity": "HIGH", "related_rules": ["HR-012"]},
+    {"id": "J-01", "class": "J", "severity": "CRITICAL", "related_rules": ["FIN-001", "FIN-002"]}
+  ],
+  "legacy": [
+    "CaseStatus.DEACTIVATED",
+    "CompensationMode.PERCENTAGE",
+    "parent_billing_statements",
+    "resolve_session_financial_effect",
+    "legacy monthly_reports vs clinical_reports",
+    "iep_plans v1",
+    "payouts table",
+    "is_additional_visit vs add_on_kind",
+    "acceptance_gating_enabled default false"
+  ],
+  "key_files": {
+    "api_router": "backend/app/api/v1/router.py",
+    "frontend_routes": "frontend/src/routes/AppRoutes.jsx",
+    "permissions": "backend/app/core/permissions.py",
+    "modules": "backend/app/core/modules.py",
+    "feature_flags": "backend/app/core/feature_flags.py",
+    "case_model": "backend/app/models/case.py",
+    "session_model": "backend/app/models/session.py",
+    "client_status": "backend/app/services/client_status_service.py",
+    "allotment": "backend/app/services/allotment_service.py",
+    "assignment": "backend/app/services/assignment_service.py",
+    "session_service": "backend/app/services/session_service.py",
+    "invoice_billing": "backend/app/services/invoice_billing_service.py",
+    "client_billing": "backend/app/services/client_billing_service.py",
+    "billing_ledger": "backend/app/services/billing_ledger_service.py",
+    "leave_policy": "backend/app/services/leave_policy_service.py"
+  },
+  "founder_decisions": ["DEC-01", "DEC-02", "DEC-03", "DEC-04", "DEC-05", "DEC-06", "DEC-07", "DEC-08", "DEC-09", "DEC-10", "DEC-11", "DEC-12"]
+}
