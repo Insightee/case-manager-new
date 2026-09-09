@@ -15,7 +15,7 @@ from app.main import app
 from app.models.role import Role
 from app.models.user import User
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_first_case_id, api_items
+from app.tests.conftest import api_first_case_id, api_items, first_meeting_slot, future_meeting_date
 
 client = TestClient(app)
 
@@ -129,14 +129,18 @@ def test_module_admin_can_list_and_create_meetings():
     bookable = cases.json()
     assert bookable, "module admin needs at least one bookable case"
     case_id = bookable[0]["id"]
-    day = (date.today() + timedelta(days=21)).isoformat()
+    cm_user_id = bookable[0].get("case_manager_user_id")
+    if cm_user_id:
+        slot_date, slot_time = first_meeting_slot(client, headers, [cm_user_id], days_ahead=14)
+    else:
+        slot_date, slot_time = future_meeting_date(21), "11:00:00"
     created = client.post(
         "/api/v1/meetings",
         headers=headers,
         json={
             "case_id": case_id,
-            "scheduled_date": day,
-            "scheduled_time": "11:00:00",
+            "scheduled_date": slot_date,
+            "scheduled_time": slot_time,
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "invite_client": False,
