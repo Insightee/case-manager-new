@@ -196,14 +196,43 @@
   margin: 0 0 10px;
 }
 
+.admin-case-ops-note__modal {
+  max-width: 520px;
+  width: min(96vw, 520px);
+}
+
 .admin-case-ops-note__modal--wide {
   max-width: 640px;
   width: min(96vw, 640px);
 }
 
+.admin-case-ops-note__modal-subtitle {
+  margin: -8px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #64748b;
+}
+
 .admin-case-ops-note__form {
   display: grid;
-  gap: 12px;
+  gap: 16px;
+}
+
+.admin-case-ops-note__form .admin-form-grid input,
+.admin-case-ops-note__form .admin-form-grid textarea {
+  width: 100%;
+}
+
+.admin-case-ops-note__textarea {
+  min-height: 132px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.admin-case-ops-note__form .admin-form-grid textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
 .admin-case-ops-note__stack {

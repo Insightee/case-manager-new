@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDateIN } from '../../lib/datetime.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import './admin-client-status.css'
 
 function formatNoteMeta(note) {
   if (!note) return ''
@@ -68,34 +69,36 @@ function AddNoteModal({ caseId, open, onClose, onSaved }) {
     <div className="cs-modal-overlay" onClick={onClose}>
       <div className="cs-modal admin-case-ops-note__modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <p className="cs-modal__title">Add operational note</p>
-        <p className="admin-muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
+        <p className="admin-case-ops-note__modal-subtitle">
           Visible to your team only — families never see these notes.
         </p>
         {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
         <form onSubmit={handleSubmit} className="admin-case-ops-note__form">
-          <label className="admin-label" htmlFor={`ops-note-heading-${caseId}`}>
-            Heading
-            <input
-              id={`ops-note-heading-${caseId}`}
-              className="admin-input"
-              value={heading}
-              onChange={(e) => setHeading(e.target.value)}
-              placeholder="e.g. Therapist preference, billing flag"
-              maxLength={200}
-              autoFocus
-            />
-          </label>
-          <label className="admin-label" htmlFor={`ops-note-body-${caseId}`}>
-            Note
-            <textarea
-              id={`ops-note-body-${caseId}`}
-              className="admin-input"
-              rows={8}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Add operational context for the case team."
-            />
-          </label>
+          <div className="admin-form-grid" style={{ maxWidth: '100%' }}>
+            <label className="admin-label" htmlFor={`ops-note-heading-${caseId}`} style={{ gridColumn: '1 / -1' }}>
+              Heading
+              <input
+                id={`ops-note-heading-${caseId}`}
+                className="admin-input"
+                value={heading}
+                onChange={(e) => setHeading(e.target.value)}
+                placeholder="e.g. Therapist preference, billing flag"
+                maxLength={200}
+                autoFocus
+              />
+            </label>
+            <label className="admin-label" htmlFor={`ops-note-body-${caseId}`} style={{ gridColumn: '1 / -1' }}>
+              Note
+              <textarea
+                id={`ops-note-body-${caseId}`}
+                className="admin-input admin-case-ops-note__textarea"
+                rows={6}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Add operational context for the case team."
+              />
+            </label>
+          </div>
           <div className="cs-modal__actions">
             <button type="button" className="admin-btn admin-btn--ghost" onClick={onClose} disabled={saving}>
               Cancel
@@ -122,9 +125,7 @@ function ViewAllModal({ caseId, open, notes, loading, canDelete, onClose, onDele
         aria-modal="true"
       >
         <p className="cs-modal__title">All case notes</p>
-        <p className="admin-muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
-          Newest entries appear first.
-        </p>
+        <p className="admin-case-ops-note__modal-subtitle">Newest entries appear first.</p>
         {loading ? (
           <p className="admin-muted">Loading notes…</p>
         ) : notes.length ? (
