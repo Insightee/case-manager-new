@@ -10,6 +10,7 @@ from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
 from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionDay
 from app.models.case_client_status_audit import CaseClientStatusAudit
+from app.models.case_operational_note import CaseOperationalNote
 from app.models.case_billing_rate_change import CaseBillingRateChange
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.clinical_evidence import GoalEvidenceEvent, IepGoalCard, IepSupportPriority

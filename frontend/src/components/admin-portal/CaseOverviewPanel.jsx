@@ -4,6 +4,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import { displayCaseClientName } from '../../lib/adminCasePipeline.js'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
+import { CaseOperationalNotesPanel } from './CaseOperationalNotesPanel.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { CaseZohoIdForm } from './CaseZohoIdForm.jsx'
 import { StatusBadge } from './ui/index.js'
@@ -51,20 +52,12 @@ function contactBlock(contact) {
 }
 
 export function CaseOverviewPanel({ caseRow, canEditCase, canReopenCase, onCaseChanged }) {
-  const [notes, setNotes] = useState(caseRow?.notes || '')
-  const [notesSaving, setNotesSaving] = useState(false)
-  const [notesError, setNotesError] = useState('')
   const [recentMeetings, setRecentMeetings] = useState([])
   const [meetingsLoading, setMeetingsLoading] = useState(true)
 
   const isMentor = Boolean(caseRow?.access_as_mentor)
   const canEditNotes = Boolean(canEditCase && !isMentor)
   const canEditAddress = Boolean(canEditCase && !isMentor)
-
-  useEffect(() => {
-    setNotes(caseRow?.notes || '')
-    setNotesError('')
-  }, [caseRow?.id, caseRow?.notes])
 
   useEffect(() => {
     if (!caseRow?.id) return
@@ -93,21 +86,12 @@ export function CaseOverviewPanel({ caseRow, canEditCase, canReopenCase, onCaseC
       .join(', ')
   }, [caseRow?.service_address])
 
-  async function saveNotes(event) {
-    event.preventDefault()
-    if (!canEditNotes) return
-    setNotesSaving(true)
-    setNotesError('')
+  async function refreshCaseAfterNotes() {
     try {
-      const updated = await apiFetch(`/api/v1/cases/${caseRow.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ notes: notes.trim() || null }),
-      })
+      const updated = await apiFetch(`/api/v1/cases/${caseRow.id}`)
       onCaseChanged?.(updated)
-    } catch (err) {
-      setNotesError(err.message || 'Looks like we still need a few details before we can save this.')
-    } finally {
-      setNotesSaving(false)
+    } catch {
+      // Overview note panel already shows latest; case row sync is best-effort.
     }
   }
 
@@ -168,37 +152,11 @@ export function CaseOverviewPanel({ caseRow, canEditCase, canReopenCase, onCaseC
         )}
       </div>
 
-      <div className="admin-panel admin-case-overview__panel">
-        <div className="admin-case-overview__panel-head">
-          <div>
-            <p className="admin-case-overview__eyebrow">Case notes</p>
-            <h3 className="admin-case-overview__title">Internal note</h3>
-          </div>
-        </div>
-        {canEditNotes ? (
-          <form onSubmit={saveNotes} className="admin-case-overview__notes-form">
-            <label className="admin-label" htmlFor={`case-notes-${caseRow.id}`}>
-              Notes
-              <textarea
-                id={`case-notes-${caseRow.id}`}
-                className="admin-input"
-                rows={4}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add a quick operational note."
-              />
-            </label>
-            {notesError ? <p className="admin-alert admin-alert--error">{notesError}</p> : null}
-            <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={notesSaving}>
-              {notesSaving ? 'Saving…' : 'Save notes'}
-            </button>
-          </form>
-        ) : (
-          <div className="admin-case-overview__readonly">
-            <p className="admin-case-overview__readonly-text">{caseRow?.notes || 'No case notes yet.'}</p>
-          </div>
-        )}
-      </div>
+      <CaseOperationalNotesPanel
+        caseId={caseRow.id}
+        canAdd={canEditNotes}
+        onCaseNotesChanged={refreshCaseAfterNotes}
+      />
 
       <CaseClientStatusCard
         caseId={caseRow.id}

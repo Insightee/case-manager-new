@@ -53,6 +53,9 @@ WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM case_finance_notes WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
+DELETE FROM case_operational_notes WHERE case_id IN (SELECT id FROM target);
+
+WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)
 DELETE FROM finance_payout_deductions WHERE case_id IN (SELECT id FROM target);
 
 WITH target AS (SELECT id FROM cases WHERE case_code = :case_code)

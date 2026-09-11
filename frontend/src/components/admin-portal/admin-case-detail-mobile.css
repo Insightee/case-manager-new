@@ -154,6 +154,86 @@
   resize: vertical;
 }
 
+.admin-case-ops-note__latest {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.admin-case-ops-note__latest-heading {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.admin-case-ops-note__meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-case-ops-note__body {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-case-ops-note__paragraph {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.admin-case-ops-note__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.admin-case-ops-note__success {
+  margin: 0 0 10px;
+}
+
+.admin-case-ops-note__modal--wide {
+  max-width: 640px;
+  width: min(96vw, 640px);
+}
+
+.admin-case-ops-note__form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-case-ops-note__stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+}
+
+.admin-case-ops-note__stack-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.admin-case-ops-note__stack-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.admin-case-ops-note__delete {
+  margin-top: 8px;
+  color: #b91c1c;
+}
+
 .admin-case-overview__zoho-form {
   display: grid;
   gap: 10px;

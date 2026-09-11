@@ -935,6 +935,34 @@ register_head(
 )
 
 
+def _seed_op1n2o3t4e5(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.case_operational_note import CaseOperationalNote
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    actor = db.scalar(select(User).limit(1))
+    if not case or not actor:
+        raise RuntimeError("Need seeded case + user — run demo_seed first")
+    note = CaseOperationalNote(
+        case_id=case.id,
+        heading="Migration proof",
+        body="Operational notes table is live.",
+        author_user_id=actor.id,
+    )
+    db.add(note)
+    db.flush()
+    return {"note_id": note.id, "case_id": case.id}
+
+
+register_head(
+    "op1n2o3t4e5",
+    tables_added=["case_operational_notes"],
+    columns_added=[],
+    seed=_seed_op1n2o3t4e5,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

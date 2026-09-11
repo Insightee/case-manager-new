@@ -16,7 +16,9 @@ from app.core.module_write import (
     ensure_product_module_write_access,
 )
 from app.core.permissions import (
+    RoleName,
     case_scope_check,
+    has_role,
     require_any_permission,
     require_mutation_permission,
     require_permission,
@@ -36,6 +38,8 @@ from datetime import date as date_type
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.services import client_status_service
 from app.schemas.iep_plan import IepPlanSuggestionCreate
+from app.schemas.case_operational_note import CaseOperationalNoteCreate, CaseOperationalNoteRead
+from app.services import case_operational_note_service as case_ops_note_svc
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -505,6 +509,86 @@ def _case_for_user_write(db: Session, user: User, case_id: int) -> Case:
     case = _case_for_user(db, user, case_id)
     ensure_case_write_access(user, case, db)
     return case
+
+
+@router.get("/{case_id}/operational-notes", response_model=list[CaseOperationalNoteRead])
+def list_case_operational_notes(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Staff-only operational note history (newest first)."""
+    _case_for_user(db, user, case_id)
+    return [
+        CaseOperationalNoteRead(**row)
+        for row in case_ops_note_svc.list_notes_for_case(db, case_id=case_id)
+    ]
+
+
+@router.get("/{case_id}/operational-notes/latest", response_model=CaseOperationalNoteRead | None)
+def get_latest_case_operational_note(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _case_for_user(db, user, case_id)
+    row = case_ops_note_svc.latest_note_for_case(db, case_id=case_id)
+    return CaseOperationalNoteRead(**row) if row else None
+
+
+@router.post(
+    "/{case_id}/operational-notes",
+    response_model=CaseOperationalNoteRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_case_operational_note(
+    case_id: int,
+    payload: CaseOperationalNoteCreate,
+    user: User = Depends(require_mutation_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        row = case_ops_note_svc.create_note(
+            db,
+            case=case,
+            heading=payload.heading,
+            body=payload.body,
+            author=user,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return CaseOperationalNoteRead(**row)
+
+
+@router.delete("/{case_id}/operational-notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case_operational_note(
+    case_id: int,
+    note_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not has_role(user, RoleName.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Only super admins can delete operational notes.")
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        case_ops_note_svc.delete_note(db, case=case, note_id=note_id, actor=user)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Note not found")
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete",
+        entity_type="case_operational_note",
+        entity_id=note_id,
+        case_id=case.id,
+        **meta,
+    )
+    db.commit()
+    return None
 
 
 @router.get("/{case_id}/clinical-profile")
