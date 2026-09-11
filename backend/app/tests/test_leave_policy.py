@@ -336,3 +336,75 @@ def test_hr_therapist_cases_endpoint():
     assert r.status_code == 200
     assert r.json()["therapist_user_id"] == therapist_id
     assert "items" in r.json()
+
+
+def test_hr_approve_recomputes_paid_when_credits_available():
+    """UNPAID at submit (e.g. missing start date) must not stick through HR approval."""
+    from datetime import time as dt_time
+
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionMode, SessionStatus
+
+    therapist = _login("therapist@demo.com")
+    hr = _login("hr@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        _ensure_therapist_profile(db, user.id, employment_start=date(2025, 11, 1))
+        assignment = db.scalars(
+            select(CaseAssignment)
+            .join(Case, Case.id == CaseAssignment.case_id)
+            .where(
+                CaseAssignment.therapist_user_id == user.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                Case.product_module == "shadow_support",
+            )
+        ).first()
+        assert assignment
+        leave_day = date.today() + timedelta(days=21)
+        db.add(
+            TherapySession(
+                case_id=assignment.case_id,
+                therapist_user_id=user.id,
+                scheduled_date=leave_day,
+                start_time=dt_time(9, 0),
+                end_time=dt_time(10, 0),
+                mode=SessionMode.SCHOOL,
+                status=SessionStatus.SCHEDULED,
+            )
+        )
+        db.commit()
+        case_id = assignment.case_id
+    finally:
+        db.close()
+
+    create = client.post(
+        "/api/v1/leave",
+        headers=_headers(therapist),
+        json={
+            "service_line": "shadow_support",
+            "billing_category": "UNPAID",
+            "case_ids": [case_id],
+            "start_date": leave_day.isoformat(),
+            "end_date": leave_day.isoformat(),
+            "reason": "Forced unpaid at submit",
+        },
+    )
+    assert create.status_code == 201, create.text
+    payload = create.json()
+    assert payload["billing_category"] == "UNPAID"
+    assert payload["paid_days"] == 0
+
+    approve = client.patch(
+        f"/api/v1/leave/{payload['id']}",
+        headers=_headers(hr),
+        json={"status": "APPROVED"},
+    )
+    assert approve.status_code == 200, approve.text
+    approved = approve.json()
+    assert approved["billing_category"] == "PAID"
+    assert approved["paid_days"] == 1
+    assert approved["unpaid_days"] == 0
+    assert approved["leave_type"] == "ANNUAL"

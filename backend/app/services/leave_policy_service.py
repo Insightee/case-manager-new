@@ -567,8 +567,13 @@ def resolve_billing_category(
 
 
 def apply_live_paid_unpaid(db: Session, leave: TherapistLeave, user: User) -> TherapistLeave:
-    """Recompute paid/unpaid from live remaining credits (call on approve)."""
-    requested = leave.billing_category if leave.billing_category == LeaveBillingCategory.UNPAID else None
+    """Recompute paid/unpaid from live remaining credits (call on HR approve).
+
+    Ignores a prior UNPAID billing_category from therapist self-service — that flag
+    often reflects a missing employment start date at submit time, not a voluntary choice.
+    HR approval always re-allocates credits; voluntary unpaid remains available via HR
+    manual entry with an explicit billing_category.
+    """
     billing, paid_days, unpaid_days, includes_shadow = resolve_billing_category(
         db,
         user,
@@ -576,9 +581,10 @@ def apply_live_paid_unpaid(db: Session, leave: TherapistLeave, user: User) -> Th
         end_date=leave.end_date,
         service_line=(leave.service_line or SHADOW_SERVICE_LINE),
         case_ids=_leave_case_ids(leave) or None,
-        requested_category=requested,
+        requested_category=None,
     )
     leave.billing_category = billing
+    leave.leave_type = map_leave_type_from_billing(billing)
     leave.paid_days = paid_days
     leave.unpaid_days = unpaid_days
     leave.includes_shadow_cases = includes_shadow
