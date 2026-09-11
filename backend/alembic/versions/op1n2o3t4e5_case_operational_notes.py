@@ -42,7 +42,7 @@ def upgrade() -> None:
             sa.text(
                 """
                 INSERT INTO case_operational_notes (case_id, heading, body, author_user_id, is_legacy_import)
-                SELECT c.id, 'Legacy note', c.notes, NULL, 1
+                SELECT c.id, 'Legacy note', c.notes, NULL, TRUE
                 FROM cases c
                 WHERE c.notes IS NOT NULL
                   AND TRIM(c.notes) != ''
