@@ -4,11 +4,12 @@ import json
 from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import case_scope_check, is_finance_desk_user, user_has_permission
 from app.models.case import BillingType, Case
+from app.models.child import Child
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.core.session_defaults import default_session_mode_for_case
 from app.models.session import Session as TherapySession
@@ -626,10 +627,8 @@ def list_pending_for_parent(db: Session, user: User) -> list[dict]:
     return list_approved_absence_notifications_for_parent(db, user)
 
 
-def list_child_absence_for_admin(db: Session, user: User) -> list[dict]:
-    if not _admin_can_review(user):
-        raise HTTPException(status_code=403, detail="Access denied")
-    rows = db.scalars(
+def _child_absence_admin_base_stmt():
+    return (
         select(SessionAbsenceRequest)
         .where(SessionAbsenceRequest.absence_type == SessionAbsenceType.CLIENT_ABSENT)
         .options(
@@ -637,8 +636,61 @@ def list_child_absence_for_admin(db: Session, user: User) -> list[dict]:
             selectinload(SessionAbsenceRequest.case).selectinload(Case.child),
         )
         .order_by(SessionAbsenceRequest.created_at.desc())
-        .limit(200)
+    )
+
+
+def _child_absence_ui_status_filter(absence_status: str | None) -> SessionAbsenceStatus | None:
+    if not absence_status or absence_status == "ALL":
+        return None
+    if absence_status == "PENDING":
+        return SessionAbsenceStatus.PENDING_APPROVAL
+    if absence_status == "APPROVED":
+        return SessionAbsenceStatus.APPROVED
+    if absence_status == "REJECTED":
+        return SessionAbsenceStatus.REJECTED
+    return None
+
+
+def _child_absence_admin_status_counts(db: Session) -> dict[str, int]:
+    rows = db.execute(
+        select(SessionAbsenceRequest.status, func.count())
+        .where(SessionAbsenceRequest.absence_type == SessionAbsenceType.CLIENT_ABSENT)
+        .group_by(SessionAbsenceRequest.status)
     ).all()
+    counts = {
+        "PENDING": 0,
+        "APPROVED": 0,
+        "REJECTED": 0,
+        "ALL": 0,
+    }
+    for status, count in rows:
+        ui = _absence_status_for_leave_ui(status)
+        if ui in counts:
+            counts[ui] = int(count)
+    counts["ALL"] = counts["PENDING"] + counts["APPROVED"] + counts["REJECTED"]
+    return counts
+
+
+def _apply_child_absence_search(stmt, search: str):
+    term = f"%{search.strip()}%"
+    therapist = User.__table__.alias("absence_therapist")
+    return (
+        stmt.join(therapist, therapist.c.id == SessionAbsenceRequest.therapist_user_id)
+        .join(Case, Case.id == SessionAbsenceRequest.case_id)
+        .outerjoin(Child, Child.id == Case.child_id)
+        .where(
+            or_(
+                therapist.c.full_name.ilike(term),
+                therapist.c.email.ilike(term),
+                Case.case_code.ilike(term),
+                Child.full_name.ilike(term),
+                SessionAbsenceRequest.reason.ilike(term),
+            )
+        )
+    )
+
+
+def _serialize_child_absence_admin_rows(db: Session, rows: list[SessionAbsenceRequest]) -> list[dict]:
     items: list[dict] = []
     for row in rows:
         payload = _serialize(db, row)
@@ -646,6 +698,51 @@ def list_child_absence_for_admin(db: Session, user: User) -> list[dict]:
         payload["leave_status"] = _absence_status_for_leave_ui(row.status)
         items.append(payload)
     return items
+
+
+def list_child_absence_for_admin(db: Session, user: User) -> list[dict]:
+    if not _admin_can_review(user):
+        raise HTTPException(status_code=403, detail="Access denied")
+    rows = db.scalars(_child_absence_admin_base_stmt().limit(200)).all()
+    return _serialize_child_absence_admin_rows(db, rows)
+
+
+def list_child_absence_for_admin_page(
+    db: Session,
+    user: User,
+    *,
+    search: str | None = None,
+    absence_status: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict:
+    if not _admin_can_review(user):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    search_term = (search or "").strip()
+    search_active = len(search_term) >= 2
+    status_filter = _child_absence_ui_status_filter(absence_status)
+
+    stmt = _child_absence_admin_base_stmt()
+    if status_filter is not None:
+        stmt = stmt.where(SessionAbsenceRequest.status == status_filter)
+    if search_active:
+        stmt = _apply_child_absence_search(stmt, search_term)
+
+    counts = _child_absence_admin_status_counts(db)
+    total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+    current_page = 1 if search_active else page
+    effective_page_size = min(total, 500) if search_active else page_size
+    offset = 0 if search_active else (page - 1) * page_size
+    rows = db.scalars(stmt.offset(offset).limit(effective_page_size)).all()
+
+    return {
+        "items": _serialize_child_absence_admin_rows(db, rows),
+        "total": total,
+        "page": current_page,
+        "page_size": effective_page_size if search_active else page_size,
+        "counts": counts,
+    }
 
 
 def list_pending_for_admin(db: Session, user: User) -> list[dict]:

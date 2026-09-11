@@ -59,6 +59,10 @@ class SessionAbsenceRead(BaseModel):
 
 class SessionAbsenceListResponse(BaseModel):
     items: list[SessionAbsenceRead] = Field(default_factory=list)
+    total: Optional[int] = None
+    page: Optional[int] = None
+    page_size: Optional[int] = None
+    counts: Optional[dict[str, int]] = None
 
 
 class SessionAbsenceStatusResponse(BaseModel):

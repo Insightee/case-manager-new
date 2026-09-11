@@ -408,3 +408,37 @@ def test_hr_approve_recomputes_paid_when_credits_available():
     assert approved["paid_days"] == 1
     assert approved["unpaid_days"] == 0
     assert approved["leave_type"] == "ANNUAL"
+
+
+def test_admin_leave_list_paginated_with_search():
+    hr = _login("hr@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        _ensure_therapist_profile(db, user.id)
+        db.commit()
+        therapist_name = user.full_name
+    finally:
+        db.close()
+
+    page1 = client.get("/api/v1/leave?page=1&page_size=5", headers=_headers(hr))
+    assert page1.status_code == 200
+    payload = page1.json()
+    assert isinstance(payload, dict)
+    assert "items" in payload
+    assert "total" in payload
+    assert "counts" in payload
+    assert len(payload["items"]) <= 5
+
+    search = client.get(
+        f"/api/v1/leave?page=1&search={therapist_name.split()[0]}",
+        headers=_headers(hr),
+    )
+    assert search.status_code == 200
+    search_payload = search.json()
+    assert search_payload["total"] >= 0
+    assert all(
+        therapist_name.split()[0].lower() in (item.get("therapist_name") or "").lower()
+        or therapist_name.split()[0].lower() in (item.get("reason") or "").lower()
+        for item in search_payload["items"]
+    )

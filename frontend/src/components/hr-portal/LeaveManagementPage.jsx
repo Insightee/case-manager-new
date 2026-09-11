@@ -11,6 +11,7 @@ import {
   RejectWithComment,
   StatusBadge,
 } from '../admin-portal/ui/index.js'
+import { PeopleListPagination } from '../admin-portal/ui/PeopleListPagination.jsx'
 import './leave-management.css'
 import { formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
 import { leaveRetroactiveHint, absenceRetroactiveHint } from '../../lib/leaveMigration.js'
@@ -58,21 +59,10 @@ function resolveRequestView(searchParams) {
   return 'leave'
 }
 
-function matchesSearch(row, query) {
-  const q = query.trim().toLowerCase()
-  if (!q) return true
-  const haystack = [
-    row.therapist_name,
-    row.child_name,
-    row.reason,
-    row.case_code,
-    row.leave_type,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-  return haystack.includes(q)
-}
+const APPROVALS_PAGE_SIZE = 25
+const SEARCH_MIN_LEN = 2
+
+const EMPTY_COUNTS = { PENDING: 0, APPROVED: 0, REJECTED: 0, ALL: 0 }
 
 export function LeaveManagementPage({ portal = 'hr' }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -95,20 +85,57 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   const [reportLoading, setReportLoading] = useState(false)
   const [migrationInfo, setMigrationInfo] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [statusCounts, setStatusCounts] = useState(EMPTY_COUNTS)
 
   const eyebrow = portal === 'admin' ? 'Admin' : 'HR'
+  const searchActive = debouncedSearch.trim().length >= SEARCH_MIN_LEN
 
-  async function load() {
-    setLoading(true)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch, tab, requestView])
+
+  async function loadMigrationInfo() {
     try {
-      const [data, childData, migration] = await Promise.all([
-        apiFetch('/api/v1/leave'),
-        apiFetch('/api/v1/leave/child-absence').catch(() => ({ items: [] })),
-        apiFetch('/api/v1/leave/migration-info').catch(() => null),
-      ])
-      setLeaves(Array.isArray(data) ? data : [])
-      setChildAbsences(Array.isArray(childData?.items) ? childData.items : [])
+      const migration = await apiFetch('/api/v1/leave/migration-info')
       setMigrationInfo(migration)
+    } catch {
+      setMigrationInfo(null)
+    }
+  }
+
+  async function loadApprovals() {
+    setLoading(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('page', searchActive ? '1' : String(page))
+      params.set('page_size', searchActive ? '500' : String(APPROVALS_PAGE_SIZE))
+      if (searchActive) params.set('search', debouncedSearch.trim())
+      if (tab !== 'ALL') {
+        if (requestView === 'leave') params.set('leave_status', tab)
+        else params.set('absence_status', tab)
+      }
+
+      if (requestView === 'leave') {
+        const data = await apiFetch(`/api/v1/leave?${params}`)
+        const items = Array.isArray(data) ? data : data?.items || []
+        setLeaves(items)
+        setTotal(Array.isArray(data) ? items.length : Number(data?.total || items.length))
+        setStatusCounts(data?.counts || EMPTY_COUNTS)
+      } else {
+        const data = await apiFetch(`/api/v1/leave/child-absence?${params}`)
+        setChildAbsences(Array.isArray(data?.items) ? data.items : [])
+        setTotal(Number(data?.total || 0))
+        setStatusCounts(data?.counts || EMPTY_COUNTS)
+      }
       return true
     } catch (err) {
       setError(err.message || 'Could not load leave requests')
@@ -116,6 +143,10 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function load() {
+    return loadApprovals()
   }
 
   async function loadReport() {
@@ -135,8 +166,12 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   }
 
   useEffect(() => {
-    load()
+    loadMigrationInfo()
   }, [])
+
+  useEffect(() => {
+    if (mainTab === 'approvals') loadApprovals()
+  }, [mainTab, requestView, tab, page, debouncedSearch])
 
   useEffect(() => {
     if (mainTab === 'report') loadReport()
@@ -273,27 +308,20 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     }
   }
 
-  const viewRequests =
+  const displayed =
     requestView === 'child_absence'
       ? childAbsences.map(normalizeChildAbsenceRow)
       : leaves.map(normalizeLeaveRow)
 
-  const statusFiltered =
-    tab === 'ALL' ? viewRequests : viewRequests.filter((r) => r.display_status === tab)
-
-  const displayed = statusFiltered.filter((r) => matchesSearch(r, searchQuery))
-
-  const counts = {
-    PENDING: viewRequests.filter((r) => r.display_status === 'PENDING').length,
-    APPROVED: viewRequests.filter((r) => r.display_status === 'APPROVED').length,
-    REJECTED: viewRequests.filter((r) => r.display_status === 'REJECTED').length,
-    ALL: viewRequests.length,
-  }
+  const counts = statusCounts
+  const totalPages = searchActive ? 1 : Math.max(1, Math.ceil(total / APPROVALS_PAGE_SIZE))
+  const rangeStart = total === 0 ? 0 : searchActive ? 1 : (page - 1) * APPROVALS_PAGE_SIZE + 1
+  const rangeEnd = searchActive ? total : Math.min(page * APPROVALS_PAGE_SIZE, total)
 
   const panelTitle =
     requestView === 'child_absence'
-      ? `${displayed.length} child absence request${displayed.length === 1 ? '' : 's'}`
-      : `${displayed.length} leave request${displayed.length === 1 ? '' : 's'}`
+      ? `${total} child absence request${total === 1 ? '' : 's'}${searchActive ? ' matching search' : ''}`
+      : `${total} leave request${total === 1 ? '' : 's'}${searchActive ? ' matching search' : ''}`
 
   return (
     <div className="admin-page leave-mgmt">
@@ -317,26 +345,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
       />
 
       {mainTab === 'manual' ? (
-        <>
-          <AdminToolbar>
-            <label className="admin-muted" style={{ fontSize: '0.75rem' }}>
-              Balance year
-              <select
-                className="admin-select"
-                style={{ display: 'block', marginTop: 4 }}
-                value={manualYear}
-                onChange={(e) => setManualYear(Number(e.target.value))}
-              >
-                {[manualYear - 1, manualYear, manualYear + 1].map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </AdminToolbar>
-          <ManualLeaveTab year={manualYear} onLeaveRecorded={load} />
-        </>
+        <ManualLeaveTab year={manualYear} onYearChange={setManualYear} onLeaveRecorded={loadApprovals} />
       ) : mainTab === 'approvals' ? (
         <>
           <PortalTabBar
@@ -368,10 +377,15 @@ export function LeaveManagementPage({ portal = 'hr' }) {
               onChange={setSearchQuery}
               placeholder={
                 requestView === 'child_absence'
-                  ? 'Search child, therapist, case…'
-                  : 'Search therapist, reason, type…'
+                  ? 'Search child, therapist, case, email…'
+                  : 'Search therapist name, email, reason…'
               }
             />
+            {searchQuery.trim().length > 0 && searchQuery.trim().length < SEARCH_MIN_LEN ? (
+              <p className="leave-mgmt-manual__results-empty" style={{ marginTop: 8 }}>
+                Type at least {SEARCH_MIN_LEN} characters to search across all matching records.
+              </p>
+            ) : null}
           </div>
 
           <AdminPanel title={panelTitle} padded={false}>
@@ -529,6 +543,16 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                   })}
                 </div>
               )}
+              {!loading && !searchActive && total > APPROVALS_PAGE_SIZE ? (
+                <PeopleListPagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  rangeStart={rangeStart}
+                  rangeEnd={rangeEnd}
+                  onPageChange={setPage}
+                />
+              ) : null}
             </div>
           </AdminPanel>
         </>

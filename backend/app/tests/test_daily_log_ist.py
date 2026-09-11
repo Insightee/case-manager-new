@@ -5,8 +5,11 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.database import SessionLocal
 from app.core.timezone import today_ist
 from app.main import app
+from app.models.case import Case, CaseStatus
+from app.models.session import Session as TherapySession
 from app.seed.demo_seed import run as seed_run
 from app.tests.session_helpers import (
     backdate_in_progress_session,
@@ -39,11 +42,29 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _ensure_active_case_for_session(session_id: int) -> None:
+    """Shared CI DB may leave cases paused; session start requires ACTIVE."""
+    db = SessionLocal()
+    try:
+        sess = db.get(TherapySession, session_id)
+        if sess is None:
+            return
+        case = db.get(Case, sess.case_id)
+        if case is not None:
+            case.status = CaseStatus.ACTIVE
+            case.status_effective_date = None
+            case.status_reason = None
+            db.commit()
+    finally:
+        db.close()
+
+
 def _end_upcoming_session(headers) -> dict:
     session_ids = ensure_scheduled_sessions_for_therapist(min_count=1)
     if not session_ids:
         pytest.skip("No scheduled sessions")
     sid = session_ids[0]
+    _ensure_active_case_for_session(sid)
     started = client.post(f"/api/v1/sessions/{sid}/start", headers=headers)
     assert started.status_code == 200, started.text
     backdate_in_progress_session(sid)

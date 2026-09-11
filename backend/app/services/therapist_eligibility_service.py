@@ -150,10 +150,24 @@ def apply_therapist_exit(
     )
     case_ids: list[int] = []
     for assignment in active:
+        case_ids.append(assignment.case_id)
+        if assignment.case_service_id is not None:
+            existing_ended = db.scalars(
+                select(CaseAssignment).where(
+                    CaseAssignment.case_service_id == assignment.case_service_id,
+                    CaseAssignment.therapist_user_id == therapist_user_id,
+                    CaseAssignment.status == CaseAssignmentStatus.ENDED,
+                    CaseAssignment.id != assignment.id,
+                )
+            ).first()
+            if existing_ended is not None:
+                existing_ended.end_date = today
+                existing_ended.reason_for_change = reason_clean
+                db.delete(assignment)
+                continue
         assignment.status = CaseAssignmentStatus.ENDED
         assignment.end_date = today
         assignment.reason_for_change = reason_clean
-        case_ids.append(assignment.case_id)
 
     replacement_case_ids: list[int] = []
     for case_id in sorted(set(case_ids)):

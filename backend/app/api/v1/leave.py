@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -109,13 +109,47 @@ def _split_response(suggestion: policy.LeaveSplitSuggestion) -> dict:
     }
 
 
+def _leave_admin_status_counts(db: Session) -> dict[str, int]:
+    rows = db.execute(
+        select(TherapistLeave.status, func.count())
+        .group_by(TherapistLeave.status)
+    ).all()
+    counts = {status.value: int(count) for status, count in rows}
+    for key in ("PENDING", "APPROVED", "REJECTED", "CANCELLED"):
+        counts.setdefault(key, 0)
+    counts["ALL"] = sum(counts.get(k, 0) for k in ("PENDING", "APPROVED", "REJECTED", "CANCELLED"))
+    return counts
+
+
+def _apply_leave_search(stmt, search: str):
+    term = f"%{search.strip()}%"
+    return stmt.join(User, User.id == TherapistLeave.therapist_user_id).where(
+        or_(
+            User.full_name.ilike(term),
+            User.email.ilike(term),
+            TherapistLeave.reason.ilike(term),
+        )
+    )
+
+
 @router.get("")
 def list_leave(
     therapist_id: Optional[int] = None,
     leave_status: Optional[LeaveStatus] = None,
+    search: Optional[str] = Query(None, max_length=120),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    admin_paginated = (
+        page is not None
+        and user_has_permission(user, "leave.manage")
+        and therapist_id is None
+    )
+    search_term = (search or "").strip()
+    search_active = len(search_term) >= 2
+
     stmt = select(TherapistLeave).order_by(TherapistLeave.created_at.desc())
     if user_has_permission(user, "leave.manage"):
         if therapist_id:
@@ -131,12 +165,35 @@ def list_leave(
             stmt = stmt.where(TherapistLeave.status == LeaveStatus.APPROVED)
         else:
             stmt = stmt.where(TherapistLeave.status == leave_status)
+    if search_active:
+        stmt = _apply_leave_search(stmt, search_term)
+
+    if admin_paginated:
+        counts = _leave_admin_status_counts(db)
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int(db.scalar(count_stmt) or 0)
+        current_page = 1 if search_active else page
+        effective_page_size = min(total, 500) if search_active else page_size
+        offset = 0 if search_active else (page - 1) * page_size
+        leaves = db.scalars(stmt.offset(offset).limit(effective_page_size)).all()
+        return {
+            "items": [_serialise(l, db) for l in leaves],
+            "total": total,
+            "page": current_page,
+            "page_size": effective_page_size if search_active else page_size,
+            "counts": counts,
+        }
+
     leaves = db.scalars(stmt).all()
     return [_serialise(l, db) for l in leaves]
 
 
 @router.get("/child-absence", response_model=SessionAbsenceListResponse)
 def list_child_absence_requests(
+    search: Optional[str] = Query(None, max_length=120),
+    absence_status: Optional[str] = Query(None, pattern="^(PENDING|APPROVED|REJECTED|ALL)$"),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -144,7 +201,20 @@ def list_child_absence_requests(
 
     if not user_has_permission(user, "leave.manage") and not user_has_permission(user, "case.read.all"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    payload = {"items": absence_svc.list_child_absence_for_admin(db, user)}
+
+    paginated = page is not None and user_has_permission(user, "leave.manage")
+    if paginated:
+        payload = absence_svc.list_child_absence_for_admin_page(
+            db,
+            user,
+            search=search,
+            absence_status=absence_status,
+            page=page,
+            page_size=page_size,
+        )
+    else:
+        payload = {"items": absence_svc.list_child_absence_for_admin(db, user)}
+
     if is_finance_desk_user(user) and not user_has_permission(user, "leave.manage"):
         payload["items"] = [
             item for item in payload["items"] if str(item.get("leave_status") or item.get("status") or "").upper() == "APPROVED"

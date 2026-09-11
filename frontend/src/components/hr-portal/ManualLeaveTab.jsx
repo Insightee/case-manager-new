@@ -4,7 +4,7 @@ import { formatDisplayDate } from '../../lib/datetime.js'
 import { leaveCreditPendingLabel } from '../../lib/leaveBalanceDisplay.js'
 import { caseLabel, caseServiceLine, formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
 import { TherapistLeaveRequestFields } from '../therapist/TherapistLeaveRequestFields.jsx'
-import { AdminSearchInput, StatusBadge } from '../admin-portal/ui/index.js'
+import { StatusBadge } from '../admin-portal/ui/index.js'
 import { TherapistLeaveBalancePanel } from './TherapistLeaveBalancePanel.jsx'
 
 const EMPTY_FORM = {
@@ -18,9 +18,8 @@ const EMPTY_FORM = {
 
 const MIN_SEARCH_LEN = 2
 
-export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
+export function ManualLeaveTab({ year: yearProp, onYearChange, onLeaveRecorded }) {
   const year = yearProp || new Date().getFullYear()
-  const [therapists, setTherapists] = useState([])
   const [therapistSearch, setTherapistSearch] = useState('')
   const [therapistId, setTherapistId] = useState('')
   const [selectedTherapistSnapshot, setSelectedTherapistSnapshot] = useState(null)
@@ -33,12 +32,13 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [therapistResults, setTherapistResults] = useState([])
 
   const searchReady = therapistSearch.trim().length >= MIN_SEARCH_LEN
 
   useEffect(() => {
     if (!searchReady) {
-      setTherapists([])
+      setTherapistResults([])
       setLoadingTherapists(false)
       return undefined
     }
@@ -48,10 +48,13 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
     setLoadingTherapists(true)
     apiFetch(`/api/v1/hr/therapists?search=${q}`)
       .then((rows) => {
-        if (!cancelled) setTherapists(Array.isArray(rows) ? rows : [])
+        if (!cancelled) {
+          const list = Array.isArray(rows) ? rows : []
+          setTherapistResults(list)
+        }
       })
       .catch(() => {
-        if (!cancelled) setTherapists([])
+        if (!cancelled) setTherapistResults([])
       })
       .finally(() => {
         if (!cancelled) setLoadingTherapists(false)
@@ -66,8 +69,8 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
     if (selectedTherapistSnapshot && String(selectedTherapistSnapshot.id) === String(therapistId)) {
       return selectedTherapistSnapshot
     }
-    return therapists.find((t) => String(t.id) === String(therapistId)) || selectedTherapistSnapshot
-  }, [therapists, therapistId, selectedTherapistSnapshot])
+    return therapistResults.find((t) => String(t.id) === String(therapistId)) || selectedTherapistSnapshot
+  }, [therapistResults, therapistId, selectedTherapistSnapshot])
 
   const loadContext = useCallback(async () => {
     if (!therapistId) {
@@ -126,7 +129,7 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
     setTherapistId('')
     setSelectedTherapistSnapshot(null)
     setTherapistSearch('')
-    setTherapists([])
+    setTherapistResults([])
     setForm(EMPTY_FORM)
     setSuccess('')
     setError('')
@@ -192,17 +195,38 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
     }
   }
 
+  const yearOptions = [year - 1, year, year + 1]
+
   return (
     <div className="leave-mgmt-manual">
       <section className="leave-mgmt-manual__search-panel">
+        <div className="leave-mgmt-manual__search-head">
+          <label className="leave-mgmt-manual__year-field">
+            <span>Balance year</span>
+            <select
+              className="admin-select"
+              value={year}
+              onChange={(e) => onYearChange?.(Number(e.target.value))}
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <label className="leave-mgmt-manual__search-field">
           <span>Find therapist</span>
-          <AdminSearchInput
-            className="leave-mgmt-manual__search-input"
+          <input
+            type="search"
+            className="admin-input leave-mgmt-manual__search-input"
             placeholder="Search by name or email…"
             value={therapistSearch}
             onChange={(e) => setTherapistSearch(e.target.value)}
             aria-label="Search therapists by name or email"
+            autoComplete="off"
           />
         </label>
 
@@ -212,11 +236,11 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
           </p>
         ) : loadingTherapists ? (
           <p className="leave-mgmt-manual__results-empty">Searching…</p>
-        ) : therapists.length === 0 ? (
+        ) : therapistResults.length === 0 ? (
           <p className="leave-mgmt-manual__results-empty">No therapists match that search.</p>
         ) : (
           <ul className="leave-mgmt-manual__results" role="listbox" aria-label="Therapist search results">
-            {therapists.map((t) => {
+            {therapistResults.map((t) => {
               const isSelected = String(t.id) === String(therapistId)
               return (
                 <li key={t.id}>
