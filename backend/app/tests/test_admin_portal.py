@@ -527,9 +527,9 @@ def test_therapist_onboard_invite_and_accept():
         json={"token": token_str, "password": "demo12345", "full_name": "Onboard Test"},
     )
     assert accept.status_code == 200, accept.text
-    profiles = client.get("/api/v1/admin/therapist-profiles", headers=headers)
+    profiles = client.get("/api/v1/admin/therapist-profiles?page_size=100", headers=headers)
     assert profiles.status_code == 200
-    match = [p for p in profiles.json() if p.get("email") == email]
+    match = [p for p in profiles.json().get("items", []) if p.get("email") == email]
     assert match, "Therapist profile should exist after invite accept"
     assert match[0]["status"] == "APPROVED"
     offered = match[0].get("services_offered") or []

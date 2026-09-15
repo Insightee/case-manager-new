@@ -125,7 +125,33 @@ export async function fetchParentsAwaitingLogin() {
   }))
 }
 
-export async function fetchTherapistProfiles() {
-  const rows = await apiFetch('/api/v1/admin/therapist-profiles').catch(() => [])
-  return Array.isArray(rows) ? rows : []
+export async function fetchTherapistProfiles({ userIds, page = 1, pageSize = 100, search } = {}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (userIds?.length) params.set('user_ids', userIds.join(','))
+  if (search?.trim()) params.set('q', search.trim())
+  const data = await apiFetch(`/api/v1/admin/therapist-profiles?${params.toString()}`).catch(() => ({
+    items: [],
+  }))
+  return data.items || []
+}
+
+export async function fetchAllTherapistProfiles({ search } = {}) {
+  const items = []
+  let page = 1
+  let pages = 1
+  do {
+    const params = new URLSearchParams({ page: String(page), page_size: '100' })
+    if (search?.trim()) params.set('q', search.trim())
+    const data = await apiFetch(`/api/v1/admin/therapist-profiles?${params.toString()}`).catch(() => ({
+      items: [],
+      pages: 1,
+    }))
+    items.push(...(data.items || []))
+    pages = data.pages || 1
+    page += 1
+  } while (page <= pages)
+  return items
 }

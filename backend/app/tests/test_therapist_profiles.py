@@ -26,6 +26,13 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _profile_items(response) -> list[dict]:
+    body = response.json()
+    if isinstance(body, list):
+        return body
+    return body.get("items", [])
+
+
 def _submit_profile(token: str, payload: dict) -> dict:
     r = client.post("/api/v1/therapist/profile/submit", headers=_headers(token), json=payload)
     assert r.status_code == 200
@@ -38,7 +45,9 @@ def _therapist_profile(token: str) -> dict:
 
 def _pending_profile_for_therapist(admin_token: str, therapist_token: str) -> dict:
     prof = _therapist_profile(therapist_token)
-    pending = client.get("/api/v1/admin/therapist-profiles?status=PENDING", headers=_headers(admin_token)).json()
+    pending = _profile_items(
+        client.get("/api/v1/admin/therapist-profiles?status=PENDING&page_size=100", headers=_headers(admin_token))
+    )
     return next(p for p in pending if p["user_id"] == prof["user_id"])
 
 
@@ -85,7 +94,7 @@ def test_admin_approves_profile():
 def test_admin_pause_delete_restore_soft_delete():
     admin = _login("superadmin@demo.com")
     ah = _headers(admin)
-    profiles = client.get("/api/v1/admin/therapist-profiles", headers=ah).json()
+    profiles = _profile_items(client.get("/api/v1/admin/therapist-profiles?page_size=100", headers=ah))
     assert profiles
     pid = profiles[0]["id"]
 
@@ -99,10 +108,10 @@ def test_admin_pause_delete_restore_soft_delete():
     del_r = client.delete(f"/api/v1/admin/therapist-profiles/{pid}", headers=ah)
     assert del_r.status_code == 204
 
-    active = client.get("/api/v1/admin/therapist-profiles", headers=ah).json()
+    active = _profile_items(client.get("/api/v1/admin/therapist-profiles?page_size=100", headers=ah))
     assert not any(p["id"] == pid for p in active)
 
-    deleted = client.get("/api/v1/admin/therapist-profiles?status=DELETED", headers=ah).json()
+    deleted = _profile_items(client.get("/api/v1/admin/therapist-profiles?status=DELETED&page_size=100", headers=ah))
     match = next(p for p in deleted if p["id"] == pid)
     assert match["status"] == "DELETED"
     assert match.get("deleted_at")
@@ -131,7 +140,7 @@ def test_therapist_profiles_summary_includes_new_kpis():
 def test_needs_listing_filter_returns_users_without_profiles():
     admin = _login("superadmin@demo.com")
     ah = _headers(admin)
-    rows = client.get("/api/v1/admin/therapist-profiles?status=NEEDS_LISTING", headers=ah).json()
+    rows = _profile_items(client.get("/api/v1/admin/therapist-profiles?status=NEEDS_LISTING&page_size=100", headers=ah))
     for row in rows:
         assert row["status"] == "NEEDS_LISTING"
         assert row["id"] is None
@@ -141,8 +150,12 @@ def test_needs_listing_filter_returns_users_without_profiles():
 def test_activity_filter_no_sessions_15d():
     admin = _login("superadmin@demo.com")
     ah = _headers(admin)
-    rows = client.get("/api/v1/admin/therapist-profiles?activity=no_sessions_15d", headers=ah).json()
-    assert isinstance(rows, list)
+    res = client.get("/api/v1/admin/therapist-profiles?activity=no_sessions_15d&page_size=100", headers=ah)
+    assert res.status_code == 200
+    body = res.json()
+    assert "items" in body
+    assert "total" in body
+    rows = body["items"]
     for row in rows:
         assert row["status"] != "DELETED"
         if row.get("last_session_log_at"):
@@ -191,7 +204,9 @@ def test_audit_backfill_recreates_deleted_profile_stub():
 
     admin = _login("superadmin@demo.com")
     ah = _headers(admin)
-    deleted_rows = client.get("/api/v1/admin/therapist-profiles?status=DELETED", headers=ah).json()
+    deleted_rows = _profile_items(
+        client.get("/api/v1/admin/therapist-profiles?status=DELETED&page_size=100", headers=ah)
+    )
     assert any(row["user_id"] == user_id for row in deleted_rows)
 
     backfilled_id = next(row["id"] for row in deleted_rows if row["user_id"] == user_id)
@@ -281,6 +296,24 @@ def test_approved_snapshot_enables_review_diff():
     assert edited["short_bio"] == "Original bio."
     assert edited["pending_submission"]["short_bio"] == "Updated bio with new details."
     assert edited["approved_snapshot"]["short_bio"] == "Original bio."
+
+
+def test_therapist_profiles_pagination():
+    admin = _login("superadmin@demo.com")
+    ah = _headers(admin)
+    page1 = client.get("/api/v1/admin/therapist-profiles?page=1&page_size=2", headers=ah)
+    assert page1.status_code == 200
+    body1 = page1.json()
+    assert "items" in body1
+    assert body1["page"] == 1
+    assert body1["page_size"] == 2
+    assert len(body1["items"]) <= 2
+    if body1["total"] > 2:
+        page2 = client.get("/api/v1/admin/therapist-profiles?page=2&page_size=2", headers=ah).json()
+        assert page2["page"] == 2
+        ids1 = {row["id"] for row in body1["items"] if row.get("id") is not None}
+        ids2 = {row["id"] for row in page2["items"] if row.get("id") is not None}
+        assert ids1.isdisjoint(ids2)
 
 
 def test_approved_therapist_stays_allotment_eligible_with_pending_changes():

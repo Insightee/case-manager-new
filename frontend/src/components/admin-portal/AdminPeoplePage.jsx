@@ -12,6 +12,7 @@ import {
   fetchStaffMeta,
   fetchTabInvites,
   fetchParentsAwaitingLogin,
+  fetchAllTherapistProfiles,
   fetchTherapistProfiles,
   fetchAllTherapists,
   fetchAllClients,
@@ -245,7 +246,12 @@ export function AdminPeoplePage() {
   useEffect(() => {
     if (tab !== 'therapists' || !canReadTherapists) return undefined
     let cancelled = false
-    fetchTherapistProfiles()
+    const userIds = therapists.map((t) => t.id)
+    if (!userIds.length) {
+      setProfiles([])
+      return undefined
+    }
+    fetchTherapistProfiles({ userIds })
       .then((rows) => {
         if (!cancelled) setProfiles(rows)
       })
@@ -255,7 +261,7 @@ export function AdminPeoplePage() {
     return () => {
       cancelled = true
     }
-  }, [tab, canReadTherapists, reloadToken])
+  }, [tab, canReadTherapists, therapists, reloadToken])
 
   useEffect(() => {
     if (tab !== 'clients' || !canManageUsers) return undefined
@@ -300,7 +306,7 @@ export function AdminPeoplePage() {
     try {
       const [userResult, profileRows] = await Promise.all([
         fetchAllTherapists({ search: therapistSearchDebounced, sort: therapistSort }),
-        fetchTherapistProfiles(),
+        fetchAllTherapistProfiles({ search: therapistSearchDebounced }),
       ])
       const map = new Map(profileRows.map((p) => [p.user_id, p]))
       exportTherapistCsv(userResult.items, map)

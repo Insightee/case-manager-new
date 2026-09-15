@@ -2390,27 +2390,49 @@ def therapist_profiles_summary(
     return counts
 
 
-@router.get("/therapist-profiles", response_model=list[TherapistProfileRead])
+@router.get("/therapist-profiles", response_model=PaginatedList[TherapistProfileRead])
 def list_therapist_profiles(
     status: Optional[str] = None,
     activity: Optional[str] = Query(None, description="Activity filter, e.g. no_sessions_15d"),
+    q: Optional[str] = Query(None, description="Search name or email"),
+    user_id: Optional[int] = Query(None, description="Filter to a single therapist user id"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated therapist user ids"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services.therapist_profile_service import NEEDS_LISTING_STATUS
 
-    if status == NEEDS_LISTING_STATUS:
-        users = profile_svc.list_needs_listing_users(db)
-        items = [profile_svc.needs_listing_to_dict(u) for u in users]
-        return [TherapistProfileRead(**row) for row in profile_svc.enrich_profile_dicts(db, items)]
+    parsed_user_ids: list[int] | None = None
+    if user_ids:
+        parsed_user_ids = [int(part.strip()) for part in user_ids.split(",") if part.strip()]
 
-    st = TherapistProfileStatus(status) if status else None
-    profiles = profile_svc.list_profiles(db, st, activity=activity)
-    items = []
-    for p in profiles:
-        u = db.get(User, p.user_id)
-        items.append(profile_svc.profile_to_dict(p, u))
-    return [TherapistProfileRead(**row) for row in profile_svc.enrich_profile_dicts(db, items)]
+    if status == NEEDS_LISTING_STATUS:
+        listing_status: TherapistProfileStatus | str | None = NEEDS_LISTING_STATUS
+    elif status:
+        listing_status = TherapistProfileStatus(status)
+    else:
+        listing_status = None
+
+    items, total = profile_svc.paginate_profile_listings(
+        db,
+        status=listing_status,
+        activity=activity,
+        search=q,
+        user_id=user_id,
+        user_ids=parsed_user_ids,
+        page=page,
+        page_size=page_size,
+    )
+    pages = max(1, (total + page_size - 1) // page_size) if page_size else 1
+    return PaginatedList[TherapistProfileRead](
+        items=[TherapistProfileRead(**row) for row in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
 
 
 @router.get("/therapist-profiles/export.csv")

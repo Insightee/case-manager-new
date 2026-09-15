@@ -35,8 +35,10 @@ export function TherapistLeaveBalancePanel({
       setBalance(data)
       setEmploymentStart(data.employment_start_date || '')
       try {
-        const profiles = await apiFetch('/api/v1/admin/therapist-profiles')
-        const mine = (profiles || []).find((p) => Number(p.user_id) === Number(therapistUserId))
+        const profiles = await apiFetch(
+          `/api/v1/admin/therapist-profiles?user_id=${therapistUserId}&page_size=1`,
+        )
+        const mine = (profiles?.items || []).find((p) => Number(p.user_id) === Number(therapistUserId))
         if (mine?.tds_rate_percent != null) setTdsRate(String(mine.tds_rate_percent))
         else setTdsRate('10')
       } catch {

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
@@ -21,6 +22,7 @@ import {
   AdminTaskCard,
   AdminToolbar,
   FilterSelect,
+  PeopleListPagination,
   StatusBadge,
 } from './ui/index.js'
 import './admin-reports.css'
@@ -140,6 +142,8 @@ function ProfileChangesSection({ profile, categories }) {
   )
 }
 
+const PAGE_SIZE = 25
+
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT', 'DELETED', 'NEEDS_LISTING']
 
 const ACTIVITY_FILTERS = [
@@ -196,6 +200,8 @@ export function AdminTherapistProfilesPage() {
   const canEditProfiles = canManageUsers || (user?.roles || []).includes('SUPER_ADMIN')
 
   const [profiles, setProfiles] = useState([])
+  const [page, setPage] = useState(1)
+  const [listMeta, setListMeta] = useState({ total: 0, pages: 1 })
   const { items: therapistDirectory } = useStaffDirectory({ roles: 'THERAPIST' })
   const { items: staffDirectory } = useStaffDirectory({
     roles: 'CASE_MANAGER,MODULE_ADMIN,SUPERVISOR,SUPER_ADMIN,PROGRAMME_ADMIN',
@@ -208,6 +214,7 @@ export function AdminTherapistProfilesPage() {
   const [statusFilter, setStatusFilter] = useState(urlStatus)
   const [activityFilter, setActivityFilter] = useState(urlActivity)
   const [search, setSearch] = useState('')
+  const searchDebounced = useDebouncedValue(search)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -221,35 +228,50 @@ export function AdminTherapistProfilesPage() {
   const [success, setSuccess] = useState('')
   const [exporting, setExporting] = useState(false)
 
-  async function load(selectProfileId = null) {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      if (statusFilter !== 'ALL') params.set('status', statusFilter)
-      if (activityFilter) params.set('activity', activityFilter)
-      const qs = params.toString()
-      const [rows, cats, sum] = await Promise.all([
-        apiFetch(`/api/v1/admin/therapist-profiles${qs ? `?${qs}` : ''}`),
-        apiFetch('/api/v1/therapist/service-categories'),
-        apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
-      ])
-      setProfiles(rows)
-      setCategories(cats)
-      setSummary(sum)
-      if (selectProfileId) {
-        const match = rows.find((p) => p.id === selectProfileId)
-        if (match) setSelected(match)
+  const load = useCallback(
+    async (selectProfileId = null) => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          page_size: String(PAGE_SIZE),
+        })
+        if (statusFilter !== 'ALL') params.set('status', statusFilter)
+        if (activityFilter) params.set('activity', activityFilter)
+        if (searchDebounced.trim()) params.set('q', searchDebounced.trim())
+        if (urlUserId) params.set('user_id', urlUserId)
+        const qs = params.toString()
+        const [data, cats, sum] = await Promise.all([
+          apiFetch(`/api/v1/admin/therapist-profiles?${qs}`),
+          apiFetch('/api/v1/therapist/service-categories'),
+          apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
+        ])
+        const rows = data.items || []
+        setProfiles(rows)
+        setListMeta({ total: data.total ?? 0, pages: data.pages ?? 1 })
+        setCategories(cats)
+        setSummary(sum)
+        if (selectProfileId) {
+          const match = rows.find((p) => p.id === selectProfileId)
+          if (match) setSelected(match)
+        }
+      } catch {
+        setProfiles([])
+        setListMeta({ total: 0, pages: 1 })
+      } finally {
+        setLoading(false)
       }
-    } catch {
-      setProfiles([])
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [page, statusFilter, activityFilter, searchDebounced, urlUserId],
+  )
 
   useEffect(() => {
     load()
-  }, [statusFilter, activityFilter])
+  }, [load])
+
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, activityFilter, searchDebounced])
 
   useEffect(() => {
     setStatusFilter(urlStatus)
@@ -284,18 +306,9 @@ export function AdminTherapistProfilesPage() {
 
   const showLastLogColumn = activityFilter === 'no_sessions_15d'
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return profiles
-    return profiles.filter(
-      (p) =>
-        p.display_name?.toLowerCase().includes(q) ||
-        p.full_name?.toLowerCase().includes(q) ||
-        p.email?.toLowerCase().includes(q),
-    )
-  }, [profiles, search])
-
   const profileUserIds = useMemo(() => new Set(profiles.map((p) => p.user_id)), [profiles])
+  const rangeStart = listMeta.total ? (page - 1) * PAGE_SIZE + 1 : 0
+  const rangeEnd = Math.min(page * PAGE_SIZE, listMeta.total)
 
   async function act(path, profileId) {
     setError('')
@@ -635,9 +648,10 @@ export function AdminTherapistProfilesPage() {
 
           {loading ? (
             <div className="admin-skeleton" style={{ margin: '0 18px 16px' }} />
-          ) : filtered.length === 0 ? (
+          ) : profiles.length === 0 ? (
             <AdminEmptyState title="No profiles" description="Try another filter or add a profile." />
           ) : (
+            <>
             <AdminDataList
               desktop={
                 <div className="admin-table-wrap">
@@ -653,7 +667,7 @@ export function AdminTherapistProfilesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((p) => (
+                      {profiles.map((p) => (
                         <tr key={profileRowKey(p)}>
                           <td>
                             <span className="admin-table__primary">{p.display_name || p.full_name}</span>
@@ -699,7 +713,7 @@ export function AdminTherapistProfilesPage() {
               }
               mobile={
                 <ul className="admin-data-list__cards">
-                  {filtered.map((p) => (
+                  {profiles.map((p) => (
                     <li key={profileRowKey(p)}>
                       <AdminTaskCard
                         title={p.display_name || p.full_name}
@@ -731,6 +745,15 @@ export function AdminTherapistProfilesPage() {
                 </ul>
               }
             />
+            <PeopleListPagination
+              page={page}
+              totalPages={listMeta.pages}
+              total={listMeta.total}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              onPageChange={setPage}
+            />
+            </>
           )}
         </div>
       </AdminPanel>

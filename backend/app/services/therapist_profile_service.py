@@ -5,8 +5,9 @@ from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.core.pagination import normalize_pagination, paginate_query
 from app.core.permissions import RoleName
 from app.core.therapist_services import get_service_categories, validate_service_ids
 from app.core.timezone import today_ist
@@ -397,60 +398,164 @@ def list_active_profiles(db: Session) -> list[TherapistProfile]:
     )
 
 
-def list_profiles(
-    db: Session,
-    status: TherapistProfileStatus | str | None = None,
-    *,
-    activity: str | None = None,
-) -> list[TherapistProfile]:
-    if status == NEEDS_LISTING_STATUS:
-        return []
-
-    if status == TherapistProfileStatus.DELETED:
-        backfill_deleted_profiles_from_audit(db)
-
-    stmt = select(TherapistProfile).order_by(TherapistProfile.updated_at.desc())
-
+def _apply_profile_status_filter(stmt, status: TherapistProfileStatus | str | None):
     if status == TherapistProfileStatus.PENDING:
-        stmt = stmt.where(
+        return stmt.where(
             TherapistProfile.status != TherapistProfileStatus.DELETED,
             or_(
                 TherapistProfile.status == TherapistProfileStatus.PENDING,
                 TherapistProfile.pending_submission.isnot(None),
             ),
         )
-    elif status == TherapistProfileStatus.APPROVED:
-        stmt = stmt.where(
+    if status == TherapistProfileStatus.APPROVED:
+        return stmt.where(
             TherapistProfile.status == TherapistProfileStatus.APPROVED,
             TherapistProfile.pending_submission.is_(None),
         )
-    elif status == TherapistProfileStatus.DELETED:
-        stmt = stmt.where(TherapistProfile.status == TherapistProfileStatus.DELETED)
-    elif status and status != TherapistProfileStatus.DELETED:
-        stmt = stmt.where(TherapistProfile.status == status)
-    else:
-        stmt = stmt.where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+    if status == TherapistProfileStatus.DELETED:
+        return stmt.where(TherapistProfile.status == TherapistProfileStatus.DELETED)
+    if status and status != TherapistProfileStatus.DELETED:
+        return stmt.where(TherapistProfile.status == status)
+    return stmt.where(TherapistProfile.status != TherapistProfileStatus.DELETED)
 
-    profiles = list(db.scalars(stmt).all())
+
+def _profiles_list_stmt(
+    db: Session,
+    status: TherapistProfileStatus | str | None = None,
+    *,
+    activity: str | None = None,
+    search: str | None = None,
+    user_id: int | None = None,
+    user_ids: list[int] | None = None,
+):
+    if status == NEEDS_LISTING_STATUS:
+        return None
+
+    if status == TherapistProfileStatus.DELETED:
+        backfill_deleted_profiles_from_audit(db)
+
+    stmt = (
+        select(TherapistProfile)
+        .options(
+            joinedload(TherapistProfile.user),
+            joinedload(TherapistProfile.supervisor),
+            joinedload(TherapistProfile.mentor),
+        )
+        .order_by(TherapistProfile.updated_at.desc())
+    )
+    stmt = _apply_profile_status_filter(stmt, status)
 
     if activity == "no_sessions_15d":
         inactive_ids = inactive_therapist_user_ids(db)
-        profiles = [p for p in profiles if p.user_id in inactive_ids]
+        if not inactive_ids:
+            stmt = stmt.where(TherapistProfile.id == -1)
+        else:
+            stmt = stmt.where(TherapistProfile.user_id.in_(inactive_ids))
 
-    return profiles
+    if user_id is not None:
+        stmt = stmt.where(TherapistProfile.user_id == user_id)
+    if user_ids:
+        stmt = stmt.where(TherapistProfile.user_id.in_(user_ids))
+
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        user_match = select(User.id).where(
+            or_(
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
+            )
+        )
+        stmt = stmt.where(
+            or_(
+                TherapistProfile.user_id.in_(user_match),
+                func.lower(TherapistProfile.display_name).like(pattern),
+            )
+        )
+    return stmt
+
+
+def _needs_listing_stmt(
+    db: Session,
+    *,
+    search: str | None = None,
+    user_id: int | None = None,
+    user_ids: list[int] | None = None,
+):
+    therapist_role_ids = select(User.id).join(User.roles).where(
+        Role.name == RoleName.THERAPIST.value,
+        User.is_active.is_(True),
+    )
+    profile_user_ids = select(TherapistProfile.user_id)
+    stmt = (
+        select(User)
+        .where(User.id.in_(therapist_role_ids))
+        .where(User.id.not_in(profile_user_ids))
+        .order_by(User.full_name.asc(), User.email.asc())
+    )
+    if user_id is not None:
+        stmt = stmt.where(User.id == user_id)
+    if user_ids:
+        stmt = stmt.where(User.id.in_(user_ids))
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
+            )
+        )
+    return stmt
+
+
+def paginate_profile_listings(
+    db: Session,
+    *,
+    status: TherapistProfileStatus | str | None = None,
+    activity: str | None = None,
+    search: str | None = None,
+    user_id: int | None = None,
+    user_ids: list[int] | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[dict], int]:
+    page, page_size = normalize_pagination(page, page_size)
+
+    if status == NEEDS_LISTING_STATUS:
+        stmt = _needs_listing_stmt(db, search=search, user_id=user_id, user_ids=user_ids)
+        users, total = paginate_query(db, stmt, page=page, page_size=page_size)
+        items = [needs_listing_to_dict(u) for u in users]
+        return enrich_profile_dicts(db, items), total
+
+    stmt = _profiles_list_stmt(
+        db,
+        status,
+        activity=activity,
+        search=search,
+        user_id=user_id,
+        user_ids=user_ids,
+    )
+    profiles, total = paginate_query(db, stmt, page=page, page_size=page_size)
+    items = [profile_to_dict(p, p.user) for p in profiles]
+    return enrich_profile_dicts(db, items), total
+
+
+def list_profiles(
+    db: Session,
+    status: TherapistProfileStatus | str | None = None,
+    *,
+    activity: str | None = None,
+) -> list[TherapistProfile]:
+    stmt = _profiles_list_stmt(db, status, activity=activity)
+    if stmt is None:
+        return []
+    return list(db.scalars(stmt).all())
 
 
 def list_needs_listing_users(db: Session) -> list[User]:
-    therapist_ids = set(
-        db.scalars(
-            select(User.id).join(User.roles).where(Role.name == RoleName.THERAPIST.value, User.is_active.is_(True))
-        ).all()
-    )
-    profile_user_ids = set(db.scalars(select(TherapistProfile.user_id)).all())
-    missing_ids = sorted(therapist_ids - profile_user_ids)
-    if not missing_ids:
-        return []
-    return list(db.scalars(select(User).where(User.id.in_(missing_ids)).order_by(User.full_name)).all())
+    stmt = _needs_listing_stmt(db)
+    return list(db.scalars(stmt).all())
 
 
 def profile_summary_counts(db: Session, profiles: list[TherapistProfile] | None = None) -> dict[str, int]:
