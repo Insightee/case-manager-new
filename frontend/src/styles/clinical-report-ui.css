@@ -504,3 +504,218 @@
   font-size: 0.8125rem;
   margin: 0 0 0.75rem;
 }
+
+/* —— IEP goal card & editor —— */
+.iep-goal-card {
+  border: 1px solid #e2e8e4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(11, 28, 22, 0.06);
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.iep-goal-card__head {
+  padding: 1rem 1.125rem;
+  background: linear-gradient(135deg, #0b1c16 0%, #1a3d32 100%);
+  color: #fff;
+}
+
+.iep-goal-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.625rem;
+}
+
+.iep-goal-card__badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.iep-goal-card__badge--muted {
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  text-transform: none;
+}
+
+.iep-goal-card__statement {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0;
+  color: #fff;
+}
+
+.iep-goal-card__body {
+  padding: 1rem 1.125rem 1.125rem;
+}
+
+.iep-goal-card__columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+}
+
+@media (min-width: 640px) {
+  .iep-goal-card__columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.iep-goal-card__block {
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: #f7faf8;
+  border: 1px solid #e8efeb;
+}
+
+.iep-goal-card__block-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #737875;
+  margin: 0 0 0.35rem;
+}
+
+.iep-goal-card__block-text {
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin: 0;
+  color: #1a1f1c;
+}
+
+.iep-goal-card__block-text--empty {
+  color: #9aa3a0;
+  font-style: italic;
+}
+
+.iep-goal-card__measures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.iep-goal-card__measure {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  background: #eef6f1;
+  color: #0b1c16;
+  border: 1px solid #d4e8dc;
+}
+
+.iep-goal-card__strategies {
+  font-size: 0.8125rem;
+  color: #737875;
+  margin: 0 0 0.875rem;
+}
+
+.iep-goal-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid #eef2ef;
+}
+
+.iep-goal-card__btn {
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid #d0d7d3;
+  background: #fff;
+  color: #0b1c16;
+  cursor: pointer;
+}
+
+.iep-goal-card__btn:hover {
+  border-color: #2d5a47;
+  background: #f4faf7;
+}
+
+.iep-goal-card__btn--primary {
+  background: #0b1c16;
+  border-color: #0b1c16;
+  color: #fff;
+}
+
+.iep-goal-card__btn--primary:hover {
+  opacity: 0.92;
+}
+
+.iep-goal-card__btn--danger {
+  color: #ba1a1a;
+  border-color: #f5c2c2;
+}
+
+.sg-modal--iep-goal .sg-modal__body {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: unset;
+}
+
+.sg-modal--iep-goal .sg-modal__main {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(92vh - 140px);
+}
+
+.sg-modal--iep-goal .sg-field textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.iep-goal-editor__preview {
+  padding: 0.875rem 1rem;
+  border-radius: 10px;
+  background: #f4faf7;
+  border: 1px solid #d4e8dc;
+  margin-bottom: 1rem;
+}
+
+.iep-goal-editor__preview-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #2d5a47;
+  margin: 0 0 0.35rem;
+}
+
+.iep-goal-editor__preview-text {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 0;
+  color: #0b1c16;
+}
+
+.iep-goal-editor__section-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #737875;
+  margin: 1.25rem 0 0.75rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid #eef2ef;
+}
+
+.iep-goal-editor__section-title:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}

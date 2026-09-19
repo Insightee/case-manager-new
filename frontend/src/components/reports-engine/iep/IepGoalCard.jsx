@@ -1,64 +1,98 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { GOAL_MODAL_DOMAIN_CHIPS } from '../../../lib/clinicalUiContract.js'
 import { labelForMeasurement } from '../../../lib/clinicalMeasurementCriteria.js'
 import { MeasurementCriteriaSelect } from '../../clinical/MeasurementCriteriaSelect.jsx'
 
 const SOURCE_LABELS = {
-  observation_candidate: 'Observation',
-  repository: 'Repository',
-  session_log_candidate: 'Session log',
-  manual: 'Manual',
+  observation_candidate: 'From observation',
+  repository: 'From library',
+  session_log_candidate: 'From session log',
+  manual: 'Custom goal',
+}
+
+function domainLabel(domainId) {
+  const chip = GOAL_MODAL_DOMAIN_CHIPS.find((c) => c.id === domainId)
+  if (chip) return chip.label
+  if (!domainId || domainId === 'general') return 'General'
+  return String(domainId).replace(/_/g, ' ')
+}
+
+function statusLabel(goal) {
+  const raw = goal.lifecycle_status || goal.status || 'draft'
+  return raw.replace(/_/g, ' ')
 }
 
 export function IepGoalCard({ goal, readOnly, onEdit, onRemove, onLinkStrategy, onMarkAchieved }) {
-  const title = goal.title || goal.goal_statement || 'Goal'
+  const statement = (goal.parent_facing_wording || goal.goal_statement || goal.title || '').trim()
+  const displayStatement = statement || 'Goal statement not added yet — tap Edit to describe this goal.'
   const strategies = goal.linked_strategy_ids?.length || 0
+  const hasBaseline = Boolean((goal.baseline_current_state || '').trim())
+  const hasDesired = Boolean((goal.desired_state || '').trim())
 
   return (
-    <article className="rounded-xl overflow-hidden clinical-shadow border border-outline-variant/30 mb-4">
-      <header className="bg-lush-forest text-white px-4 py-3 flex flex-wrap justify-between gap-2 items-start">
-        <div>
-          <p className="text-xs uppercase font-mono opacity-80 m-0">{goal.domain || 'General'}</p>
-          <h3 className="text-base font-bold m-0 mt-1">{title}</h3>
+    <article className="iep-goal-card">
+      <header className="iep-goal-card__head">
+        <div className="iep-goal-card__meta">
+          <span className="iep-goal-card__badge">{domainLabel(goal.domain)}</span>
+          <span className="iep-goal-card__badge iep-goal-card__badge--muted">{statusLabel(goal)}</span>
+          <span className="iep-goal-card__badge iep-goal-card__badge--muted">
+            {SOURCE_LABELS[goal.source_type] || goal.source_type || 'Custom goal'}
+          </span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{SOURCE_LABELS[goal.source_type] || goal.source_type}</span>
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{goal.lifecycle_status || goal.status || 'draft'}</span>
-        </div>
-      </header>
-      <div className="bg-surface-container-lowest p-4 space-y-3">
-        {goal.baseline_current_state ? (
-          <p className="text-sm m-0">
-            <strong>Baseline:</strong> {goal.baseline_current_state}
-          </p>
-        ) : null}
-        {goal.desired_state ? (
-          <p className="text-sm m-0">
-            <strong>Desired:</strong> {goal.desired_state}
-          </p>
-        ) : null}
-        <div className="grid md:grid-cols-3 gap-2 text-xs text-on-surface-variant">
-          <span>Participation: {labelForMeasurement('participation', goal.participation)}</span>
-          <span>Support: {labelForMeasurement('independence_support_needed', goal.independence_support_needed)}</span>
-          <span>Achievement: {labelForMeasurement('goal_achievement', goal.goal_achievement)}</span>
-        </div>
-        <p className="text-xs text-on-surface-variant m-0">
-          {strategies} linked strateg{strategies === 1 ? 'y' : 'ies'}
+        <p className={`iep-goal-card__statement${statement ? '' : ' iep-goal-card__block-text--empty'}`} style={statement ? undefined : { opacity: 0.85, fontStyle: 'italic', fontWeight: 600 }}>
+          {displayStatement}
         </p>
+      </header>
+
+      <div className="iep-goal-card__body">
+        <div className="iep-goal-card__columns">
+          <div className="iep-goal-card__block">
+            <p className="iep-goal-card__block-label">Where we are now</p>
+            <p className={`iep-goal-card__block-text${hasBaseline ? '' : ' iep-goal-card__block-text--empty'}`}>
+              {hasBaseline ? goal.baseline_current_state : 'Add baseline when editing this goal.'}
+            </p>
+          </div>
+          <div className="iep-goal-card__block">
+            <p className="iep-goal-card__block-label">Where we&apos;re heading</p>
+            <p className={`iep-goal-card__block-text${hasDesired ? '' : ' iep-goal-card__block-text--empty'}`}>
+              {hasDesired ? goal.desired_state : 'Add desired outcome when editing this goal.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="iep-goal-card__measures">
+          <span className="iep-goal-card__measure">
+            {labelForMeasurement('participation', goal.participation)}
+          </span>
+          <span className="iep-goal-card__measure">
+            {labelForMeasurement('independence_support_needed', goal.independence_support_needed)}
+          </span>
+          <span className="iep-goal-card__measure">
+            {labelForMeasurement('goal_achievement', goal.goal_achievement)}
+          </span>
+        </div>
+
+        <p className="iep-goal-card__strategies">
+          {strategies === 0
+            ? 'No strategies linked yet — link at least one support strategy.'
+            : `${strategies} linked strateg${strategies === 1 ? 'y' : 'ies'}`}
+        </p>
+
         {!readOnly ? (
-          <div className="flex flex-wrap gap-2 pt-2">
-            <button type="button" className="min-h-[44px] px-3 rounded-lg border text-sm font-semibold" onClick={() => onEdit?.(goal)}>
-              Edit
+          <div className="iep-goal-card__actions">
+            <button type="button" className="iep-goal-card__btn iep-goal-card__btn--primary" onClick={() => onEdit?.(goal)}>
+              Edit goal
             </button>
-            <button type="button" className="min-h-[44px] px-3 rounded-lg border text-sm font-semibold" onClick={() => onLinkStrategy?.(goal)}>
+            <button type="button" className="iep-goal-card__btn" onClick={() => onLinkStrategy?.(goal)}>
               Link strategy
             </button>
             {goal.lifecycle_status === 'active' || goal.status === 'approved' ? (
-              <button type="button" className="min-h-[44px] px-3 rounded-lg border text-sm font-semibold" onClick={() => onMarkAchieved?.(goal)}>
+              <button type="button" className="iep-goal-card__btn" onClick={() => onMarkAchieved?.(goal)}>
                 Mark achieved
               </button>
             ) : null}
-            <button type="button" className="min-h-[44px] px-3 rounded-lg border text-sm text-error" onClick={() => onRemove?.(goal)}>
+            <button type="button" className="iep-goal-card__btn iep-goal-card__btn--danger" onClick={() => onRemove?.(goal)}>
               Remove
             </button>
           </div>
@@ -70,73 +104,115 @@ export function IepGoalCard({ goal, readOnly, onEdit, onRemove, onLinkStrategy, 
 
 export function IepGoalEditor({ open, goal, onClose, onSave }) {
   const [draft, setDraft] = useState(goal || {})
+
   useEffect(() => {
     if (open) setDraft(goal || {})
   }, [open, goal])
+
+  const previewText = useMemo(() => {
+    const text = (draft.goal_statement || draft.title || '').trim()
+    if (text) return text
+    return 'Your goal statement will appear here as you type.'
+  }, [draft.goal_statement, draft.title])
+
   if (!open) return null
+
   return createPortal(
-    <div
-      className="sg-modal-root clinical-report-ui"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="iep-edit-goal-title"
-    >
+    <div className="sg-modal-root clinical-report-ui" role="dialog" aria-modal="true" aria-labelledby="iep-edit-goal-title">
       <button type="button" className="sg-modal-root__backdrop" aria-label="Close" onClick={onClose} />
-      <div className="sg-modal sg-modal--narrow" onClick={(e) => e.stopPropagation()}>
-        <div className="sg-modal__body" style={{ display: 'block', overflowY: 'auto' }}>
-        <h2 id="iep-edit-goal-title" className="text-lg font-bold m-0 mb-4">Edit goal</h2>
-        <div className="space-y-3">
-          <label className="block text-sm">
-            Goal statement
-            <textarea
-              className="mt-1 w-full min-h-[80px] rounded-xl border border-outline-variant/50 p-3 bg-white"
-              value={draft.goal_statement || draft.title || ''}
-              onChange={(e) => setDraft({ ...draft, goal_statement: e.target.value, title: e.target.value })}
-            />
-          </label>
-          <label className="block text-sm">
-            Domain
-            <input
-              className="mt-1 w-full min-h-[44px] rounded-xl border border-outline-variant/50 px-3 bg-white"
-              value={draft.domain || ''}
-              onChange={(e) => setDraft({ ...draft, domain: e.target.value })}
-            />
-          </label>
-          <label className="block text-sm">
-            Baseline / current state
-            <textarea
-              className="mt-1 w-full rounded-xl border border-outline-variant/50 p-3 bg-white"
-              value={draft.baseline_current_state || ''}
-              onChange={(e) => setDraft({ ...draft, baseline_current_state: e.target.value })}
-            />
-          </label>
-          <label className="block text-sm">
-            Desired state
-            <textarea
-              className="mt-1 w-full rounded-xl border border-outline-variant/50 p-3 bg-white"
-              value={draft.desired_state || ''}
-              onChange={(e) => setDraft({ ...draft, desired_state: e.target.value })}
-            />
-          </label>
-          <MeasurementCriteriaSelect values={draft} onChange={(m) => setDraft({ ...draft, ...m })} />
-          <label className="block text-sm">
-            Parent-facing wording
-            <textarea
-              className="mt-1 w-full rounded-xl border border-outline-variant/50 p-3 bg-white"
-              value={draft.parent_facing_wording || ''}
-              onChange={(e) => setDraft({ ...draft, parent_facing_wording: e.target.value })}
-            />
-          </label>
-        </div>
-        <div className="flex gap-3 mt-6">
-          <button type="button" className="flex-1 min-h-[44px] rounded-xl font-bold" style={{ backgroundColor: '#0b1c16', color: '#fff' }} onClick={() => onSave?.(draft)}>
-            Save goal
+      <div className="sg-modal sg-modal--narrow sg-modal--iep-goal" onClick={(e) => e.stopPropagation()}>
+        <header className="sg-modal__head">
+          <div>
+            <h2 id="iep-edit-goal-title" className="sg-modal__title">
+              Edit goal
+            </h2>
+            <p className="sg-modal__subtitle">Update the goal statement, progress markers, and family-facing wording.</p>
+          </div>
+          <button type="button" className="sg-modal__close" aria-label="Close" onClick={onClose}>
+            ×
           </button>
-          <button type="button" className="min-h-[44px] px-4 rounded-xl border bg-white" onClick={onClose}>
+        </header>
+
+        <div className="sg-modal__body">
+          <div className="sg-modal__main">
+            <div className="iep-goal-editor__preview">
+              <p className="iep-goal-editor__preview-label">Goal preview</p>
+              <p className="iep-goal-editor__preview-text">{previewText}</p>
+            </div>
+
+            <p className="iep-goal-editor__section-title">Goal details</p>
+
+            <label className="sg-field">
+              <span className="sg-field__label">Goal statement</span>
+              <textarea
+                placeholder="e.g. Alex will use 2-word phrases to request preferred items during structured play."
+                value={draft.goal_statement || draft.title || ''}
+                onChange={(e) => setDraft({ ...draft, goal_statement: e.target.value, title: e.target.value })}
+              />
+            </label>
+
+            <p className="sg-field__label" style={{ marginBottom: '0.5rem' }}>
+              Clinical domain
+            </p>
+            <div className="sg-domain-grid">
+              {GOAL_MODAL_DOMAIN_CHIPS.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  className={`sg-domain-tile${draft.domain === chip.id ? ' sg-domain-tile--active' : ''}`}
+                  onClick={() => setDraft({ ...draft, domain: chip.id })}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="iep-goal-card__columns" style={{ marginBottom: '1rem' }}>
+              <label className="sg-field" style={{ marginBottom: 0 }}>
+                <span className="sg-field__label">Baseline / current state</span>
+                <textarea
+                  placeholder="What does participation look like today?"
+                  value={draft.baseline_current_state || ''}
+                  onChange={(e) => setDraft({ ...draft, baseline_current_state: e.target.value })}
+                />
+              </label>
+              <label className="sg-field" style={{ marginBottom: 0 }}>
+                <span className="sg-field__label">Desired state</span>
+                <textarea
+                  placeholder="What would success look like by the review date?"
+                  value={draft.desired_state || ''}
+                  onChange={(e) => setDraft({ ...draft, desired_state: e.target.value })}
+                />
+              </label>
+            </div>
+
+            <p className="iep-goal-editor__section-title">Progress markers</p>
+            <MeasurementCriteriaSelect values={draft} onChange={(m) => setDraft({ ...draft, ...m })} />
+
+            <p className="iep-goal-editor__section-title">Family view</p>
+            <label className="sg-field">
+              <span className="sg-field__label">Parent-facing wording (optional)</span>
+              <textarea
+                placeholder="Plain-language version for families — leave blank to use the goal statement."
+                value={draft.parent_facing_wording || ''}
+                onChange={(e) => setDraft({ ...draft, parent_facing_wording: e.target.value })}
+              />
+            </label>
+          </div>
+        </div>
+
+        <footer className="sg-modal__foot">
+          <button type="button" className="iep-goal-card__btn" onClick={onClose}>
             Cancel
           </button>
-        </div>
-        </div>
+          <button
+            type="button"
+            className="iep-goal-card__btn iep-goal-card__btn--primary"
+            onClick={() => onSave?.(draft)}
+          >
+            Save goal
+          </button>
+        </footer>
       </div>
     </div>,
     document.body,
