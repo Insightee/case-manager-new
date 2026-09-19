@@ -117,7 +117,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     try {
       const params = new URLSearchParams()
       params.set('page', searchActive ? '1' : String(page))
-      params.set('page_size', searchActive ? '500' : String(APPROVALS_PAGE_SIZE))
+      params.set('page_size', String(APPROVALS_PAGE_SIZE))
       if (searchActive) params.set('search', debouncedSearch.trim())
       if (tab !== 'ALL') {
         if (requestView === 'leave') params.set('leave_status', tab)
