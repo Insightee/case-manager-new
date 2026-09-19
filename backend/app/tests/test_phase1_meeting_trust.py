@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime, timedelta
 from io import StringIO
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.database import SessionLocal
 from app.main import app
+from app.models.case import Case
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import future_meeting_date
+from app.tests.conftest import first_meeting_slot, future_meeting_date
 
 client = TestClient(app)
 
@@ -36,6 +39,13 @@ def _first_bookable_case_id(email: str) -> int:
     return int(rows[0]["id"])
 
 
+def _case_manager_id(case_id: int) -> int:
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None and case.case_manager_user_id is not None
+        return int(case.case_manager_user_id)
+
+
 def _create_meeting(
     email: str = "superadmin@demo.com",
     *,
@@ -59,17 +69,34 @@ def _create_meeting(
 
 
 def test_reschedule_ignores_self_conflict_and_preserves_series_id():
+    headers = _headers("superadmin@demo.com")
     case_id = _first_bookable_case_id("superadmin@demo.com")
-    meeting = _create_meeting(case_id=case_id, scheduled_date=future_meeting_date(15), scheduled_time="10:00:00", duration_minutes=30)
+    slot_date, slot_time = first_meeting_slot(
+        client,
+        headers,
+        [_case_manager_id(case_id)],
+        days_ahead=50,
+        duration_minutes=30,
+        slot_index=0,
+    )
+    meeting = _create_meeting(
+        case_id=case_id,
+        scheduled_date=slot_date,
+        scheduled_time=slot_time,
+        duration_minutes=30,
+    )
+    shift_time = (
+        datetime.strptime(slot_time, "%H:%M:%S") + timedelta(minutes=30)
+    ).strftime("%H:%M:%S")
 
     response = client.post(
         f"/api/v1/meetings/{meeting['id']}/reschedule",
-        headers=_headers("superadmin@demo.com"),
+        headers=headers,
         json={
-            "scheduled_date": future_meeting_date(15),
-            "scheduled_time": "10:30:00",
+            "scheduled_date": slot_date,
+            "scheduled_time": shift_time,
             "duration_minutes": 30,
-            "reschedule_reason": "Shifted by 15 minutes",
+            "reschedule_reason": "Shifted by 30 minutes",
         },
     )
     assert response.status_code == 200, response.text
