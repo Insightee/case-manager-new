@@ -2,8 +2,7 @@
  * Clinical UI contract — single source for report builder + goal modal.
  * Domain and environment tabs MUST match Observation Report (see iepObservationAlign.js).
  */
-import { CORE_ENVIRONMENTS } from './coreClinicalTaxonomy.js'
-import { IEP_DOMAIN_TABS } from './iepObservationAlign.js'
+import { IEP_DOMAIN_TABS, IEP_LEARNING_ENVIRONMENTS } from './iepObservationAlign.js'
 
 export const GOAL_MODAL_TABS = [
   { id: 'templates', label: 'Templates' },
@@ -32,8 +31,8 @@ export const IEP_BUILDER_SECTIONS = [
 /** @deprecated use IEP_DOMAIN_TABS from iepObservationAlign.js */
 export const PRESENT_LEVEL_TABS = IEP_DOMAIN_TABS
 
-/** Learning environments — same ids as session log / CORE_ENVIRONMENTS */
-export const IEP_LEARNING_ENVIRONMENTS = CORE_ENVIRONMENTS.map((e) => ({ id: e.id, label: e.label }))
+/** @deprecated use IEP_LEARNING_ENVIRONMENTS from iepObservationAlign.js */
+export { IEP_LEARNING_ENVIRONMENTS }
 
 /** @deprecated use IEP_LEARNING_ENVIRONMENTS */
 export const ENVIRONMENT_TABS = IEP_LEARNING_ENVIRONMENTS

@@ -907,3 +907,27 @@ def iep_review_thread(report_id: int, user: User = Depends(get_current_user), db
     report = _report_or_404(db, report_id)
     _case_for_user(db, user, report.case_id)
     return {"items": iep_approval_service.list_review_thread(db, report_id)}
+
+
+@router.get("/cases/{case_id}/reports/iep/versions")
+def iep_versions(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _case_for_user(db, user, case_id)
+    from app.services.iep_reminder_service import list_iep_versions_for_case
+
+    return {"items": list_iep_versions_for_case(db, case_id)}
+
+
+@router.post("/cases/{case_id}/reports/iep/renew")
+def iep_renew_prompt(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.services.iep_reminder_service import prompt_renew_iep
+
+    case = _case_for_user_write(db, case_id)
+    roles = {r.name for r in getattr(user, "roles", []) or []}
+    if not (roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER", "SUPERVISOR"}):
+        raise HTTPException(status_code=403, detail="Case manager access required")
+    try:
+        result = prompt_renew_iep(db, case, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    db.commit()
+    return result

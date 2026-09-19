@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiFetch } from '../../../lib/apiClient.js'
 import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoalCreateModal.jsx'
 import { StitchWorkspaceSubhead } from '../observation/stitch/ObservationStitchBlocks.jsx'
@@ -45,6 +46,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     cmResendForApproval,
     shareWithParent,
     downloadPdf,
+    renewIep,
     AUTO_SAVE_MS,
   } = useIepReport(caseId)
 
@@ -57,6 +59,11 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
   useEffect(() => {
     loadWorkspace()
   }, [loadWorkspace])
+
+  useEffect(() => {
+    if (!caseId || variant !== 'therapist') return
+    apiFetch(`/api/v1/therapist/iep-reminders/${caseId}/acknowledge`, { method: 'POST' }).catch(() => {})
+  }, [caseId, variant])
 
   useEffect(() => {
     if (!workspace?.can_edit || !workspace?.report_id) return undefined
@@ -173,7 +180,16 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
           reviewThread={workspace?.review_thread}
           variant={variant}
           readOnly={readOnly}
+          canRenewIep={isAdmin && summary?.has_active_approved_iep}
           busy={approvalBusy}
+          onRenewIep={async () => {
+            setApprovalBusy(true)
+            try {
+              await renewIep()
+            } finally {
+              setApprovalBusy(false)
+            }
+          }}
           onSendForStakeholderApproval={async () => {
             setApprovalBusy(true)
             try {
@@ -229,6 +245,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
           goals={goals}
           childName={childName}
           readOnly={readOnly}
+          variant={variant}
           suggestedGoals={suggestedGoals}
           onPatchSection={patchSection}
           onEditGoal={setEditGoal}
@@ -254,6 +271,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
           childName={childName || caseCode || 'Student'}
           preSelectedGoal={strategyGoal}
           initialRepositoryKind={strategyGoal ? 'strategies' : 'goals'}
+          customOnly={!strategyGoal}
           onClose={() => {
             setGoalModal(false)
             setStrategyGoal(null)

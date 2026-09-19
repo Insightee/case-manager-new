@@ -25,6 +25,7 @@ export function StudentGoalCreateModal({
   preSelectedGoal = null,
   initialRepositoryKind = null,
   standaloneStrategy = false,
+  customOnly = false,
   sessionId,
   logId,
   onClose,
@@ -36,7 +37,7 @@ export function StudentGoalCreateModal({
       preSelectedGoal?.goal_card_id ||
       preSelectedGoal?.id,
   )
-  const [tab, setTab] = useState(standaloneStrategy ? 'custom' : 'templates')
+  const [tab, setTab] = useState(standaloneStrategy || customOnly ? 'custom' : 'templates')
   const [repositoryKind, setRepositoryKind] = useState(
     initialRepositoryKind || (strategyOnly ? 'strategies' : 'goals'),
   )
@@ -495,23 +496,25 @@ export function StudentGoalCreateModal({
               </>
             ) : (
               <>
-            <div className="sg-tabs" role="tablist">
-              {GOAL_MODAL_TABS.map((t) => {
-                if (standaloneStrategy && !preSelectedGoal) return null
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === t.id}
-                    className={`sg-tab${tab === t.id ? ' sg-tab--active' : ''}`}
-                    onClick={() => setTab(t.id)}
-                  >
-                    {t.label}
-                  </button>
-                )
-              })}
-            </div>
+            {!customOnly ? (
+              <div className="sg-tabs" role="tablist">
+                {GOAL_MODAL_TABS.map((t) => {
+                  if (standaloneStrategy && !preSelectedGoal) return null
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === t.id}
+                      className={`sg-tab${tab === t.id ? ' sg-tab--active' : ''}`}
+                      onClick={() => setTab(t.id)}
+                    >
+                      {t.label}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
 
             {tab === 'templates' ? (
               <>

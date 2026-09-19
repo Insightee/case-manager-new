@@ -1,0 +1,16 @@
+# Railway cron service for IEP deadline reminders.
+#
+# Dashboard setup:
+#   1. New service → name: iep-reminders-cron
+#   2. Root Directory: backend
+#   3. Settings → Config file: railway.iep-reminders-cron.toml
+#   4. Variables: DATABASE_URL=${{Postgres.DATABASE_URL}}, FRONTEND_URL=${{frontend.FRONTEND_URL}}
+#   5. Deploy — cronSchedule runs daily at 06:00 UTC (~11:30 IST)
+
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "python scripts/iep_reminders.py"
+cronSchedule = "0 6 * * *"
+restartPolicyType = "ON_FAILURE"

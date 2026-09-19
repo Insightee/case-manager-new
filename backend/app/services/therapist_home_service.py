@@ -23,6 +23,7 @@ from app.schemas.therapist_home import (
     TherapistCaseBoardStat,
     TherapistHomeResponse,
     TherapistHomeStats,
+    TherapistIepReminder,
     TherapistPendingAssignment,
     TherapistPendingCmMeeting,
     TherapistReportsPipelineResponse,
@@ -404,6 +405,11 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
         TherapistPendingCmMeeting(**meeting_to_pending_dict(m, db))
         for m in fetch_pending_completion_for_therapist(db, user.id)
     ]
+    from app.services.iep_reminder_service import list_active_reminders_for_therapist
+
+    iep_reminders = [
+        TherapistIepReminder(**row) for row in list_active_reminders_for_therapist(db, user.id)
+    ]
 
     return TherapistHomeResponse(
         greeting_context=greeting,
@@ -422,6 +428,7 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
         schedule_preview=schedule,
         pending_assignment_acceptance=pending_assignments,
         pending_cm_meetings=pending_cm,
+        iep_reminders=iep_reminders,
     )
 
 

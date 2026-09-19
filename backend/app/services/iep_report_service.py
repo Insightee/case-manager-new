@@ -282,7 +282,7 @@ def generate_iep_draft_from_observation(db: Session, report: ClinicalReport, use
             )
             environments[eid] = {
                 "label": env_row["label"],
-                "notes": (match or {}).get("notes") or (env_sec.narrative_text if env_sec and eid == "school_classroom" else ""),
+                "notes": (match or {}).get("notes") or (env_sec.narrative_text if env_sec and eid == "school" else ""),
             }
         env_data = {"environments": environments, "environments_list": env_list}
         rec = by_key.get("recommendations_iep")
@@ -682,6 +682,23 @@ def record_amendment(db: Session, report: ClinicalReport, user: User) -> Clinica
     _set_report_metadata(db, report, meta)
     _log_iep_event(db, report, user, "reopened", metadata={"action": "amendment_started"})
     return report
+
+
+def lock_review_date_on_approval(db: Session, report: ClinicalReport) -> None:
+    """Lock review date for next IEP once CM approves the plan."""
+    sec = db.scalar(
+        select(ClinicalReportSection).where(
+            ClinicalReportSection.report_id == report.id,
+            ClinicalReportSection.section_key == "review_parent_plan",
+        )
+    )
+    if not sec:
+        return
+    data = _json_loads(sec.structured_data_json)
+    if (data.get("review_date") or "").strip():
+        data["review_date_locked"] = True
+        sec.structured_data_json = _json_dumps(data)
+        db.flush()
 
 
 def submit_parent_input(db: Session, report: ClinicalReport, user: User, text: str) -> dict:

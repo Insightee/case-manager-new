@@ -125,6 +125,7 @@ def approve_report(db: Session, report: ClinicalReport, reviewer: User, *, share
         from app.services import iep_report_service
 
         iep_report_service.sync_approved_iep_goals_to_active_case_plan(db, report, reviewer)
+        iep_report_service.lock_review_date_on_approval(db, report)
     db.flush()
     return report
 

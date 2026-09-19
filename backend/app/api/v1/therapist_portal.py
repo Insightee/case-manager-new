@@ -117,6 +117,20 @@ def therapist_reports_pipeline(
     return therapist_home_service.build_reports_pipeline(db, user)
 
 
+@router.post("/iep-reminders/{case_id}/acknowledge")
+def acknowledge_iep_reminder(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    from app.services.iep_reminder_service import acknowledge_reminders_for_case
+
+    count = acknowledge_reminders_for_case(db, user.id, case_id)
+    db.commit()
+    return {"acknowledged": count}
+
+
 @router.post("/client-intake", response_model=TherapistClientIntakeResponse, status_code=201)
 def therapist_client_intake(
     payload: TherapistClientIntakeCreate,
