@@ -694,6 +694,40 @@ def admin_platform_stats(
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
+@router.get("/platform-stats/activity")
+def admin_platform_stats_activity(
+    days: int = Query(1, ge=1, le=90),
+    q: Optional[str] = Query(None, max_length=120),
+    status: str = Query("all"),
+    role: Optional[str] = Query(None, max_length=64),
+    portal: Optional[str] = Query(None, max_length=32),
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "admin.override"):
+        raise HTTPException(status_code=403, detail="Super admin permission required")
+    from app.services import platform_stats_service
+
+    try:
+        return platform_stats_service.list_platform_activity(
+            db,
+            user,
+            days=days,
+            q=q,
+            status=status,
+            role=role,
+            portal=portal,
+            page=page,
+            limit=limit,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get("/cases/{case_id}/timeline")
 def admin_case_timeline(
     case_id: int,
