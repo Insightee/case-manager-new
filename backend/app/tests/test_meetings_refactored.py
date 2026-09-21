@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_items, future_meeting_date, past_meeting_date, today_meeting_date
+from app.tests.conftest import api_items, first_meeting_slot, future_meeting_date
 
 client = TestClient(app)
 
@@ -226,24 +226,45 @@ def test_other_meeting_type_accepts_title_fallback():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Create meeting in the recent past so completion rules can be exercised.
-    from datetime import timedelta
-
-    from app.core.timezone import now_ist
-
-    started = now_ist() - timedelta(hours=1)
+    # Book a valid slot, then backdate so completion rules can run (create rejects past dates).
+    me = client.get("/api/v1/auth/me", headers=headers).json()
+    slot_date, slot_time = first_meeting_slot(client, headers, [me["id"]], days_ahead=28)
     res = client.post(
         "/api/v1/meetings",
         headers=headers,
         json={
-            "scheduled_date": started.date().isoformat(),
-            "scheduled_time": started.time().replace(microsecond=0).isoformat(timespec="seconds"),
+            "scheduled_date": slot_date,
+            "scheduled_time": slot_time,
             "duration_minutes": 30,
             "meeting_type": "PROGRESS_REVIEW",
         },
     )
     assert res.status_code == 201, res.text
     mid = res.json()["id"]
+
+    from datetime import timedelta, time
+
+    from app.core.database import SessionLocal
+    from app.core.timezone import IST, now_ist
+    from app.models.case_manager_meeting import CaseManagerMeeting
+
+    now = now_ist()
+    started = now - timedelta(hours=1)
+    if started.date() < now.date():
+        backdate = now.date()
+        backtime = time(0, 1)
+    else:
+        backdate = started.date()
+        backtime = started.time().replace(microsecond=0)
+    db = SessionLocal()
+    try:
+        row = db.get(CaseManagerMeeting, mid)
+        assert row is not None
+        row.scheduled_date = backdate
+        row.scheduled_time = backtime
+        db.commit()
+    finally:
+        db.close()
 
     # Try to mark COMPLETED without outcomes/summary
     res_patch = client.patch(

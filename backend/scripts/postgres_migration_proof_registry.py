@@ -963,6 +963,72 @@ register_head(
 )
 
 
+def _seed_st1ff4tt3nd1(db: Session) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.core.timezone import today_ist
+    from app.models.leave import LeaveStatus
+    from app.models.staff_attendance import (
+        StaffAttendance,
+        StaffAttendanceEntryType,
+        StaffAttendanceSegment,
+        StaffAttendanceSegmentType,
+        StaffAttendanceStatus,
+    )
+    from app.models.staff_leave import StaffLeave
+    from app.models.user import User
+
+    actor = db.scalar(select(User).where(User.email == "hr@demo.com"))
+    if not actor:
+        actor = db.scalar(select(User).limit(1))
+    if not actor:
+        raise RuntimeError("Need seeded user — run demo_seed first")
+
+    today = today_ist()
+    start = datetime.combine(today, datetime.min.time().replace(hour=9), tzinfo=timezone.utc)
+    end = datetime.combine(today, datetime.min.time().replace(hour=17), tzinfo=timezone.utc)
+
+    att = StaffAttendance(
+        user_id=actor.id,
+        work_date=today,
+        entry_type=StaffAttendanceEntryType.LIVE,
+        status=StaffAttendanceStatus.COMPLETED,
+        work_summary="Migration proof staff attendance",
+        total_work_seconds=3600,
+        total_break_seconds=0,
+    )
+    db.add(att)
+    db.flush()
+
+    seg = StaffAttendanceSegment(
+        attendance_id=att.id,
+        segment_type=StaffAttendanceSegmentType.WORK,
+        started_at=start,
+        ended_at=end,
+    )
+    db.add(seg)
+    db.flush()
+
+    leave = StaffLeave(
+        staff_user_id=actor.id,
+        leave_date=today,
+        reason="Migration proof staff leave",
+        status=LeaveStatus.PENDING,
+    )
+    db.add(leave)
+    db.flush()
+
+    return {"attendance_id": att.id, "segment_id": seg.id, "leave_id": leave.id}
+
+
+register_head(
+    "st1ff4tt3nd1",
+    tables_added=["staff_attendance", "staff_attendance_segments", "staff_leaves"],
+    columns_added=[],
+    seed=_seed_st1ff4tt3nd1,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
