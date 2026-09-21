@@ -6,11 +6,27 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "st1ff4tt3nd1"
 down_revision: Union[str, None] = "op1n2o3t4e5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
+
+def _leave_status_column():
+    """Reuse existing leavestatus enum from therapist_leaves (do not CREATE TYPE again)."""
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        return postgresql.ENUM(
+            "PENDING",
+            "APPROVED",
+            "REJECTED",
+            "CANCELLED",
+            name="leavestatus",
+            create_type=False,
+        )
+    return sa.Enum("PENDING", "APPROVED", "REJECTED", "CANCELLED", name="leavestatus")
 
 
 def upgrade() -> None:
@@ -61,11 +77,7 @@ def upgrade() -> None:
         sa.Column("staff_user_id", sa.Integer(), nullable=False),
         sa.Column("leave_date", sa.Date(), nullable=False),
         sa.Column("reason", sa.Text(), nullable=True),
-        sa.Column(
-            "status",
-            sa.Enum("PENDING", "APPROVED", "REJECTED", "CANCELLED", name="leavestatus", create_type=False),
-            nullable=False,
-        ),
+        sa.Column("status", _leave_status_column(), nullable=False),
         sa.Column("reviewed_by_user_id", sa.Integer(), nullable=True),
         sa.Column("review_note", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
