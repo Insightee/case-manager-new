@@ -584,8 +584,8 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
   return res.json()
 }
 
-/** Authenticated download; triggers browser save via temporary object URL. */
-export async function apiDownload(path, filename, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+/** Authenticated blob fetch for inline preview (caller should revoke object URL when done). */
+export async function fetchAuthenticatedBlob(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const headers = {}
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
@@ -603,7 +603,12 @@ export async function apiDownload(path, filename, { timeoutMs = DEFAULT_TIMEOUT_
     throw new Error(typeof err.detail === 'string' ? err.detail : 'Download failed')
   }
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
+  return { blob, url: URL.createObjectURL(blob) }
+}
+
+/** Authenticated download; triggers browser save via temporary object URL. */
+export async function apiDownload(path, filename, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const { url } = await fetchAuthenticatedBlob(path, { timeoutMs })
   const a = document.createElement('a')
   a.href = url
   a.download = filename || 'download'

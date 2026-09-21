@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
+import { apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { INCIDENT_STATUS_META, PRIORITY_META } from '../../lib/incidentCatalog.js'
 import { formatTimestampDateIN } from '../../lib/datetime.js'
@@ -439,20 +439,7 @@ export function IncidentDetailPanel({
       {incidentLevelAttachments.length > 0 ? (
         <div style={{ marginBottom: 12 }}>
           <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0 0 6px' }}>Attachments</p>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem' }}>
-            {incidentLevelAttachments.map((a) => (
-              <li key={a.id}>
-                <button
-                  type="button"
-                  className="ic-case-sessions__link-btn"
-                  onClick={() => apiDownload(`${apiBase}/attachments/${a.id}/download`, a.file_name)}
-                >
-                  {a.file_name}
-                </button>
-                {a.note ? <span style={{ color: '#94a3b8' }}> — {a.note}</span> : null}
-              </li>
-            ))}
-          </ul>
+          <TicketAttachmentList attachments={incidentLevelAttachments} downloadPrefix={apiBase} />
         </div>
       ) : null}
 
