@@ -8,6 +8,7 @@ import { usePageMeta } from '../hooks/usePageMeta.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
+import { STAFF_LOGIN_ROLES } from '../lib/portalLogin.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
@@ -71,6 +72,7 @@ function caseManagerNav(clinicalModuleIds) {
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
+    { to: '/admin/attendance', label: 'Attendance', perm: null, feature: null, icon: 'grid' },
   ]
 }
 
@@ -91,6 +93,7 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/finance-reports', label: 'Reports', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'reports', section: 'Finance' },
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
+    { to: '/admin/attendance', label: 'Attendance', perm: null, feature: null, icon: 'grid', section: 'People & HR' },
     { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },
     { to: '/admin/memos', label: 'Memos', perm: 'memo.send', feature: null, icon: 'mail', section: 'People & HR' },
     { to: '/admin/hr-reports', label: 'Reports', perm: null, feature: 'hr_reports', icon: 'reports', section: 'People & HR' },
@@ -195,7 +198,14 @@ function buildMobileTabs(fullNav, portal, { cmFocused = false } = {}) {
   }
 }
 
-function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
+function staffAttendanceNavEligible({ roles, isViewOnly }) {
+  if (isViewOnly) return false
+  const upper = roles.map((r) => String(r).toUpperCase())
+  if (upper.includes('THERAPIST') && !upper.some((r) => STAFF_LOGIN_ROLES.includes(r))) return false
+  return upper.some((r) => STAFF_LOGIN_ROLES.includes(r))
+}
+
+function filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOnly }) {
   if (item.desk === 'finance') {
     return roles.includes('FINANCE') && !roles.includes('SUPER_ADMIN') && can(item.perm || 'invoice.approve')
   }
@@ -226,6 +236,9 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
   }
   if (item.to === '/admin/platform-stats') {
     return can('admin.override')
+  }
+  if (item.to === '/admin/attendance') {
+    return staffAttendanceNavEligible({ roles, isViewOnly })
   }
   if (item.perm || item.feature || item.moduleIds?.length) {
     return navVisible(item)
@@ -304,7 +317,7 @@ export function PortalShell({ portal }) {
     const clinicalIds = clinicalProductModuleIds(user)
     const baseNav = cmFocused ? caseManagerNav(clinicalIds) : adminNav(clinicalIds)
     nav = baseNav.filter((item) =>
-      filterAdminNavItem(item, { roles, navVisible, can, hasFeature }),
+      filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOnly }),
     )
   }
 

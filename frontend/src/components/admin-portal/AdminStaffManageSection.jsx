@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { canManageStaffAttendance } from '../../lib/staffAttendanceAccess.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { fetchAllStaff } from '../../lib/peopleDirectoryApi.js'
 import { PEOPLE_PAGE_SIZE } from '../../lib/peopleDirectoryList.js'
@@ -42,6 +45,14 @@ const EMPTY_FORM = {
   view_only: false,
 }
 
+function staffAttendanceAction(userId) {
+  return (
+    <Link to={`/admin/staff-attendance/${userId}`} className="admin-btn admin-btn--ghost admin-btn--sm">
+      Attendance
+    </Link>
+  )
+}
+
 export function AdminStaffManageSection({
   catalog,
   roleDefaults,
@@ -60,6 +71,8 @@ export function AdminStaffManageSection({
   onSuccess,
   onError,
 }) {
+  const { user: authUser } = useAuth()
+  const showStaffAttendance = canManageStaffAttendance(authUser)
   const [mode, setMode] = useState('invite')
   const [form, setForm] = useState(EMPTY_FORM)
   const [inviteUrl, setInviteUrl] = useState('')
@@ -566,6 +579,7 @@ export function AdminStaffManageSection({
                               onError={onError}
                               lastProvision={lastProvision}
                               setLastProvision={setLastProvision}
+                              extraActions={showStaffAttendance ? staffAttendanceAction(u.id) : null}
                             />
                           </div>
                         </td>
@@ -669,6 +683,7 @@ export function AdminStaffManageSection({
                               onError={onError}
                               lastProvision={lastProvision}
                               setLastProvision={setLastProvision}
+                              extraActions={showStaffAttendance ? staffAttendanceAction(u.id) : null}
                             />
                           </div>
                         }

@@ -86,6 +86,8 @@ from app.models.session import Session as TherapySession
 from app.models.session_absence import SessionAbsenceRequest
 from app.models.session_start_idempotency import SessionStartIdempotency
 from app.models.leave import TherapistLeave
+from app.models.staff_attendance import StaffAttendance, StaffAttendanceSegment
+from app.models.staff_leave import StaffLeave
 from app.models.memo import Memo, MemoMessage, MemoAttachment, MemoAuditLog
 from app.models.schedule_template import TherapistScheduleTemplate
 from app.models.appointment_reschedule import AppointmentReschedule
@@ -217,6 +219,9 @@ __all__ = [
     "TicketCategory",
     "TicketAttachment",
     "TherapistLeave",
+    "StaffAttendance",
+    "StaffAttendanceSegment",
+    "StaffLeave",
     "TherapistScheduleTemplate",
     "TherapistSlot",
     "SlotStatus",

@@ -16,6 +16,7 @@ import './leave-management.css'
 import { formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
 import { leaveRetroactiveHint, absenceRetroactiveHint } from '../../lib/leaveMigration.js'
 import { ManualLeaveTab } from './ManualLeaveTab.jsx'
+import { StaffLeaveTab } from './StaffLeaveTab.jsx'
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fefce8', color: '#a16207', border: '#fde047' },
@@ -67,7 +68,8 @@ const EMPTY_COUNTS = { PENDING: 0, APPROVED: 0, REJECTED: 0, ALL: 0 }
 export function LeaveManagementPage({ portal = 'hr' }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const mainTab = tabParam === 'report' || tabParam === 'manual' ? tabParam : 'approvals'
+  const mainTab =
+    tabParam === 'report' || tabParam === 'manual' || tabParam === 'staff' ? tabParam : 'approvals'
   const tab = searchParams.get('status') || 'PENDING'
   const requestView = resolveRequestView(searchParams)
 
@@ -180,7 +182,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   function setMainTab(next) {
     const nextParams = new URLSearchParams(searchParams)
     nextParams.set('tab', next)
-    if (next === 'report') nextParams.delete('status')
+    if (next === 'report' || next === 'staff') nextParams.delete('status')
     setSearchParams(nextParams, { replace: true })
   }
 
@@ -339,12 +341,15 @@ export function LeaveManagementPage({ portal = 'hr' }) {
         onChange={setMainTab}
         tabs={[
           { id: 'approvals', label: 'Approvals' },
+          { id: 'staff', label: 'Staff leave' },
           { id: 'manual', label: 'Manual' },
           { id: 'report', label: 'Report' },
         ]}
       />
 
-      {mainTab === 'manual' ? (
+      {mainTab === 'staff' ? (
+        <StaffLeaveTab />
+      ) : mainTab === 'manual' ? (
         <ManualLeaveTab year={manualYear} onYearChange={setManualYear} onLeaveRecorded={loadApprovals} />
       ) : mainTab === 'approvals' ? (
         <>

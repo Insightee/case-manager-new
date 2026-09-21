@@ -25,6 +25,7 @@ from app.api.v1 import (
     incidents,
     invoices,
     leave,
+    staff_attendance,
     parent,
     reports,
     sessions,
@@ -100,6 +101,7 @@ api_router.include_router(support.router)
 api_router.include_router(attachments.router)
 api_router.include_router(incidents.router)
 api_router.include_router(leave.router)
+api_router.include_router(staff_attendance.router)
 api_router.include_router(slots.router)
 api_router.include_router(scheduling.router)
 api_router.include_router(booking.router)

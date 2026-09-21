@@ -112,6 +112,14 @@ const InvoiceComposer = lazy(() =>
 const AdminPeoplePage = lazy(() =>
   import('../components/admin-portal/AdminPeoplePage.jsx').then((m) => ({ default: m.AdminPeoplePage }))
 )
+const StaffAttendancePage = lazy(() =>
+  import('../components/admin-portal/StaffAttendancePage.jsx').then((m) => ({ default: m.StaffAttendancePage }))
+)
+const AdminStaffAttendanceDetailPage = lazy(() =>
+  import('../components/admin-portal/AdminStaffAttendanceDetailPage.jsx').then((m) => ({
+    default: m.AdminStaffAttendanceDetailPage,
+  }))
+)
 const AdminIepPage = lazy(() =>
   import('../components/admin-portal/AdminIepPage.jsx').then((m) => ({ default: m.AdminIepPage }))
 )
@@ -586,6 +594,22 @@ export function AppRoutes() {
           }
         />
         <Route path="cm-meetings" element={<Navigate to="/admin/meetings" replace />} />
+        <Route
+          path="attendance"
+          element={
+            <Lazy>
+              <StaffAttendancePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="staff-attendance/:userId"
+          element={
+            <Lazy>
+              <AdminStaffAttendanceDetailPage />
+            </Lazy>
+          }
+        />
         <Route
           path="leave"
           element={
