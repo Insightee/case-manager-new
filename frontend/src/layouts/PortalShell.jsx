@@ -96,6 +96,7 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/hr-reports', label: 'Reports', perm: null, feature: 'hr_reports', icon: 'reports', section: 'People & HR' },
     { to: '/admin/hr-cases', label: 'HR case view', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'People & HR' },
     { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings', section: 'Settings' },
+    { to: '/admin/platform-stats', label: 'Platform stats', perm: null, feature: null, icon: 'grid', section: 'Settings' },
   ]
 }
 
@@ -223,6 +224,9 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
   if (item.to === '/admin/hr-reports') {
     return hasFeature('hr_reports') || can('hr_report.export') || can('user.manage')
   }
+  if (item.to === '/admin/platform-stats') {
+    return can('admin.override')
+  }
   if (item.perm || item.feature || item.moduleIds?.length) {
     return navVisible(item)
   }
@@ -254,9 +258,9 @@ export function PortalShell({ portal }) {
     window.localStorage.setItem('insightecase.financeSidebarCollapsed', sidebarCollapsed ? '1' : '0')
   }, [financeRoute, sidebarCollapsed])
   const { activeElapsedSeconds, syncState } = useAppUsageTracker({
-    enabled: portal === 'admin' && !!user?.id,
+    enabled: !!user?.id && (portal === 'admin' || portal === 'therapist' || portal === 'parent'),
     userId: user?.id,
-    portal: 'admin',
+    portal,
     routePath: location.pathname,
   })
 

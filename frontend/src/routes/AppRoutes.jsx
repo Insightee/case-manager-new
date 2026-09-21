@@ -121,6 +121,11 @@ const AdminSupportHubPage = lazy(() =>
 const AdminHrReportsPage = lazy(() =>
   import('../components/admin-portal/AdminHrReportsPage.jsx').then((m) => ({ default: m.AdminHrReportsPage }))
 )
+const AdminPlatformStatsPage = lazy(() =>
+  import('../components/admin-portal/AdminPlatformStatsPage.jsx').then((m) => ({
+    default: m.AdminPlatformStatsPage,
+  }))
+)
 const AdminTherapistProfilesPage = lazy(() =>
   import('../components/admin-portal/AdminTherapistProfilesPage.jsx').then((m) => ({
     default: m.AdminTherapistProfilesPage,
@@ -603,6 +608,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminHrReportsPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="platform-stats"
+          element={
+            <Lazy>
+              <AdminPlatformStatsPage />
             </Lazy>
           }
         />

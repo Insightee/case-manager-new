@@ -678,6 +678,22 @@ def admin_app_usage_summary(
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
+@router.get("/platform-stats")
+def admin_platform_stats(
+    days: int = Query(1, ge=1, le=90),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "admin.override"):
+        raise HTTPException(status_code=403, detail="Super admin permission required")
+    from app.services import platform_stats_service
+
+    try:
+        return platform_stats_service.build_platform_stats(db, user, days=days)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
 @router.get("/cases/{case_id}/timeline")
 def admin_case_timeline(
     case_id: int,
