@@ -245,17 +245,12 @@ def test_other_meeting_type_accepts_title_fallback():
     from datetime import timedelta, time
 
     from app.core.database import SessionLocal
-    from app.core.timezone import IST, now_ist
+    from app.core.timezone import now_ist
     from app.models.case_manager_meeting import CaseManagerMeeting
 
-    now = now_ist()
-    started = now - timedelta(hours=1)
-    if started.date() < now.date():
-        backdate = now.date()
-        backtime = time(0, 1)
-    else:
-        backdate = started.date()
-        backtime = started.time().replace(microsecond=0)
+    started = now_ist() - timedelta(hours=2)
+    backdate = started.date()
+    backtime = started.time().replace(microsecond=0)
     db = SessionLocal()
     try:
         row = db.get(CaseManagerMeeting, mid)

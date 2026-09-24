@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 
-from app.core.timezone import today_ist
-
 from sqlalchemy import select
 
 from app.core.database import SessionLocal
+from app.core.timezone import IST, now_ist, today_ist
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 from app.models.user import User
 from app.services import session_service
+
+
+def utc_started_at_on_session_day(session_day: date, *, minutes_ago: int = 6) -> datetime:
+    """UTC ``actual_start_at`` that maps to ``session_day`` in IST (stable across midnight CI)."""
+    started = datetime.combine(session_day, time(12, 0), tzinfo=IST) - timedelta(minutes=minutes_ago)
+    return started.astimezone(timezone.utc)
 
 
 def backdate_in_progress_session(session_id: int, minutes_ago: int = 6) -> None:
@@ -23,7 +28,11 @@ def backdate_in_progress_session(session_id: int, minutes_ago: int = 6) -> None:
         session = db.get(TherapySession, session_id)
         if session is None:
             raise ValueError(f"Session {session_id} not found")
-        session.actual_start_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        target_day = session.scheduled_date or today_ist()
+        started = now_ist() - timedelta(minutes=minutes_ago)
+        if started.date() != target_day:
+            started = datetime.combine(target_day, time(12, 0), tzinfo=IST) - timedelta(minutes=minutes_ago)
+        session.actual_start_at = started.astimezone(timezone.utc)
         db.commit()
     finally:
         db.close()

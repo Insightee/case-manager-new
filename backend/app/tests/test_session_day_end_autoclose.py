@@ -17,7 +17,11 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 from app.models.user import User
 from app.services import session_day_end_service, session_service, therapist_portal_queries as tpq
-from app.tests.session_helpers import end_active_sessions_for_therapist, ensure_scheduled_sessions_for_therapist
+from app.tests.session_helpers import (
+    end_active_sessions_for_therapist,
+    ensure_scheduled_sessions_for_therapist,
+    utc_started_at_on_session_day,
+)
 
 client = TestClient(app)
 
@@ -79,7 +83,7 @@ def test_same_day_in_progress_blocks_new_session():
             therapist_id=therapist.id,
             case_id=active_case_id,
             session_day=today,
-            started_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+            started_at=utc_started_at_on_session_day(today, minutes_ago=30),
         )
         scheduled = TherapySession(
             case_id=scheduled_case_id,
