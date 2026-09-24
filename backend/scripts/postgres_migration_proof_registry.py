@@ -1029,6 +1029,71 @@ register_head(
 )
 
 
+def _seed_bb6328f4ca05(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.integration import (
+        IntegrationClient,
+        IntegrationClientStatus,
+        IntegrationSignal,
+        IntegrationWebhook,
+        IntegrationWebhookStatus,
+    )
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    actor = db.scalar(select(User).limit(1))
+    if not case or not actor:
+        raise RuntimeError("Need seeded case + user — run demo_seed first")
+    client = IntegrationClient(
+        name="Migration proof key",
+        status=IntegrationClientStatus.ACTIVE.value,
+        scopes_json=["cases:read", "sessions:write"],
+        rate_limit_per_minute=60,
+        access_token_minutes=15,
+        key_ttl_days=90,
+        mcp_enabled=True,
+        created_by_user_id=actor.id,
+    )
+    db.add(client)
+    db.flush()
+    webhook = IntegrationWebhook(
+        integration_client_id=client.id,
+        url="https://partner.example/hooks/migration-proof",
+        secret_hash="migration-proof-hash",
+        events_json=["session.logged"],
+        status=IntegrationWebhookStatus.ACTIVE.value,
+    )
+    signal = IntegrationSignal(
+        integration_client_id=client.id,
+        case_id=case.id,
+        domain="sessions",
+        signal_key="progress_signal",
+        level=3,
+        status="pending_review",
+    )
+    db.add(webhook)
+    db.add(signal)
+    db.flush()
+    return {
+        "integration_client_id": client.id,
+        "webhook_id": webhook.id,
+        "signal_id": signal.id,
+        "case_id": case.id,
+    }
+
+
+register_head(
+    "bb6328f4ca05",
+    tables_added=["integration_webhooks", "integration_signals"],
+    columns_added=[
+        ("integration_clients", "access_token_minutes"),
+        ("integration_clients", "key_ttl_days"),
+        ("integration_clients", "mcp_enabled"),
+    ],
+    seed=_seed_bb6328f4ca05,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
