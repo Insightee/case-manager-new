@@ -203,4 +203,23 @@ describe('buildPipelineActions', () => {
     )
     assert.ok(!actions.some((a) => a.id === 'reallot'))
   })
+
+  it('deep-links compliance tickets to the case support queue', () => {
+    const actions = buildPipelineActions(
+      {
+        id: 99,
+        case_code: 'IC-2026-SS-256',
+        pipeline_column: 'compliance',
+        open_tickets: 2,
+        product_module: 'shadow_support',
+      },
+      { canAssign: true, canUpdate: true, canCreate: true, canWrite: true },
+    )
+    const tickets = actions.find((a) => a.id === 'tickets')
+    assert.ok(tickets)
+    assert.equal(
+      tickets.href,
+      '/admin/support?tab=tickets&case_id=99&case_code=IC-2026-SS-256',
+    )
+  })
 })

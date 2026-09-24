@@ -85,6 +85,7 @@ def _parse_category(raw: str) -> TicketCategory:
 def list_tickets(
     category: Optional[TicketCategory] = None,
     product_module: Optional[str] = None,
+    case_id: Optional[int] = Query(None, ge=1),
     status: Optional[TicketStatus] = None,
     canonical_status: Optional[str] = Query(None, description="Canonical bucket: open, in_progress, closed, escalated"),
     search: Optional[str] = Query(None, min_length=1, max_length=128),
@@ -98,6 +99,7 @@ def list_tickets(
         user,
         category=category,
         product_module=product_module,
+        case_id=case_id,
         status=status,
         canonical_status=canonical_status,
         search=search,

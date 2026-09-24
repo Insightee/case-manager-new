@@ -531,11 +531,12 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
   if (col === 'compliance') {
     if (row.open_tickets > 0) {
+      const caseCode = row.case_code ? `&case_code=${encodeURIComponent(row.case_code)}` : ''
       actions.push({
         id: 'tickets',
         label: `Tickets (${row.open_tickets})`,
         variant: 'primary',
-        href: '/admin/support?tab=tickets',
+        href: `/admin/support?tab=tickets&case_id=${row.id}${caseCode}`,
       })
     }
     if (row.open_incidents > 0) {

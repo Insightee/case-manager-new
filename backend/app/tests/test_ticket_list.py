@@ -100,6 +100,47 @@ def test_ticket_list_search_by_subject_and_therapist_name():
     assert by_therapist.status_code == 200
     assert any(t.get("therapist_name") == "Therapist Neha" for t in by_therapist.json()["items"])
 
+    by_parent = client.get(
+        "/api/v1/tickets?search=Parent%20Guardian",
+        headers=_headers(admin),
+    )
+    assert by_parent.status_code == 200
+    assert any(t["subject"] == "Unique search marker ticket" for t in by_parent.json()["items"])
+
+
+def test_ticket_list_filter_by_case_id():
+    admin = _login("superadmin@demo.com")
+    therapist = _login("therapist@demo.com")
+    case_id = _case_id_for_code(admin, "IC-2026-041")
+    other_case_id = _case_id_for_code(admin, "IC-2026-053")
+
+    created = client.post(
+        "/api/v1/tickets",
+        headers=_headers(therapist),
+        json={
+            "case_id": case_id,
+            "subject": "Case filter marker ticket",
+            "body": "Scoped to Aarav case",
+            "category": "SERVICE",
+        },
+    )
+    assert created.status_code == 201
+    ticket_id = created.json()["id"]
+
+    scoped = client.get(
+        f"/api/v1/tickets?case_id={case_id}&search=Case%20filter%20marker",
+        headers=_headers(admin),
+    )
+    assert scoped.status_code == 200
+    assert any(t["id"] == ticket_id for t in scoped.json()["items"])
+
+    other_scope = client.get(
+        f"/api/v1/tickets?case_id={other_case_id}&search=Case%20filter%20marker",
+        headers=_headers(admin),
+    )
+    assert other_scope.status_code == 200
+    assert not any(t["id"] == ticket_id for t in other_scope.json()["items"])
+
 
 def test_ticket_list_pagination_and_status_filter():
     admin = _login("superadmin@demo.com")
