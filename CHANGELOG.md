@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Integration keys can list and create therapist website profiles (`profiles:read` / `profiles:write`) from `GET/POST /api/v1/integrations/v1/therapist-profiles` and MCP tools `list_therapist_profiles` / `create_therapist_profile`. Listing fields only; default create status is `PENDING`.
 - Super admin **Integrations** screen: API keys, webhooks, and MCP, with read/write, token life, key validity, and seven information-access toggles. Writes land as structured `pending_review` signals and cannot complete a report. Alembic `st1ff4tt3nd1` → `bb6328f4ca05`.
 - Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.

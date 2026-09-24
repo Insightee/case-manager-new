@@ -7,12 +7,18 @@ from sqlalchemy.orm import Session
 from app.api.deps_integration import get_integration_principal, get_request_meta, raise_integration_http
 from app.core.config import settings
 from app.core.database import get_db
-from app.schemas.integration import IntegrationSignalCreate, IntegrationTokenRequest, IntegrationTokenResponse
+from app.schemas.integration import (
+    IntegrationSignalCreate,
+    IntegrationTherapistProfileCreate,
+    IntegrationTokenRequest,
+    IntegrationTokenResponse,
+)
 from app.services.integration import (
     auth_service,
     case_query,
     framework_query,
     ops_summary,
+    profile_directory,
     report_query,
     session_summary,
     signal_inbox,
@@ -265,6 +271,59 @@ def list_iep(
         result = framework_query.list_iep_framework(
             db,
             principal,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/therapist-profiles")
+def list_therapist_profiles(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1),
+    status: str | None = None,
+    q: str | None = None,
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        page_size = min(page_size, settings.integration_max_page_size)
+        result = profile_directory.list_profiles(
+            db,
+            principal,
+            page=page,
+            page_size=page_size,
+            status=status,
+            q=q,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.post("/v1/therapist-profiles", status_code=201)
+def create_therapist_profile(
+    payload: IntegrationTherapistProfileCreate,
+    request: Request,
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        result = profile_directory.create_profile(
+            db,
+            principal,
+            payload.model_dump(exclude_unset=True),
             ip_address=meta.get("ip_address"),
             user_agent=meta.get("user_agent"),
         )

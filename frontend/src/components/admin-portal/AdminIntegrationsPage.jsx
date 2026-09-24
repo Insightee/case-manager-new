@@ -531,7 +531,7 @@ export function AdminIntegrationsPage() {
 
       {tab === 'mcp' ? (
         <div className="integrations-mcp-grid" role="tabpanel">
-          <AdminPanel title="Connect MCP" subtitle="Remote tools stay read-only, even when the key has Write.">
+          <AdminPanel title="Connect MCP" subtitle="Clinical tools stay read-only. Therapist profile create is available when that area and Write are on.">
             <p className="integrations-note">
               Request a short-lived token with the client id and secret, then put that token in the MCP header. Do not paste the long-lived secret into the agent config.
             </p>
@@ -581,7 +581,7 @@ export function AdminIntegrationsPage() {
               {sheet.mode === 'create' ? 'New API key' : 'Edit access'}
             </h3>
             <p className="integrations-sheet__sub">
-              Read returns masked structured fields. Write can submit signals for review. It cannot finish a report, assign a diagnosis, or replace a therapist’s notes.
+              Read returns masked structured fields. Write can submit signals for review or create a therapist profile. It cannot finish a report, assign a diagnosis, or replace a therapist’s notes.
             </p>
             {reveal ? <SecretReveal reveal={reveal} onClose={() => { setReveal(null); setSheet(null) }} /> : (
               <>
@@ -606,7 +606,7 @@ export function AdminIntegrationsPage() {
                 <AccessSwitch
                   id="integration-write"
                   label="Write"
-                  hint="Submit structured signals for review. Reports, IEP, pending items, and operations stay read-only."
+                  hint="Submit structured signals for review, or create therapist profiles when that area is on. Reports, IEP, pending items, and operations stay read-only."
                   checked={draft.allowWrite}
                   onChange={(allowWrite) => patchDraft({ allowWrite })}
                 />
@@ -661,7 +661,7 @@ export function AdminIntegrationsPage() {
                 <AccessSwitch
                   id="integration-mcp"
                   label="Allow MCP"
-                  hint="Lets this key call the read-only MCP tools with a short-lived token."
+                  hint="Lets this key call MCP tools with a short-lived token, including therapist profile list and create when those scopes are on."
                   checked={draft.mcpEnabled}
                   onChange={(mcpEnabled) => patchDraft({ mcpEnabled })}
                 />

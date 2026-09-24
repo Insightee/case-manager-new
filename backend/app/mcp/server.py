@@ -1,4 +1,4 @@
-"""Remote MCP server (Streamable HTTP) for InsighteCase read-only tools."""
+"""Remote MCP server (Streamable HTTP) for InsighteCase tools."""
 from __future__ import annotations
 
 import json
@@ -58,15 +58,16 @@ def _principal_from_ctx(ctx: Any):
 
 
 def build_mcp_server():
-    """Construct MCPServer with read-only InsighteCase tools."""
+    """Construct MCPServer. Clinical tools stay read-only; profile create is scoped."""
     from mcp.server.mcpserver import Context, MCPServer
 
     server = MCPServer(
         name="InsighteCase",
         instructions=(
-            "Read-only InsighteCase clinical operations tools. "
-            "Requires an integration Bearer access token. "
-            "Never exposes raw clinical notes, child PII, or write/approve actions."
+            "InsighteCase tools for an integration Bearer access token. "
+            "Clinical tools are read-only and never complete a report or replace therapist notes. "
+            "list_therapist_profiles needs profiles:read. "
+            "create_therapist_profile needs profiles:write and an existing therapist user id."
         ),
     )
 
@@ -193,6 +194,74 @@ def build_mcp_server():
         _list_iep_framework,
         name="list_iep_framework",
         description="IEP framework identifiers and counts for granted cases. No plan text.",
+    )
+
+    def _list_therapist_profiles(
+        page: int = 1,
+        page_size: int = 25,
+        status: str | None = None,
+        q: str | None = None,
+        ctx: Context | None = None,
+    ) -> str:
+        try:
+            principal = _principal_from_ctx(ctx)
+            return json.dumps(
+                facade.list_therapist_profiles(
+                    principal,
+                    page=page,
+                    page_size=page_size,
+                    status=status,
+                    q=q,
+                )
+            )
+        except Exception as exc:
+            return mcp_public_error(exc)
+
+    _list_therapist_profiles.__globals__["Context"] = Context
+    server.add_tool(
+        _list_therapist_profiles,
+        name="list_therapist_profiles",
+        description="List therapist website profiles: name, bio, qualifications, certificates, services, and status.",
+    )
+
+    def _create_therapist_profile(
+        user_id: int,
+        display_name: str = "",
+        short_bio: str = "",
+        academic_qualifications: str = "",
+        professional_certificates: str = "",
+        services_offered: str = "",
+        status: str = "PENDING",
+        ctx: Context | None = None,
+    ) -> str:
+        try:
+            principal = _principal_from_ctx(ctx)
+            payload: dict[str, Any] = {"user_id": user_id, "status": status or "PENDING"}
+            if display_name:
+                payload["display_name"] = display_name
+            if short_bio:
+                payload["short_bio"] = short_bio
+            if academic_qualifications:
+                payload["academic_qualifications"] = academic_qualifications
+            certs = [part.strip() for part in (professional_certificates or "").split(",") if part.strip()]
+            services = [part.strip() for part in (services_offered or "").split(",") if part.strip()]
+            if certs:
+                payload["professional_certificates"] = certs
+            if services:
+                payload["services_offered"] = services
+            return json.dumps(facade.create_therapist_profile(principal, payload))
+        except Exception as exc:
+            return mcp_public_error(exc)
+
+    _create_therapist_profile.__globals__["Context"] = Context
+    server.add_tool(
+        _create_therapist_profile,
+        name="create_therapist_profile",
+        description=(
+            "Create a website listing profile for an existing therapist user. "
+            "Default status is PENDING. Pass status APPROVED only when the listing should go live. "
+            "Certificates and services are comma-separated. Does not edit clinical notes."
+        ),
     )
 
     @server.resource("insightcase://cases/{case_id}/summary")

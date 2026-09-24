@@ -15,6 +15,7 @@ from app.models.audit_event import AuditEvent
 from app.models.case import Case
 from app.models.integration import IntegrationCredential
 from app.models.report import MonthlyReport, ReportStatus
+from app.models.user import User
 from app.services.integration.rate_limit import reset_memory_rate_limits_for_tests
 from app.tests.conftest import login_headers
 
@@ -338,6 +339,8 @@ def test_mcp_tools_registered():
     assert "get_session_summary" in names
     assert "list_pending_reporting" in names
     assert "get_anonymised_ops_summary" in names
+    assert "list_therapist_profiles" in names
+    assert "create_therapist_profile" in names
 
 
 def test_mcp_invalid_inputs_safe_error():
@@ -502,3 +505,134 @@ def test_human_jwt_cannot_use_integration_routes(client):
     human = login_headers(client, "superadmin@demo.com")
     res = client.get("/api/v1/integrations/v1/cases", headers=human)
     assert res.status_code == 401
+
+
+def test_integration_therapist_profile_list_and_create(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    db = SessionLocal()
+    try:
+        case, report = _first_case_and_report(db)
+        case_id = case.id
+        report_id = report.id if report else None
+        report_status = report.status if report else None
+        parent = db.scalars(select(User).where(User.email == "parent@demo.com")).first()
+        assert parent is not None
+        parent_id = parent.id
+    finally:
+        db.close()
+
+    created_user = client.post(
+        "/api/v1/admin/users",
+        headers=admin,
+        json={
+            "email": "website.profile.therapist@demo.com",
+            "password": "demo123",
+            "full_name": "Website Listing Therapist",
+            "role_names": ["THERAPIST"],
+            "module_assignments": ["homecare"],
+        },
+    )
+    assert created_user.status_code in (201, 400), created_user.text
+    if created_user.status_code == 201:
+        therapist_id = created_user.json()["id"]
+    else:
+        db = SessionLocal()
+        try:
+            row = db.scalars(select(User).where(User.email == "website.profile.therapist@demo.com")).first()
+            assert row is not None
+            therapist_id = row.id
+        finally:
+            db.close()
+
+    read_only = _create_integration_client(
+        client,
+        admin,
+        scopes=["cases:read"],
+        case_ids=[case_id],
+    )
+    denied_headers = {"Authorization": f"Bearer {_token(client, read_only['client_id'], read_only['client_secret']).json()['access_token']}"}
+    missing = client.get("/api/v1/integrations/v1/therapist-profiles", headers=denied_headers)
+    assert missing.status_code == 403, missing.text
+
+    website = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "Website profiles",
+            "allow_read": True,
+            "allow_write": True,
+            "info_access": ["profiles"],
+            "access_token_minutes": 60,
+            "key_ttl_days": 90,
+            "mcp_enabled": True,
+            "case_ids": [],
+        },
+    )
+    assert website.status_code == 201, website.text
+    body = website.json()
+    assert "profiles:read" in body["scopes"]
+    assert "profiles:write" in body["scopes"]
+    assert "reports:write" not in body["scopes"]
+    tok = _token(client, body["client_id"], body["client_secret"])
+    assert tok.status_code == 200, tok.text
+    headers = {"Authorization": f"Bearer {tok.json()['access_token']}"}
+
+    listed = client.get("/api/v1/integrations/v1/therapist-profiles", headers=headers)
+    assert listed.status_code == 200, listed.text
+    page = listed.json()
+    assert "items" in page
+    assert page["items"]
+    sample = page["items"][0]
+    assert "display_name" in sample
+    assert "tds_rate_percent" not in sample
+    assert "leave_balance_year" not in sample
+    assert "approved_snapshot" not in sample
+
+    not_therapist = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": parent_id, "display_name": "Parent"},
+    )
+    assert not_therapist.status_code == 422, not_therapist.text
+
+    created = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={
+            "user_id": therapist_id,
+            "display_name": "Website Listing Therapist",
+            "short_bio": "Supports participation at home.",
+            "services_offered": ["homecare"],
+            "professional_certificates": ["RCI"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    profile = created.json()
+    assert profile["status"] == "PENDING"
+    assert profile["user_id"] == therapist_id
+    assert profile["services_offered"] == ["homecare"]
+    assert "leave_paid_days_backfill" not in profile
+    assert "admin_note" not in profile
+
+    duplicate = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": therapist_id, "display_name": "Again"},
+    )
+    assert duplicate.status_code == 422, duplicate.text
+    assert "already exists" in duplicate.text
+
+    deleted = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": therapist_id, "status": "DELETED"},
+    )
+    assert deleted.status_code == 422, deleted.text
+
+    if report_id is not None:
+        db = SessionLocal()
+        try:
+            fresh = db.get(MonthlyReport, report_id)
+            assert fresh.status == report_status
+        finally:
+            db.close()

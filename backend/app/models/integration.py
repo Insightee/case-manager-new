@@ -39,6 +39,8 @@ INTEGRATION_SCOPES: frozenset[str] = frozenset(
         "goals:read",
         "goals:write",
         "iep:read",
+        "profiles:read",
+        "profiles:write",
     }
 )
 

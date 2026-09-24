@@ -4,7 +4,15 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.database import SessionLocal
-from app.services.integration import auth_service, case_query, framework_query, ops_summary, report_query, session_summary
+from app.services.integration import (
+    auth_service,
+    case_query,
+    framework_query,
+    ops_summary,
+    profile_directory,
+    report_query,
+    session_summary,
+)
 from app.services.integration.access import IntegrationPrincipal
 from app.services.integration.errors import IntegrationError, UnauthorizedError
 
@@ -92,6 +100,28 @@ def list_goal_framework(principal: IntegrationPrincipal) -> dict[str, Any]:
 
 def list_iep_framework(principal: IntegrationPrincipal) -> dict[str, Any]:
     return _run(framework_query.list_iep_framework, principal)
+
+
+def list_therapist_profiles(
+    principal: IntegrationPrincipal,
+    *,
+    page: int = 1,
+    page_size: int = 25,
+    status: str | None = None,
+    q: str | None = None,
+) -> dict[str, Any]:
+    return _run(
+        profile_directory.list_profiles,
+        principal,
+        page=page,
+        page_size=page_size,
+        status=status,
+        q=q,
+    )
+
+
+def create_therapist_profile(principal: IntegrationPrincipal, payload: dict[str, Any]) -> dict[str, Any]:
+    return _run(profile_directory.create_profile, principal, payload)
 
 
 def bearer_from_authorization_header(header: str | None) -> str:

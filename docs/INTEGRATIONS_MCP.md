@@ -86,12 +86,37 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 | `goals:read` | Goal and strategy identifiers for granted cases |
 | `goals:write` | Submit a structured goal signal (`pending_review`) |
 | `iep:read` | IEP framework identifiers and counts |
+| `profiles:read` | Therapist listing fields (name, bio, qualifications, certificates, services, status) |
+| `profiles:write` | Create a listing profile for an existing therapist user. Default status is `PENDING` |
 
-Reports, IEP, pending reporting, and operations stay read-only. A write never sets a report to complete.
+Reports, IEP, pending reporting, and operations stay read-only. A write never sets a report to complete. Profile create does not change leave, TDS, clinical notes, or report status.
 
 Access token life is per key: 15 minutes, 1 hour, 8 hours, or 24 hours. API key validity is 30 days, 90 days, 1 year, or no expiry.
 
-## MCP tools (read-only)
+## Therapist profiles
+
+```http
+GET /api/v1/integrations/v1/therapist-profiles?status=APPROVED
+Authorization: Bearer <access-token>
+```
+
+```http
+POST /api/v1/integrations/v1/therapist-profiles
+Authorization: Bearer <access-token>
+Content-Type: application/json
+
+{
+  "user_id": 12,
+  "display_name": "Asha Menon",
+  "short_bio": "Supports participation at home and school.",
+  "services_offered": ["homecare"],
+  "status": "PENDING"
+}
+```
+
+`user_id` must already be an active therapist. A second profile for the same therapist is refused. `DELETED` is not a writable status. Leave balances, TDS, and approval snapshots are not returned.
+
+## MCP tools
 
 - `list_authorised_reports`
 - `get_report`
@@ -101,5 +126,7 @@ Access token life is per key: 15 minutes, 1 hour, 8 hours, or 24 hours. API key 
 - `get_anonymised_ops_summary`
 - `list_goal_framework`
 - `list_iep_framework`
+- `list_therapist_profiles` (`profiles:read`)
+- `create_therapist_profile` (`profiles:write`)
 
-MCP stays read-only even when the key has Write. Turn **Allow MCP** off on a key to refuse these tools. Webhooks are configured in the super admin Integrations screen and store a signing secret once.
+Clinical MCP tools stay read-only. `create_therapist_profile` is the profile-listing exception and still cannot complete a report. Turn **Allow MCP** off on a key to refuse these tools. Webhooks are configured in the super admin Integrations screen and store a signing secret once.

@@ -12,12 +12,12 @@ import {
 } from './integrationDesk.js'
 
 describe('integrationDesk', () => {
-  it('exposes seven information areas and seven webhook events', () => {
-    assert.equal(INFO_ACCESS.length, 7)
+  it('exposes eight information areas and seven webhook events', () => {
+    assert.equal(INFO_ACCESS.length, 8)
     assert.equal(WEBHOOK_EVENTS.length, 7)
     assert.deepEqual(
       INFO_ACCESS.map((item) => item.id),
-      ['cases', 'sessions', 'reports', 'goals', 'iep', 'reporting', 'ops'],
+      ['cases', 'sessions', 'reports', 'goals', 'iep', 'reporting', 'ops', 'profiles'],
     )
   })
 
@@ -33,6 +33,8 @@ describe('integrationDesk', () => {
     assert.ok(scopes.includes('cases:write'))
     assert.ok(scopes.includes('sessions:summarize'))
     assert.ok(scopes.includes('goals:write'))
+    assert.ok(scopes.includes('profiles:read'))
+    assert.ok(scopes.includes('profiles:write'))
     assert.equal(scopes.includes('reports:write'), false)
     assert.equal(scopes.includes('iep:write'), false)
     assert.equal(scopes.includes('ops:write'), false)

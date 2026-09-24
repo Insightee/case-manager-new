@@ -50,6 +50,13 @@ export const INFO_ACCESS = [
     readScope: 'ops:summary',
     writeScope: null,
   },
+  {
+    id: 'profiles',
+    label: 'Therapist profiles',
+    hint: 'Listing name, bio, qualifications, certificates, and services. Write creates a profile for an existing therapist.',
+    readScope: 'profiles:read',
+    writeScope: 'profiles:write',
+  },
 ]
 
 export const KEY_TTL_OPTIONS = [
@@ -133,7 +140,7 @@ export function validateKeyDraft(draft) {
   if (!draft.infoAccess?.length) return 'Choose at least one kind of information this key can use.'
   const scopes = scopesFromDraft(draft)
   if (!scopes.length) {
-    return 'Those areas stay read-only. Turn Read on, or choose Cases, Sessions, or Goals while Write is on.'
+    return 'Those areas stay read-only. Turn Read on, or choose Cases, Sessions, Goals, or Therapist profiles while Write is on.'
   }
   const cases = parseCaseIds(draft.caseIdsText)
   if (cases.error) return cases.error

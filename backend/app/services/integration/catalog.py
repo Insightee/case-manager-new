@@ -49,6 +49,7 @@ INFO_DOMAINS: tuple[InfoDomain, ...] = (
     InfoDomain("iep", "iep:read", None),
     InfoDomain("reporting", "reporting:pending", None),
     InfoDomain("ops", "ops:summary", None),
+    InfoDomain("profiles", "profiles:read", "profiles:write"),
 )
 
 _DOMAIN_BY_ID = {domain.id: domain for domain in INFO_DOMAINS}
@@ -73,7 +74,7 @@ def build_scopes(*, allow_read: bool, allow_write: bool, info_access: list[str])
             scopes.append(domain.write_scope)
     if not scopes:
         raise ValidationError(
-            "Those areas stay read-only. Turn Read on, or choose Cases, Sessions, or Goals while Write is on."
+            "Those areas stay read-only. Turn Read on, or choose Cases, Sessions, Goals, or Therapist profiles while Write is on."
         )
     illegal = [scope for scope in scopes if scope not in INTEGRATION_SCOPES]
     if illegal:

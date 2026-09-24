@@ -127,3 +127,15 @@ class IntegrationSignalCreate(BaseModel):
     domain: str
     signal_key: str
     level: Optional[int] = Field(default=None, ge=1, le=5)
+
+
+class IntegrationTherapistProfileCreate(BaseModel):
+    """Website listing fields only. Leave, TDS, and review snapshots stay on the admin profile."""
+
+    user_id: int
+    display_name: Optional[str] = Field(None, max_length=255)
+    short_bio: Optional[str] = Field(None, max_length=2000)
+    academic_qualifications: Optional[str] = Field(None, max_length=4000)
+    professional_certificates: Optional[list[str]] = None
+    services_offered: Optional[list[str]] = None
+    status: Optional[str] = "PENDING"
