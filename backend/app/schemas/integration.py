@@ -130,7 +130,10 @@ class IntegrationSignalCreate(BaseModel):
 
 
 class IntegrationTherapistProfileCreate(BaseModel):
-    """Website listing fields only. Leave, TDS, and review snapshots stay on the admin profile."""
+    """Website listing fields only. Leave, TDS, review snapshots, and login email stay off the wire.
+
+    New listings are always Pending. Any other status is refused.
+    """
 
     user_id: int
     display_name: Optional[str] = Field(None, max_length=255)

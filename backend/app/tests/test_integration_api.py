@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from app.models.audit_event import AuditEvent
 from app.models.case import Case
 from app.models.integration import IntegrationCredential
 from app.models.report import MonthlyReport, ReportStatus
+from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
 from app.services.integration.rate_limit import reset_memory_rate_limits_for_tests
 from app.tests.conftest import login_headers
@@ -289,7 +291,6 @@ def test_expired_credential_rejected(client):
     created = _create_integration_client(
         client, admin, scopes=["cases:read"], case_ids=[case_id]
     )
-    from datetime import datetime, timedelta, timezone
 
     db = SessionLocal()
     try:
@@ -436,11 +437,24 @@ def test_permissions_token_life_webhook_and_signal(client):
     assert tok.json()["expires_in"] == 3600
     headers = {"Authorization": f"Bearer {tok.json()['access_token']}"}
 
-    goals = client.get("/api/v1/integrations/v1/goals", headers=headers)
+    goals = client.get("/api/v1/integrations/v1/goals?page_size=1", headers=headers)
     assert goals.status_code == 200, goals.text
-    assert "goals" in goals.json()
+    goals_body = goals.json()
+    assert "items" in goals_body["goals"]
+    assert "total" in goals_body["goals"]
+    assert "items" in goals_body["strategies"]
+    assert goals_body["goals"]["page_size"] == 1
+    assert len(goals_body["goals"]["items"]) <= 1
+    for row in goals_body["goals"]["items"]:
+        assert "goal_id" in row
+        assert "label" in row
+    for row in goals_body["strategies"]["items"]:
+        assert "linked_goal_card_id" in row
+        assert "goal_id" not in row
     iep = client.get("/api/v1/integrations/v1/iep", headers=headers)
     assert iep.status_code == 200, iep.text
+    assert "items" in iep.json()["plans"]
+    assert "total" in iep.json()["plans"]
 
     signal = client.post(
         "/api/v1/integrations/v1/signals",
@@ -584,6 +598,7 @@ def test_integration_therapist_profile_list_and_create(client):
     assert page["items"]
     sample = page["items"][0]
     assert "display_name" in sample
+    assert "email" not in sample
     assert "tds_rate_percent" not in sample
     assert "leave_balance_year" not in sample
     assert "approved_snapshot" not in sample
@@ -611,8 +626,29 @@ def test_integration_therapist_profile_list_and_create(client):
     assert profile["status"] == "PENDING"
     assert profile["user_id"] == therapist_id
     assert profile["services_offered"] == ["homecare"]
+    assert "email" not in profile
     assert "leave_paid_days_backfill" not in profile
     assert "admin_note" not in profile
+
+    other_user = client.post(
+        "/api/v1/admin/users",
+        headers=admin,
+        json={
+            "email": "website.profile.other@demo.com",
+            "password": "demo123",
+            "full_name": "Website Other Therapist",
+            "role_names": ["THERAPIST"],
+            "module_assignments": ["homecare"],
+        },
+    )
+    assert other_user.status_code == 201, other_user.text
+    approved = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": other_user.json()["id"], "display_name": "Live now", "status": "APPROVED"},
+    )
+    assert approved.status_code == 422, approved.text
+    assert "Pending" in approved.text
 
     duplicate = client.post(
         "/api/v1/integrations/v1/therapist-profiles",
@@ -629,6 +665,35 @@ def test_integration_therapist_profile_list_and_create(client):
     )
     assert deleted.status_code == 422, deleted.text
 
+    db = SessionLocal()
+    try:
+        row = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == therapist_id)).one()
+        row.status = TherapistProfileStatus.DELETED
+        row.deleted_at = datetime.now(timezone.utc)
+        row.approved_snapshot = {"display_name": "Old listing"}
+        db.commit()
+        kept_id = row.id
+    finally:
+        db.close()
+
+    revived = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": therapist_id, "display_name": "Back online", "status": "PENDING"},
+    )
+    assert revived.status_code == 422, revived.text
+    assert "already exists" in revived.text
+
+    db = SessionLocal()
+    try:
+        row = db.get(TherapistProfile, kept_id)
+        assert row is not None
+        assert row.status == TherapistProfileStatus.DELETED
+        assert row.deleted_at is not None
+        assert row.approved_snapshot == {"display_name": "Old listing"}
+    finally:
+        db.close()
+
     if report_id is not None:
         db = SessionLocal()
         try:
@@ -636,3 +701,86 @@ def test_integration_therapist_profile_list_and_create(client):
             assert fresh.status == report_status
         finally:
             db.close()
+
+
+def test_key_ttl_save_does_not_restart_or_revive(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    created = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "TTL clock",
+            "allow_read": True,
+            "allow_write": False,
+            "info_access": ["cases"],
+            "access_token_minutes": 15,
+            "key_ttl_days": 30,
+            "mcp_enabled": False,
+            "case_ids": [],
+        },
+    )
+    assert created.status_code == 201, created.text
+    client_id = created.json()["id"]
+
+    db = SessionLocal()
+    try:
+        cred = db.scalars(
+            select(IntegrationCredential).where(IntegrationCredential.integration_client_id == client_id)
+        ).one()
+        cred.created_at = datetime.now(timezone.utc) - timedelta(days=10)
+        cred.expires_at = cred.created_at + timedelta(days=30)
+        db.commit()
+        cred_id = cred.id
+        baseline = cred.expires_at
+    finally:
+        db.close()
+
+    same = client.patch(
+        f"/api/v1/admin/integration-clients/{client_id}",
+        headers=admin,
+        json={"name": "TTL clock renamed", "key_ttl_days": 30},
+    )
+    assert same.status_code == 200, same.text
+
+    db = SessionLocal()
+    try:
+        cred = db.get(IntegrationCredential, cred_id)
+        assert cred.expires_at == baseline
+        created_at = cred.created_at
+    finally:
+        db.close()
+
+    extended = client.patch(
+        f"/api/v1/admin/integration-clients/{client_id}",
+        headers=admin,
+        json={"key_ttl_days": 90},
+    )
+    assert extended.status_code == 200, extended.text
+
+    db = SessionLocal()
+    try:
+        cred = db.get(IntegrationCredential, cred_id)
+        expected = created_at + timedelta(days=90)
+        assert cred.expires_at == expected
+        cred.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+        expired_at = cred.expires_at
+        db.commit()
+    finally:
+        db.close()
+
+    revived = client.patch(
+        f"/api/v1/admin/integration-clients/{client_id}",
+        headers=admin,
+        json={"key_ttl_days": 365},
+    )
+    assert revived.status_code == 200, revived.text
+
+    db = SessionLocal()
+    try:
+        cred = db.get(IntegrationCredential, cred_id)
+        stored = cred.expires_at.replace(tzinfo=None) if cred.expires_at and cred.expires_at.tzinfo else cred.expires_at
+        expected = expired_at.replace(tzinfo=None) if expired_at.tzinfo else expired_at
+        assert stored == expected
+        assert cred.is_usable is False
+    finally:
+        db.close()

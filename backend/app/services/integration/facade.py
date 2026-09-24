@@ -94,12 +94,22 @@ def get_anonymised_ops_summary(principal: IntegrationPrincipal) -> dict[str, Any
     return _run(ops_summary.get_anonymised_ops_summary, principal)
 
 
-def list_goal_framework(principal: IntegrationPrincipal) -> dict[str, Any]:
-    return _run(framework_query.list_goal_framework, principal)
+def list_goal_framework(
+    principal: IntegrationPrincipal,
+    *,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict[str, Any]:
+    return _run(framework_query.list_goal_framework, principal, page=page, page_size=page_size)
 
 
-def list_iep_framework(principal: IntegrationPrincipal) -> dict[str, Any]:
-    return _run(framework_query.list_iep_framework, principal)
+def list_iep_framework(
+    principal: IntegrationPrincipal,
+    *,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict[str, Any]:
+    return _run(framework_query.list_iep_framework, principal, page=page, page_size=page_size)
 
 
 def list_therapist_profiles(

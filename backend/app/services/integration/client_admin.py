@@ -1,4 +1,4 @@
-"""Admin lifecycle for integration clients (human JWT + user.manage)."""
+"""Admin lifecycle for integration clients (human JWT + admin.override)."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -18,7 +18,7 @@ from app.models.integration import (
 from app.models.user import User
 from app.models.integration import IntegrationSignal
 from app.services.integration.auth_service import (
-    credential_expiry,
+    expiry_from_created,
     issue_credential_for_client,
     normalize_scopes,
     revoke_client,
@@ -176,11 +176,22 @@ def update_client(
             fallback=client.access_token_minutes,
         )
     if key_ttl_days is not None:
-        client.key_ttl_days = normalize_key_ttl_days(key_ttl_days, fallback=client.key_ttl_days)
-        expiry = credential_expiry(client)
-        for cred in list(client.credentials or []):
-            if cred.revoked_at is None:
-                cred.expires_at = expiry
+        previous_ttl = int(client.key_ttl_days) if client.key_ttl_days is not None else None
+        fallback_ttl = previous_ttl if previous_ttl is not None else 365
+        new_ttl = normalize_key_ttl_days(key_ttl_days, fallback=fallback_ttl)
+        client.key_ttl_days = new_ttl
+        if previous_ttl != new_ttl:
+            now = datetime.now(timezone.utc)
+            for cred in list(client.credentials or []):
+                if cred.revoked_at is not None:
+                    continue
+                current_expiry = cred.expires_at
+                if current_expiry is not None:
+                    if current_expiry.tzinfo is None:
+                        current_expiry = current_expiry.replace(tzinfo=timezone.utc)
+                    if current_expiry <= now:
+                        continue
+                cred.expires_at = expiry_from_created(cred.created_at, new_ttl)
     if mcp_enabled is not None:
         client.mcp_enabled = bool(mcp_enabled)
     if rate_limit_per_minute is not None:

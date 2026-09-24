@@ -83,11 +83,11 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 | `ops:summary` | Anonymised counts only |
 | `cases:write` | Submit a structured case signal (`pending_review`) |
 | `sessions:write` | Submit a structured session signal (`pending_review`) |
-| `goals:read` | Goal and strategy identifiers for granted cases |
+| `goals:read` | Goal and strategy identifiers for granted cases. Paged. Strategy rows use `linked_goal_card_id`, not `goals[].goal_id` |
 | `goals:write` | Submit a structured goal signal (`pending_review`) |
 | `iep:read` | IEP framework identifiers and counts |
-| `profiles:read` | Therapist listing fields (name, bio, qualifications, certificates, services, status) |
-| `profiles:write` | Create a listing profile for an existing therapist user. Default status is `PENDING` |
+| `profiles:read` | Therapist listing fields (name, bio, qualifications, certificates, services, status). Login email is not included |
+| `profiles:write` | Create a Pending listing for an existing therapist. The key cannot approve, pause, or revive a deleted listing |
 
 Reports, IEP, pending reporting, and operations stay read-only. A write never sets a report to complete. Profile create does not change leave, TDS, clinical notes, or report status.
 
@@ -109,12 +109,18 @@ Content-Type: application/json
   "user_id": 12,
   "display_name": "Asha Menon",
   "short_bio": "Supports participation at home and school.",
-  "services_offered": ["homecare"],
-  "status": "PENDING"
+  "services_offered": ["homecare"]
 }
 ```
 
-`user_id` must already be an active therapist. A second profile for the same therapist is refused. `DELETED` is not a writable status. Leave balances, TDS, and approval snapshots are not returned.
+`user_id` must already be an active therapist. A second profile is refused, including a soft-deleted listing. The created status is always `PENDING`. `APPROVED`, `PAUSED`, and `DELETED` are refused. Leave balances, TDS, approval snapshots, and login email are not returned.
+
+```http
+GET /api/v1/integrations/v1/goals?page=1&page_size=25
+Authorization: Bearer <access-token>
+```
+
+`goals` and `strategies` are each `{ items, total, page, page_size, pages }`. `GET /api/v1/integrations/v1/iep` returns `plans` in that same page shape.
 
 ## MCP tools
 

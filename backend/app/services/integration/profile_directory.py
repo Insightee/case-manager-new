@@ -1,15 +1,13 @@
 """Therapist listing reads and creates for website integration keys.
 
-Responses keep HR fields (leave, TDS, snapshots, admin notes) off the wire.
-Creating a profile never completes a report or edits clinical notes.
+Responses keep HR fields (leave, TDS, snapshots, admin notes) and login email off the wire.
+Creating a profile never completes a report, edits clinical notes, or changes login eligibility.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.audit import log_audit
 from app.core.config import settings
@@ -50,7 +48,6 @@ def public_profile(profile: TherapistProfile, user: User | None = None) -> dict:
         "professional_certificates": list(profile.professional_certificates or []),
         "services_offered": list(profile.services_offered or []),
         "status": status_value,
-        "email": account.email if account else None,
         "full_name": account.full_name if account else None,
     }
 
@@ -83,6 +80,7 @@ def list_profiles(
     stmt = (
         select(TherapistProfile)
         .join(User, TherapistProfile.user_id == User.id)
+        .options(selectinload(TherapistProfile.user))
         .where(TherapistProfile.status != TherapistProfileStatus.DELETED)
         .order_by(func.lower(func.coalesce(TherapistProfile.display_name, User.full_name)), TherapistProfile.id)
     )
@@ -96,7 +94,6 @@ def list_profiles(
             or_(
                 func.lower(TherapistProfile.display_name).like(pattern),
                 func.lower(User.full_name).like(pattern),
-                func.lower(User.email).like(pattern),
             )
         )
     rows, total = paginate_query(db, stmt, page=page, page_size=page_size, max_page_size=settings.integration_max_page_size)
@@ -134,21 +131,19 @@ def create_profile(
     if RoleName.THERAPIST.value not in target.role_names:
         raise ValidationError("Choose a therapist account before creating a profile.")
     existing = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == user_id)).first()
-    if existing and existing.status != TherapistProfileStatus.DELETED and existing.deleted_at is None:
+    if existing is not None:
         raise ValidationError("A profile already exists for this therapist.")
-    status = _parse_status(payload.get("status"), default="PENDING")
-    profile = existing if existing else TherapistProfile(user_id=user_id)
+    requested = payload.get("status")
+    if requested is not None and str(requested).strip().upper() != "PENDING":
+        raise ValidationError("New listings start as Pending. A case manager approves them.")
+    profile = TherapistProfile(user_id=user_id)
     fields = {key: payload[key] for key in _LISTING_FIELDS if key in payload}
     try:
         profile_svc.apply_profile_fields(profile, fields, db)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else "Looks like we still need a few details before we can save this profile."
         raise ValidationError(detail) from exc
-    profile.status = status
-    profile.deleted_at = None
-    if status == TherapistProfileStatus.APPROVED:
-        profile.reviewed_at = datetime.now(timezone.utc)
-        profile_svc.capture_approved_snapshot(profile)
+    profile.status = TherapistProfileStatus.PENDING
     db.add(profile)
     db.flush()
     log_audit(
@@ -158,7 +153,7 @@ def create_profile(
         action="integration.profile_created",
         entity_type="therapist_profile",
         entity_id=profile.id,
-        new_value={"user_id": user_id, "status": status.value},
+        new_value={"user_id": user_id, "status": TherapistProfileStatus.PENDING.value},
         ip_address=ip_address,
         user_agent=user_agent,
     )

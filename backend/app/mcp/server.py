@@ -168,10 +168,10 @@ def build_mcp_server():
         description="Anonymised operational counts across granted cases (no names or identifiers).",
     )
 
-    def _list_goal_framework(ctx: Context | None = None) -> str:
+    def _list_goal_framework(page: int = 1, page_size: int = 25, ctx: Context | None = None) -> str:
         try:
             principal = _principal_from_ctx(ctx)
-            return json.dumps(facade.list_goal_framework(principal))
+            return json.dumps(facade.list_goal_framework(principal, page=page, page_size=page_size))
         except Exception as exc:
             return mcp_public_error(exc)
 
@@ -179,13 +179,17 @@ def build_mcp_server():
     server.add_tool(
         _list_goal_framework,
         name="list_goal_framework",
-        description="Goal and strategy identifiers for granted cases. Labels are short. No narratives.",
+        description=(
+            "Goal and strategy identifiers for granted cases, one page at a time. "
+            "Strategy rows use linked_goal_card_id (an IEP card), not goals[].goal_id. "
+            "Labels are short. No narratives."
+        ),
     )
 
-    def _list_iep_framework(ctx: Context | None = None) -> str:
+    def _list_iep_framework(page: int = 1, page_size: int = 25, ctx: Context | None = None) -> str:
         try:
             principal = _principal_from_ctx(ctx)
-            return json.dumps(facade.list_iep_framework(principal))
+            return json.dumps(facade.list_iep_framework(principal, page=page, page_size=page_size))
         except Exception as exc:
             return mcp_public_error(exc)
 
@@ -193,7 +197,7 @@ def build_mcp_server():
     server.add_tool(
         _list_iep_framework,
         name="list_iep_framework",
-        description="IEP framework identifiers and counts for granted cases. No plan text.",
+        description="IEP framework identifiers and counts for granted cases, one page at a time. No plan text.",
     )
 
     def _list_therapist_profiles(
@@ -258,9 +262,9 @@ def build_mcp_server():
         _create_therapist_profile,
         name="create_therapist_profile",
         description=(
-            "Create a website listing profile for an existing therapist user. "
-            "Default status is PENDING. Pass status APPROVED only when the listing should go live. "
-            "Certificates and services are comma-separated. Does not edit clinical notes."
+            "Create a Pending website listing for an existing therapist user. "
+            "Status is always Pending. A case manager approves it. "
+            "Certificates and services are comma-separated. Does not edit clinical notes or revive a deleted listing."
         ),
     )
 

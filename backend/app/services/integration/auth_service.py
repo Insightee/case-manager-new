@@ -84,6 +84,16 @@ def credential_expiry(client: IntegrationClient) -> datetime | None:
     return datetime.now(timezone.utc) + timedelta(days=int(days))
 
 
+def expiry_from_created(created_at: datetime | None, days: int) -> datetime | None:
+    """Key lifetime counted from credential creation, not from the latest settings save."""
+    if int(days) <= 0:
+        return None
+    if created_at is None:
+        return datetime.now(timezone.utc) + timedelta(days=int(days))
+    base = created_at if created_at.tzinfo is not None else created_at.replace(tzinfo=timezone.utc)
+    return base + timedelta(days=int(days))
+
+
 def create_access_token_for_credential(
     client: IntegrationClient,
     credential: IntegrationCredential,

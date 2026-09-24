@@ -242,14 +242,19 @@ def ops_summary_endpoint(
 @router.get("/v1/goals")
 def list_goals(
     request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1),
     principal: IntegrationPrincipal = Depends(get_integration_principal),
     db: Session = Depends(get_db),
 ):
     meta = get_request_meta(request)
     try:
+        page_size = min(page_size, settings.integration_max_page_size)
         result = framework_query.list_goal_framework(
             db,
             principal,
+            page=page,
+            page_size=page_size,
             ip_address=meta.get("ip_address"),
             user_agent=meta.get("user_agent"),
         )
@@ -263,14 +268,19 @@ def list_goals(
 @router.get("/v1/iep")
 def list_iep(
     request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1),
     principal: IntegrationPrincipal = Depends(get_integration_principal),
     db: Session = Depends(get_db),
 ):
     meta = get_request_meta(request)
     try:
+        page_size = min(page_size, settings.integration_max_page_size)
         result = framework_query.list_iep_framework(
             db,
             principal,
+            page=page,
+            page_size=page_size,
             ip_address=meta.get("ip_address"),
             user_agent=meta.get("user_agent"),
         )
