@@ -168,7 +168,13 @@ export function AdminIntegrationsPage() {
     setReveal(null)
     setGuidance('')
     setDraft(keyDraftFromClient(client))
-    setSheet({ mode: 'edit', id: client.id })
+    setSheet({ mode: 'edit', id: client.id, signals: client.recent_signals || [] })
+    apiFetch(`/api/v1/admin/integration-clients/${client.id}`)
+      .then((detail) => {
+        setDraft(keyDraftFromClient(detail))
+        setSheet({ mode: 'edit', id: client.id, signals: detail.recent_signals || [] })
+      })
+      .catch(() => {})
   }
 
   const patchDraft = (partial) => setDraft((current) => ({ ...current, ...partial }))
@@ -294,6 +300,26 @@ export function AdminIntegrationsPage() {
       setWebhookReveal({ signing_secret: saved.signing_secret, url: saved.url })
     } catch (err) {
       setWebhookGuidance(err.message || 'Looks like we still need a few details before we can save this webhook.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const rotateWebhook = async (hook) => {
+    setSaving(true)
+    setWebhookGuidance('')
+    try {
+      const saved = await apiFetch(`/api/v1/admin/integration-webhooks/${hook.id}/rotate-secret`, { method: 'POST' })
+      setWebhookDraft({
+        integrationClientId: String(hook.integration_client_id),
+        url: hook.url,
+        events: hook.events || [],
+        status: hook.status,
+      })
+      setWebhookReveal({ signing_secret: saved.signing_secret, url: saved.url })
+      setWebhookSheet(true)
+    } catch (err) {
+      setLoadError(err.message || 'We could not rotate that webhook secret just now.')
     } finally {
       setSaving(false)
     }
@@ -494,6 +520,9 @@ export function AdminIntegrationsPage() {
                 <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => toggleWebhook(hook)}>
                   {hook.status === 'active' ? 'Pause' : 'Resume'}
                 </button>
+                <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => rotateWebhook(hook)} disabled={saving}>
+                  Rotate secret
+                </button>
               </div>
             </article>
           ))}
@@ -642,6 +671,19 @@ export function AdminIntegrationsPage() {
                     ? previewScopes.map((scope) => <code key={scope}>{scope}</code>)
                     : <span className="integrations-note">Turn on access to see the scopes.</span>}
                 </div>
+                {sheet.signals?.length ? (
+                  <div className="integrations-field">
+                    <p className="integrations-section-label">Recent structured writes</p>
+                    <ul className="integrations-note">
+                      {sheet.signals.map((signal) => (
+                        <li key={signal.id}>
+                          {signal.domain} · {signal.signal_key}
+                          {signal.level ? ` · level ${signal.level}` : ''} · {signal.status.replaceAll('_', ' ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 {guidance ? <p className="integrations-guidance" style={{ marginTop: 12 }}>{guidance}</p> : null}
                 <div className="integrations-sheet__actions" style={{ marginTop: 16 }}>
                   <button type="button" className="admin-btn admin-btn--primary" onClick={saveKey} disabled={saving}>

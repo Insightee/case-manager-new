@@ -9,6 +9,7 @@ from app.api.v1 import (
     hr_ops,
     admin,
     admin_integration_clients,
+    admin_integration_webhooks,
     admin_support,
     assignment_acceptance,
     assignments,
@@ -54,6 +55,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
 api_router.include_router(integrations.router)
 api_router.include_router(admin_integration_clients.router)
+api_router.include_router(admin_integration_webhooks.router)
 api_router.include_router(notifications.router)
 api_router.include_router(meetings.router)
 api_router.include_router(meetings.compat_router)

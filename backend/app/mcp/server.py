@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.integration import facade
+from app.services.integration.access import require_mcp
 from app.services.integration.errors import IntegrationError
 
 logger = logging.getLogger("insightcase.mcp")
@@ -51,7 +52,9 @@ def _auth_header_from_ctx(ctx: Any) -> str | None:
 
 def _principal_from_ctx(ctx: Any):
     token = facade.bearer_from_authorization_header(_auth_header_from_ctx(ctx))
-    return facade.principal_from_bearer(token)
+    principal = facade.principal_from_bearer(token)
+    require_mcp(principal)
+    return principal
 
 
 def build_mcp_server():
@@ -162,6 +165,34 @@ def build_mcp_server():
         _get_anonymised_ops_summary,
         name="get_anonymised_ops_summary",
         description="Anonymised operational counts across granted cases (no names or identifiers).",
+    )
+
+    def _list_goal_framework(ctx: Context | None = None) -> str:
+        try:
+            principal = _principal_from_ctx(ctx)
+            return json.dumps(facade.list_goal_framework(principal))
+        except Exception as exc:
+            return mcp_public_error(exc)
+
+    _list_goal_framework.__globals__["Context"] = Context
+    server.add_tool(
+        _list_goal_framework,
+        name="list_goal_framework",
+        description="Goal and strategy identifiers for granted cases. Labels are short. No narratives.",
+    )
+
+    def _list_iep_framework(ctx: Context | None = None) -> str:
+        try:
+            principal = _principal_from_ctx(ctx)
+            return json.dumps(facade.list_iep_framework(principal))
+        except Exception as exc:
+            return mcp_public_error(exc)
+
+    _list_iep_framework.__globals__["Context"] = Context
+    server.add_tool(
+        _list_iep_framework,
+        name="list_iep_framework",
+        description="IEP framework identifiers and counts for granted cases. No plan text.",
     )
 
     @server.resource("insightcase://cases/{case_id}/summary")

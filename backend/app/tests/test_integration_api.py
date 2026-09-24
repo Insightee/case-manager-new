@@ -384,6 +384,120 @@ def test_mcp_http_initialize_and_tools(client):
     assert "list_authorised_reports" in names
 
 
+def test_permissions_token_life_webhook_and_signal(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    db = SessionLocal()
+    try:
+        case, report = _first_case_and_report(db)
+        case_id = case.id
+        report_id = report.id if report else None
+        report_status = report.status if report else None
+    finally:
+        db.close()
+
+    created = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "School agent",
+            "allow_read": True,
+            "allow_write": True,
+            "info_access": ["cases", "sessions", "reports", "goals", "iep", "reporting", "ops"],
+            "access_token_minutes": 60,
+            "key_ttl_days": 0,
+            "mcp_enabled": False,
+            "case_ids": [case_id],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["allow_write"] is True
+    assert "cases:write" in body["scopes"]
+    assert "reports:write" not in body["scopes"]
+    assert "goals:read" in body["scopes"]
+    assert "iep:read" in body["scopes"]
+    assert body["key_expires_at"] is None
+    assert body["mcp_enabled"] is False
+    assert set(body["info_access"]) == {
+        "cases",
+        "sessions",
+        "reports",
+        "goals",
+        "iep",
+        "reporting",
+        "ops",
+    }
+
+    tok = _token(client, body["client_id"], body["client_secret"])
+    assert tok.status_code == 200, tok.text
+    assert tok.json()["expires_in"] == 3600
+    headers = {"Authorization": f"Bearer {tok.json()['access_token']}"}
+
+    goals = client.get("/api/v1/integrations/v1/goals", headers=headers)
+    assert goals.status_code == 200, goals.text
+    assert "goals" in goals.json()
+    iep = client.get("/api/v1/integrations/v1/iep", headers=headers)
+    assert iep.status_code == 200, iep.text
+
+    signal = client.post(
+        "/api/v1/integrations/v1/signals",
+        headers=headers,
+        json={"case_id": case_id, "domain": "sessions", "signal_key": "progress_signal", "level": 3},
+    )
+    assert signal.status_code == 201, signal.text
+    assert signal.json()["status"] == "pending_review"
+
+    if report_id is not None:
+        db = SessionLocal()
+        try:
+            fresh = db.get(MonthlyReport, report_id)
+            assert fresh.status == report_status
+        finally:
+            db.close()
+
+    denied = client.post(
+        "/api/v1/integrations/v1/signals",
+        headers=headers,
+        json={"case_id": case_id, "domain": "reports", "signal_key": "complete", "level": 1},
+    )
+    assert denied.status_code == 422, denied.text
+    assert "Cases, Sessions, or Goals" in denied.text
+
+    bad_hook = client.post(
+        "/api/v1/admin/integration-webhooks",
+        headers=admin,
+        json={"integration_client_id": body["id"], "url": "http://example.com/hook", "events": ["session.logged"]},
+    )
+    assert bad_hook.status_code == 422
+
+    hook = client.post(
+        "/api/v1/admin/integration-webhooks",
+        headers=admin,
+        json={
+            "integration_client_id": body["id"],
+            "url": "https://partner.example/hooks/insightcase",
+            "events": ["session.logged", "incident.reported"],
+        },
+    )
+    assert hook.status_code == 201, hook.text
+    assert hook.json()["signing_secret"].startswith("whsec_")
+    listed = client.get("/api/v1/admin/integration-webhooks", headers=admin)
+    assert listed.status_code == 200
+    assert all("signing_secret" not in row for row in listed.json())
+
+    from app.services.integration.access import require_mcp
+    from app.services.integration.errors import ForbiddenError
+
+    class _Client:
+        mcp_enabled = False
+
+    class _Principal:
+        client = _Client()
+
+    with pytest.raises(ForbiddenError):
+        require_mcp(_Principal())
+
+
 def test_human_jwt_cannot_use_integration_routes(client):
     human = login_headers(client, "superadmin@demo.com")
     res = client.get("/api/v1/integrations/v1/cases", headers=human)

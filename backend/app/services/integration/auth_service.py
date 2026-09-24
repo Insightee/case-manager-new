@@ -20,6 +20,7 @@ from app.models.integration import (
     IntegrationCredential,
 )
 from app.services.integration.access import IntegrationPrincipal
+from app.services.integration.catalog import ACCESS_TOKEN_MINUTES
 from app.services.integration.errors import FeatureDisabledError, UnauthorizedError, ValidationError
 
 INTEGRATION_TOKEN_TYPE = "integration_access"
@@ -65,11 +66,29 @@ class IssuedCredential:
     client_secret: str
 
 
+def access_token_minutes_for_client(client: IntegrationClient) -> int:
+    minutes = int(getattr(client, "access_token_minutes", None) or settings.integration_access_token_minutes)
+    if minutes not in ACCESS_TOKEN_MINUTES:
+        minutes = int(settings.integration_access_token_minutes)
+        if minutes not in ACCESS_TOKEN_MINUTES:
+            minutes = 15
+    return minutes
+
+
+def credential_expiry(client: IntegrationClient) -> datetime | None:
+    days = getattr(client, "key_ttl_days", None)
+    if days is None:
+        days = settings.integration_credential_default_ttl_days
+    if int(days) <= 0:
+        return None
+    return datetime.now(timezone.utc) + timedelta(days=int(days))
+
+
 def create_access_token_for_credential(
     client: IntegrationClient,
     credential: IntegrationCredential,
 ) -> tuple[str, int]:
-    minutes = max(1, int(settings.integration_access_token_minutes))
+    minutes = access_token_minutes_for_client(client)
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     payload: dict[str, Any] = {
         "sub": str(client.id),
@@ -166,8 +185,7 @@ def issue_credential_for_client(
     public_id = generate_public_client_id()
     raw_secret = generate_client_secret()
     if expires_at is None:
-        days = max(1, int(settings.integration_credential_default_ttl_days))
-        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+        expires_at = credential_expiry(client)
     cred = IntegrationCredential(
         integration_client_id=client.id,
         public_client_id=public_id,

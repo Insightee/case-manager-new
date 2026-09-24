@@ -1,6 +1,6 @@
 # External integrations and remote MCP
 
-Read-only machine access to authorised InsighteCase data for partner apps and AI agents.
+Machine access to authorised InsighteCase data for partner apps and AI agents. Reads are masked. Writes are structured signals for review and never complete a report or replace therapist notes.
 
 ## Architecture
 
@@ -24,9 +24,9 @@ Restart the API after migration (`i1integr2api3layer` is applied by the normal p
 
 The FastAPI lifespan starts the MCP Streamable HTTP session manager; without `MCP_ENABLED=true` the `/mcp` route is not mounted.
 
-## Create a client (admin)
+## Create a client (super admin)
 
-As a user with `user.manage` (e.g. SUPER_ADMIN):
+From **Admin → Integrations**, or as a user with `admin.override`:
 
 ```http
 POST /api/v1/admin/integration-clients
@@ -81,6 +81,15 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 | `sessions:summarize` | Session aggregates for a granted case |
 | `reporting:pending` | Under-review / missing monthly items |
 | `ops:summary` | Anonymised counts only |
+| `cases:write` | Submit a structured case signal (`pending_review`) |
+| `sessions:write` | Submit a structured session signal (`pending_review`) |
+| `goals:read` | Goal and strategy identifiers for granted cases |
+| `goals:write` | Submit a structured goal signal (`pending_review`) |
+| `iep:read` | IEP framework identifiers and counts |
+
+Reports, IEP, pending reporting, and operations stay read-only. A write never sets a report to complete.
+
+Access token life is per key: 15 minutes, 1 hour, 8 hours, or 24 hours. API key validity is 30 days, 90 days, 1 year, or no expiry.
 
 ## MCP tools (read-only)
 
@@ -90,5 +99,7 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 - `get_session_summary`
 - `list_pending_reporting`
 - `get_anonymised_ops_summary`
+- `list_goal_framework`
+- `list_iep_framework`
 
-No write, approve, delete, or status-changing tools are exposed in this phase.
+MCP stays read-only even when the key has Write. Turn **Allow MCP** off on a key to refuse these tools. Webhooks are configured in the super admin Integrations screen and store a signing secret once.
