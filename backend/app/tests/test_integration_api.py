@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ from app.models.audit_event import AuditEvent
 from app.models.case import Case
 from app.models.integration import IntegrationCredential
 from app.models.report import MonthlyReport, ReportStatus
+from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+from app.models.user import User
 from app.services.integration.rate_limit import reset_memory_rate_limits_for_tests
 from app.tests.conftest import login_headers
 
@@ -288,7 +291,6 @@ def test_expired_credential_rejected(client):
     created = _create_integration_client(
         client, admin, scopes=["cases:read"], case_ids=[case_id]
     )
-    from datetime import datetime, timedelta, timezone
 
     db = SessionLocal()
     try:
@@ -338,6 +340,8 @@ def test_mcp_tools_registered():
     assert "get_session_summary" in names
     assert "list_pending_reporting" in names
     assert "get_anonymised_ops_summary" in names
+    assert "list_therapist_profiles" in names
+    assert "create_therapist_profile" in names
 
 
 def test_mcp_invalid_inputs_safe_error():
@@ -384,7 +388,399 @@ def test_mcp_http_initialize_and_tools(client):
     assert "list_authorised_reports" in names
 
 
+def test_permissions_token_life_webhook_and_signal(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    db = SessionLocal()
+    try:
+        case, report = _first_case_and_report(db)
+        case_id = case.id
+        report_id = report.id if report else None
+        report_status = report.status if report else None
+    finally:
+        db.close()
+
+    created = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "School agent",
+            "allow_read": True,
+            "allow_write": True,
+            "info_access": ["cases", "sessions", "reports", "goals", "iep", "reporting", "ops"],
+            "access_token_minutes": 60,
+            "key_ttl_days": 0,
+            "mcp_enabled": False,
+            "case_ids": [case_id],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["allow_write"] is True
+    assert "cases:write" in body["scopes"]
+    assert "reports:write" not in body["scopes"]
+    assert "goals:read" in body["scopes"]
+    assert "iep:read" in body["scopes"]
+    assert body["key_expires_at"] is None
+    assert body["mcp_enabled"] is False
+    assert set(body["info_access"]) == {
+        "cases",
+        "sessions",
+        "reports",
+        "goals",
+        "iep",
+        "reporting",
+        "ops",
+    }
+
+    tok = _token(client, body["client_id"], body["client_secret"])
+    assert tok.status_code == 200, tok.text
+    assert tok.json()["expires_in"] == 3600
+    headers = {"Authorization": f"Bearer {tok.json()['access_token']}"}
+
+    goals = client.get("/api/v1/integrations/v1/goals?page_size=1", headers=headers)
+    assert goals.status_code == 200, goals.text
+    goals_body = goals.json()
+    assert "items" in goals_body["goals"]
+    assert "total" in goals_body["goals"]
+    assert "items" in goals_body["strategies"]
+    assert goals_body["goals"]["page_size"] == 1
+    assert len(goals_body["goals"]["items"]) <= 1
+    for row in goals_body["goals"]["items"]:
+        assert "goal_id" in row
+        assert "label" in row
+    for row in goals_body["strategies"]["items"]:
+        assert "linked_goal_card_id" in row
+        assert "goal_id" not in row
+    iep = client.get("/api/v1/integrations/v1/iep", headers=headers)
+    assert iep.status_code == 200, iep.text
+    assert "items" in iep.json()["plans"]
+    assert "total" in iep.json()["plans"]
+
+    signal = client.post(
+        "/api/v1/integrations/v1/signals",
+        headers=headers,
+        json={"case_id": case_id, "domain": "sessions", "signal_key": "progress_signal", "level": 3},
+    )
+    assert signal.status_code == 201, signal.text
+    assert signal.json()["status"] == "pending_review"
+
+    if report_id is not None:
+        db = SessionLocal()
+        try:
+            fresh = db.get(MonthlyReport, report_id)
+            assert fresh.status == report_status
+        finally:
+            db.close()
+
+    denied = client.post(
+        "/api/v1/integrations/v1/signals",
+        headers=headers,
+        json={"case_id": case_id, "domain": "reports", "signal_key": "complete", "level": 1},
+    )
+    assert denied.status_code == 422, denied.text
+    assert "Cases, Sessions, or Goals" in denied.text
+
+    bad_hook = client.post(
+        "/api/v1/admin/integration-webhooks",
+        headers=admin,
+        json={"integration_client_id": body["id"], "url": "http://example.com/hook", "events": ["session.logged"]},
+    )
+    assert bad_hook.status_code == 422
+
+    hook = client.post(
+        "/api/v1/admin/integration-webhooks",
+        headers=admin,
+        json={
+            "integration_client_id": body["id"],
+            "url": "https://partner.example/hooks/insightcase",
+            "events": ["session.logged", "incident.reported"],
+        },
+    )
+    assert hook.status_code == 201, hook.text
+    assert hook.json()["signing_secret"].startswith("whsec_")
+    listed = client.get("/api/v1/admin/integration-webhooks", headers=admin)
+    assert listed.status_code == 200
+    assert all("signing_secret" not in row for row in listed.json())
+
+    from app.services.integration.access import require_mcp
+    from app.services.integration.errors import ForbiddenError
+
+    class _Client:
+        mcp_enabled = False
+
+    class _Principal:
+        client = _Client()
+
+    with pytest.raises(ForbiddenError):
+        require_mcp(_Principal())
+
+
 def test_human_jwt_cannot_use_integration_routes(client):
     human = login_headers(client, "superadmin@demo.com")
     res = client.get("/api/v1/integrations/v1/cases", headers=human)
     assert res.status_code == 401
+
+
+def test_integration_therapist_profile_list_and_create(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    db = SessionLocal()
+    try:
+        case, report = _first_case_and_report(db)
+        case_id = case.id
+        report_id = report.id if report else None
+        report_status = report.status if report else None
+        parent = db.scalars(select(User).where(User.email == "parent@demo.com")).first()
+        assert parent is not None
+        parent_id = parent.id
+    finally:
+        db.close()
+
+    created_user = client.post(
+        "/api/v1/admin/users",
+        headers=admin,
+        json={
+            "email": "website.profile.therapist@demo.com",
+            "password": "demo123",
+            "full_name": "Website Listing Therapist",
+            "role_names": ["THERAPIST"],
+            "module_assignments": ["homecare"],
+        },
+    )
+    assert created_user.status_code in (201, 400), created_user.text
+    if created_user.status_code == 201:
+        therapist_id = created_user.json()["id"]
+    else:
+        db = SessionLocal()
+        try:
+            row = db.scalars(select(User).where(User.email == "website.profile.therapist@demo.com")).first()
+            assert row is not None
+            therapist_id = row.id
+        finally:
+            db.close()
+
+    read_only = _create_integration_client(
+        client,
+        admin,
+        scopes=["cases:read"],
+        case_ids=[case_id],
+    )
+    denied_headers = {"Authorization": f"Bearer {_token(client, read_only['client_id'], read_only['client_secret']).json()['access_token']}"}
+    missing = client.get("/api/v1/integrations/v1/therapist-profiles", headers=denied_headers)
+    assert missing.status_code == 403, missing.text
+
+    website = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "Website profiles",
+            "allow_read": True,
+            "allow_write": True,
+            "info_access": ["profiles"],
+            "access_token_minutes": 60,
+            "key_ttl_days": 90,
+            "mcp_enabled": True,
+            "case_ids": [],
+        },
+    )
+    assert website.status_code == 201, website.text
+    body = website.json()
+    assert "profiles:read" in body["scopes"]
+    assert "profiles:write" in body["scopes"]
+    assert "reports:write" not in body["scopes"]
+    tok = _token(client, body["client_id"], body["client_secret"])
+    assert tok.status_code == 200, tok.text
+    headers = {"Authorization": f"Bearer {tok.json()['access_token']}"}
+
+    listed = client.get("/api/v1/integrations/v1/therapist-profiles", headers=headers)
+    assert listed.status_code == 200, listed.text
+    page = listed.json()
+    assert "items" in page
+    assert page["items"]
+    sample = page["items"][0]
+    assert "display_name" in sample
+    assert "email" not in sample
+    assert "tds_rate_percent" not in sample
+    assert "leave_balance_year" not in sample
+    assert "approved_snapshot" not in sample
+
+    not_therapist = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": parent_id, "display_name": "Parent"},
+    )
+    assert not_therapist.status_code == 422, not_therapist.text
+
+    created = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={
+            "user_id": therapist_id,
+            "display_name": "Website Listing Therapist",
+            "short_bio": "Supports participation at home.",
+            "services_offered": ["homecare"],
+            "professional_certificates": ["RCI"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    profile = created.json()
+    assert profile["status"] == "PENDING"
+    assert profile["user_id"] == therapist_id
+    assert profile["services_offered"] == ["homecare"]
+    assert "email" not in profile
+    assert "leave_paid_days_backfill" not in profile
+    assert "admin_note" not in profile
+
+    other_user = client.post(
+        "/api/v1/admin/users",
+        headers=admin,
+        json={
+            "email": "website.profile.other@demo.com",
+            "password": "demo123",
+            "full_name": "Website Other Therapist",
+            "role_names": ["THERAPIST"],
+            "module_assignments": ["homecare"],
+        },
+    )
+    assert other_user.status_code == 201, other_user.text
+    approved = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": other_user.json()["id"], "display_name": "Live now", "status": "APPROVED"},
+    )
+    assert approved.status_code == 422, approved.text
+    assert "Pending" in approved.text
+
+    duplicate = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": therapist_id, "display_name": "Again"},
+    )
+    assert duplicate.status_code == 422, duplicate.text
+    assert "already exists" in duplicate.text
+
+    deleted = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": therapist_id, "status": "DELETED"},
+    )
+    assert deleted.status_code == 422, deleted.text
+
+    db = SessionLocal()
+    try:
+        row = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == therapist_id)).one()
+        row.status = TherapistProfileStatus.DELETED
+        row.deleted_at = datetime.now(timezone.utc)
+        row.approved_snapshot = {"display_name": "Old listing"}
+        db.commit()
+        kept_id = row.id
+    finally:
+        db.close()
+
+    revived = client.post(
+        "/api/v1/integrations/v1/therapist-profiles",
+        headers=headers,
+        json={"user_id": therapist_id, "display_name": "Back online", "status": "PENDING"},
+    )
+    assert revived.status_code == 422, revived.text
+    assert "already exists" in revived.text
+
+    db = SessionLocal()
+    try:
+        row = db.get(TherapistProfile, kept_id)
+        assert row is not None
+        assert row.status == TherapistProfileStatus.DELETED
+        assert row.deleted_at is not None
+        assert row.approved_snapshot == {"display_name": "Old listing"}
+    finally:
+        db.close()
+
+    if report_id is not None:
+        db = SessionLocal()
+        try:
+            fresh = db.get(MonthlyReport, report_id)
+            assert fresh.status == report_status
+        finally:
+            db.close()
+
+
+def test_key_ttl_save_does_not_restart_or_revive(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    created = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "TTL clock",
+            "allow_read": True,
+            "allow_write": False,
+            "info_access": ["cases"],
+            "access_token_minutes": 15,
+            "key_ttl_days": 30,
+            "mcp_enabled": False,
+            "case_ids": [],
+        },
+    )
+    assert created.status_code == 201, created.text
+    client_id = created.json()["id"]
+
+    db = SessionLocal()
+    try:
+        cred = db.scalars(
+            select(IntegrationCredential).where(IntegrationCredential.integration_client_id == client_id)
+        ).one()
+        cred.created_at = datetime.now(timezone.utc) - timedelta(days=10)
+        cred.expires_at = cred.created_at + timedelta(days=30)
+        db.commit()
+        cred_id = cred.id
+        baseline = cred.expires_at
+    finally:
+        db.close()
+
+    same = client.patch(
+        f"/api/v1/admin/integration-clients/{client_id}",
+        headers=admin,
+        json={"name": "TTL clock renamed", "key_ttl_days": 30},
+    )
+    assert same.status_code == 200, same.text
+
+    db = SessionLocal()
+    try:
+        cred = db.get(IntegrationCredential, cred_id)
+        assert cred.expires_at == baseline
+        created_at = cred.created_at
+    finally:
+        db.close()
+
+    extended = client.patch(
+        f"/api/v1/admin/integration-clients/{client_id}",
+        headers=admin,
+        json={"key_ttl_days": 90},
+    )
+    assert extended.status_code == 200, extended.text
+
+    db = SessionLocal()
+    try:
+        cred = db.get(IntegrationCredential, cred_id)
+        expected = created_at + timedelta(days=90)
+        assert cred.expires_at == expected
+        cred.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+        expired_at = cred.expires_at
+        db.commit()
+    finally:
+        db.close()
+
+    revived = client.patch(
+        f"/api/v1/admin/integration-clients/{client_id}",
+        headers=admin,
+        json={"key_ttl_days": 365},
+    )
+    assert revived.status_code == 200, revived.text
+
+    db = SessionLocal()
+    try:
+        cred = db.get(IntegrationCredential, cred_id)
+        stored = cred.expires_at.replace(tzinfo=None) if cred.expires_at and cred.expires_at.tzinfo else cred.expires_at
+        expected = expired_at.replace(tzinfo=None) if expired_at.tzinfo else expired_at
+        assert stored == expected
+        assert cred.is_usable is False
+    finally:
+        db.close()

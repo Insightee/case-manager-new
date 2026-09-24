@@ -27,6 +27,11 @@ def require_scope(principal: IntegrationPrincipal, scope: str) -> None:
         raise ForbiddenError(f"Missing required scope: {scope}")
 
 
+def require_mcp(principal: IntegrationPrincipal) -> None:
+    if not bool(getattr(principal.client, "mcp_enabled", True)):
+        raise ForbiddenError("MCP is turned off for this key.")
+
+
 def granted_case_ids(db: Session, principal: IntegrationPrincipal) -> set[int]:
     rows = db.scalars(
         select(IntegrationCaseGrant.case_id).where(

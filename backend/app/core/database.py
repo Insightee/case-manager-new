@@ -566,6 +566,9 @@ def ensure_sqlite_schema_patches() -> None:
                         status VARCHAR(32) NOT NULL DEFAULT 'active',
                         scopes_json JSON NOT NULL,
                         rate_limit_per_minute INTEGER NOT NULL DEFAULT 60,
+                        access_token_minutes INTEGER NOT NULL DEFAULT 15,
+                        key_ttl_days INTEGER NOT NULL DEFAULT 365,
+                        mcp_enabled BOOLEAN NOT NULL DEFAULT 1,
                         created_by_user_id INTEGER REFERENCES users(id),
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -601,6 +604,73 @@ def ensure_sqlite_schema_patches() -> None:
                     """
                 )
             )
+
+    insp.clear_cache()
+    fresh_integration = insp
+    if fresh_integration.has_table("integration_clients"):
+        client_cols = {c["name"] for c in fresh_integration.get_columns("integration_clients")}
+        with engine.begin() as conn:
+            if "access_token_minutes" not in client_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE integration_clients ADD COLUMN access_token_minutes INTEGER NOT NULL DEFAULT 15"
+                    )
+                )
+            if "key_ttl_days" not in client_cols:
+                conn.execute(text("ALTER TABLE integration_clients ADD COLUMN key_ttl_days INTEGER NOT NULL DEFAULT 365"))
+            if "mcp_enabled" not in client_cols:
+                conn.execute(text("ALTER TABLE integration_clients ADD COLUMN mcp_enabled BOOLEAN NOT NULL DEFAULT 1"))
+        if not fresh_integration.has_table("integration_webhooks"):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE integration_webhooks (
+                            id INTEGER PRIMARY KEY,
+                            integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                            url VARCHAR(512) NOT NULL,
+                            secret_hash VARCHAR(255) NOT NULL,
+                            events_json JSON NOT NULL,
+                            status VARCHAR(32) NOT NULL DEFAULT 'active',
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_integration_webhooks_client "
+                        "ON integration_webhooks (integration_client_id)"
+                    )
+                )
+        if not fresh_integration.has_table("integration_signals"):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE integration_signals (
+                            id INTEGER PRIMARY KEY,
+                            integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                            case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                            domain VARCHAR(32) NOT NULL,
+                            signal_key VARCHAR(64) NOT NULL,
+                            level INTEGER,
+                            status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_integration_signals_client "
+                        "ON integration_signals (integration_client_id)"
+                    )
+                )
+                conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_integration_signals_case ON integration_signals (case_id)")
+                )
 
     _sqlite_portal_indexes(conn_ctx=engine)
 

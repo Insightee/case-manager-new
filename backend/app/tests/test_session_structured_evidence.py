@@ -113,8 +113,8 @@ def _seed_iep(db, case_id: int, author_id: int) -> IepPlan:
 def test_alembic_single_head_is_goal_repository_repair():
     cfg = Config(str(_BACKEND / "alembic.ini"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    # Current tip: staff attendance + staff leave.
-    assert heads == ["st1ff4tt3nd1"]
+    # Current tip: integration key permissions, webhooks, and signals.
+    assert heads == ["bb6328f4ca05"]
 
 
 def test_structured_evidence_revision_upgrade_and_downgrade(tmp_path):

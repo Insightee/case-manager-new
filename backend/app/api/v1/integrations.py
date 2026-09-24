@@ -1,4 +1,4 @@
-"""External read-only integration API (machine principals)."""
+"""External integration API (machine principals). Writes are structured signals only."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -7,8 +7,22 @@ from sqlalchemy.orm import Session
 from app.api.deps_integration import get_integration_principal, get_request_meta, raise_integration_http
 from app.core.config import settings
 from app.core.database import get_db
-from app.schemas.integration import IntegrationTokenRequest, IntegrationTokenResponse
-from app.services.integration import auth_service, case_query, ops_summary, report_query, session_summary
+from app.schemas.integration import (
+    IntegrationSignalCreate,
+    IntegrationTherapistProfileCreate,
+    IntegrationTokenRequest,
+    IntegrationTokenResponse,
+)
+from app.services.integration import (
+    auth_service,
+    case_query,
+    framework_query,
+    ops_summary,
+    profile_directory,
+    report_query,
+    session_summary,
+    signal_inbox,
+)
 from app.services.integration.access import IntegrationPrincipal
 from app.services.integration.errors import IntegrationError, ValidationError
 
@@ -220,6 +234,144 @@ def ops_summary_endpoint(
         )
         db.commit()
         return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/goals")
+def list_goals(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1),
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        page_size = min(page_size, settings.integration_max_page_size)
+        result = framework_query.list_goal_framework(
+            db,
+            principal,
+            page=page,
+            page_size=page_size,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/iep")
+def list_iep(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1),
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        page_size = min(page_size, settings.integration_max_page_size)
+        result = framework_query.list_iep_framework(
+            db,
+            principal,
+            page=page,
+            page_size=page_size,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/therapist-profiles")
+def list_therapist_profiles(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1),
+    status: str | None = None,
+    q: str | None = None,
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        page_size = min(page_size, settings.integration_max_page_size)
+        result = profile_directory.list_profiles(
+            db,
+            principal,
+            page=page,
+            page_size=page_size,
+            status=status,
+            q=q,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.post("/v1/therapist-profiles", status_code=201)
+def create_therapist_profile(
+    payload: IntegrationTherapistProfileCreate,
+    request: Request,
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        result = profile_directory.create_profile(
+            db,
+            principal,
+            payload.model_dump(exclude_unset=True),
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.post("/v1/signals", status_code=201)
+def submit_signal(
+    payload: IntegrationSignalCreate,
+    request: Request,
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        row = signal_inbox.submit_signal(
+            db,
+            principal,
+            case_id=payload.case_id,
+            domain=payload.domain,
+            signal_key=payload.signal_key,
+            level=payload.level,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return {
+            "id": row.id,
+            "case_id": row.case_id,
+            "domain": row.domain,
+            "signal_key": row.signal_key,
+            "level": row.level,
+            "status": row.status,
+        }
     except IntegrationError as exc:
         db.rollback()
         raise_integration_http(exc)

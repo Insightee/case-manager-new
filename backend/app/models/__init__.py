@@ -114,6 +114,9 @@ from app.models.integration import (
     IntegrationClient,
     IntegrationClientStatus,
     IntegrationCredential,
+    IntegrationSignal,
+    IntegrationWebhook,
+    IntegrationWebhookStatus,
 )
 from app.models.user import EmploymentStatus, InviteToken, User
 
@@ -240,5 +243,8 @@ __all__ = [
     "IntegrationClientStatus",
     "IntegrationCredential",
     "IntegrationCaseGrant",
+    "IntegrationWebhook",
+    "IntegrationWebhookStatus",
+    "IntegrationSignal",
     "INTEGRATION_SCOPES",
 ]

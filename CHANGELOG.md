@@ -1,6 +1,8 @@
 ## [Unreleased]
 
 ### Added
+- Integration keys can list and create therapist website profiles (`profiles:read` / `profiles:write`) from `GET/POST /api/v1/integrations/v1/therapist-profiles` and MCP tools `list_therapist_profiles` / `create_therapist_profile`. Listing fields only; create status is always `PENDING`.
+- Super admin **Integrations** screen: API keys, webhooks, and MCP, with read/write, token life, key validity, and seven information-access toggles. Writes land as structured `pending_review` signals and cannot complete a report. Alembic `st1ff4tt3nd1` → `bb6328f4ca05`.
 - Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
 - Support & Incidents History KPI cards are clickable filters (tickets / incidents / needs attention / clear). Canonical status helpers (`support_status.py` / `supportStatus.js`) collapse ticket+incident statuses to open / in_progress / closed / escalated without a DB enum migration.
 - Expandable Description cells on People & HR report previews (parent support tickets + incident reports).
@@ -15,6 +17,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Integration profile create stays `PENDING`, refuses an existing row including a soft-deleted listing, and omits login email. Saving a key no longer restarts or revives credential expiry. Goal and IEP reads are paged; strategy rows use `linked_goal_card_id`.
 - Production CORS / frontend guards treat **only** `insightes-projects/frontend` as the Vercel UI (`frontend*.vercel.app` + `insighte.org`). Retired `insightecasestaging` / `insightecasetesting` hosts no longer match the default regex and fail Railway startup if listed in `CORS_ORIGINS` or `FRONTEND_URL`.
 - CM meeting booking: slot picker and validation use the **case manager host calendar** only (therapist/parent availability no longer hides CM open times); conflict checks still apply to all attendees.
 - Scheduling: unified staff availability across CM meetings, therapist meeting requests, parent slot booking, and session materialization; `SCHEDULING_WEEKENDS_ENABLED` org default for Sat/Sun; therapists manage hours on `/therapist/meetings?availability=1` with sync to weekly schedule template.

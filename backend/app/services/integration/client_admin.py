@@ -1,4 +1,4 @@
-"""Admin lifecycle for integration clients (human JWT + user.manage)."""
+"""Admin lifecycle for integration clients (human JWT + admin.override)."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -16,13 +16,37 @@ from app.models.integration import (
     IntegrationCredential,
 )
 from app.models.user import User
+from app.models.integration import IntegrationSignal
 from app.services.integration.auth_service import (
+    expiry_from_created,
     issue_credential_for_client,
     normalize_scopes,
     revoke_client,
     revoke_credential,
 )
+from app.services.integration.catalog import (
+    build_scopes,
+    describe_scopes,
+    normalize_access_token_minutes,
+    normalize_key_ttl_days,
+)
 from app.services.integration.errors import NotFoundError, ValidationError
+
+
+def _resolved_scopes(
+    *,
+    scopes: list[str] | None,
+    info_access: list[str] | None,
+    allow_read: bool | None,
+    allow_write: bool | None,
+) -> list[str]:
+    if info_access is not None:
+        return build_scopes(
+            allow_read=True if allow_read is None else allow_read,
+            allow_write=False if allow_write is None else allow_write,
+            info_access=info_access,
+        )
+    return normalize_scopes(scopes)
 
 
 def create_client(
@@ -30,24 +54,46 @@ def create_client(
     *,
     actor: User,
     name: str,
-    scopes: list[str],
+    scopes: list[str] | None = None,
+    info_access: list[str] | None = None,
+    allow_read: bool | None = None,
+    allow_write: bool | None = None,
     case_ids: list[int] | None = None,
     rate_limit_per_minute: int | None = None,
+    access_token_minutes: int | None = None,
+    key_ttl_days: int | None = None,
+    mcp_enabled: bool | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> tuple[IntegrationClient, str, str]:
     name = (name or "").strip()
     if not name or len(name) > 128:
-        raise ValidationError("Client name is required (max 128 characters).")
-    cleaned_scopes = normalize_scopes(scopes)
+        raise ValidationError("Add a name so you can tell this key apart later.")
+    cleaned_scopes = _resolved_scopes(
+        scopes=scopes,
+        info_access=info_access,
+        allow_read=allow_read,
+        allow_write=allow_write,
+    )
     limit = rate_limit_per_minute or settings.integration_default_rate_limit_per_minute
     if limit < 1 or limit > 1000:
         raise ValidationError("rate_limit_per_minute must be between 1 and 1000.")
+    token_minutes = normalize_access_token_minutes(
+        access_token_minutes,
+        fallback=int(settings.integration_access_token_minutes),
+    )
+    ttl_days = normalize_key_ttl_days(
+        key_ttl_days,
+        fallback=int(settings.integration_credential_default_ttl_days),
+    )
     client = IntegrationClient(
         name=name,
         status=IntegrationClientStatus.ACTIVE.value,
         scopes_json=cleaned_scopes,
         rate_limit_per_minute=limit,
+        access_token_minutes=token_minutes,
+        key_ttl_days=ttl_days,
+        mcp_enabled=True if mcp_enabled is None else bool(mcp_enabled),
         created_by_user_id=actor.id,
     )
     db.add(client)
@@ -96,19 +142,58 @@ def update_client(
     client_id: int,
     name: str | None = None,
     scopes: list[str] | None = None,
+    info_access: list[str] | None = None,
+    allow_read: bool | None = None,
+    allow_write: bool | None = None,
     case_ids: list[int] | None = None,
     rate_limit_per_minute: int | None = None,
+    access_token_minutes: int | None = None,
+    key_ttl_days: int | None = None,
+    mcp_enabled: bool | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> IntegrationClient:
     client = get_client(db, client_id)
+    if not client.is_active:
+        raise ValidationError("This key is revoked. Generate a new one to change access.")
     if name is not None:
         name = name.strip()
         if not name or len(name) > 128:
-            raise ValidationError("Client name is required (max 128 characters).")
+            raise ValidationError("Add a name so you can tell this key apart later.")
         client.name = name
-    if scopes is not None:
+    if info_access is not None or allow_read is not None or allow_write is not None:
+        current = describe_scopes(client.scopes)
+        client.scopes_json = build_scopes(
+            allow_read=current["allow_read"] if allow_read is None else allow_read,
+            allow_write=current["allow_write"] if allow_write is None else allow_write,
+            info_access=current["info_access"] if info_access is None else info_access,
+        )
+    elif scopes is not None:
         client.scopes_json = normalize_scopes(scopes)
+    if access_token_minutes is not None:
+        client.access_token_minutes = normalize_access_token_minutes(
+            access_token_minutes,
+            fallback=client.access_token_minutes,
+        )
+    if key_ttl_days is not None:
+        previous_ttl = int(client.key_ttl_days) if client.key_ttl_days is not None else None
+        fallback_ttl = previous_ttl if previous_ttl is not None else 365
+        new_ttl = normalize_key_ttl_days(key_ttl_days, fallback=fallback_ttl)
+        client.key_ttl_days = new_ttl
+        if previous_ttl != new_ttl:
+            now = datetime.now(timezone.utc)
+            for cred in list(client.credentials or []):
+                if cred.revoked_at is not None:
+                    continue
+                current_expiry = cred.expires_at
+                if current_expiry is not None:
+                    if current_expiry.tzinfo is None:
+                        current_expiry = current_expiry.replace(tzinfo=timezone.utc)
+                    if current_expiry <= now:
+                        continue
+                cred.expires_at = expiry_from_created(cred.created_at, new_ttl)
+    if mcp_enabled is not None:
+        client.mcp_enabled = bool(mcp_enabled)
     if rate_limit_per_minute is not None:
         if rate_limit_per_minute < 1 or rate_limit_per_minute > 1000:
             raise ValidationError("rate_limit_per_minute must be between 1 and 1000.")
@@ -202,16 +287,55 @@ def _replace_case_grants(db: Session, client: IntegrationClient, case_ids: list[
     db.flush()
 
 
-def client_to_admin_dict(client: IntegrationClient) -> dict:
+def _active_credential(client: IntegrationClient) -> IntegrationCredential | None:
+    usable = [cred for cred in (client.credentials or []) if cred.revoked_at is None]
+    if not usable:
+        return None
+    return max(usable, key=lambda cred: cred.id)
+
+
+def recent_signals(db: Session, client_id: int, *, limit: int = 8) -> list[dict]:
+    rows = db.scalars(
+        select(IntegrationSignal)
+        .where(IntegrationSignal.integration_client_id == client_id)
+        .order_by(IntegrationSignal.id.desc())
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "id": row.id,
+            "case_id": row.case_id,
+            "domain": row.domain,
+            "signal_key": row.signal_key,
+            "level": row.level,
+            "status": row.status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
+def client_to_admin_dict(client: IntegrationClient, *, signals: list[dict] | None = None) -> dict:
     active_creds = [c for c in (client.credentials or []) if c.revoked_at is None]
+    current = _active_credential(client)
+    described = describe_scopes(client.scopes)
     return {
         "id": client.id,
         "name": client.name,
         "status": client.status,
         "scopes": client.scopes,
+        "allow_read": described["allow_read"],
+        "allow_write": described["allow_write"],
+        "info_access": described["info_access"],
+        "access_token_minutes": int(client.access_token_minutes or 15),
+        "key_ttl_days": int(client.key_ttl_days if client.key_ttl_days is not None else 365),
+        "mcp_enabled": bool(client.mcp_enabled),
+        "public_client_id": current.public_client_id if current else None,
+        "key_expires_at": current.expires_at.isoformat() if current and current.expires_at else None,
         "rate_limit_per_minute": client.rate_limit_per_minute,
         "case_ids": sorted(g.case_id for g in (client.case_grants or [])),
         "active_credential_count": len(active_creds),
+        "recent_signals": signals or [],
         "created_at": client.created_at.isoformat() if client.created_at else None,
         "updated_at": client.updated_at.isoformat() if client.updated_at else None,
     }
