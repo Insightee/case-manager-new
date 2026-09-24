@@ -99,6 +99,7 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/hr-reports', label: 'Reports', perm: null, feature: 'hr_reports', icon: 'reports', section: 'People & HR' },
     { to: '/admin/hr-cases', label: 'HR case view', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'People & HR' },
     { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings', section: 'Settings' },
+    { to: '/admin/integrations', label: 'Integrations', perm: null, feature: null, icon: 'plug', section: 'Settings' },
     { to: '/admin/platform-stats', label: 'Platform stats', perm: null, feature: null, icon: 'grid', section: 'Settings' },
   ]
 }
@@ -234,7 +235,7 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOn
   if (item.to === '/admin/hr-reports') {
     return hasFeature('hr_reports') || can('hr_report.export') || can('user.manage')
   }
-  if (item.to === '/admin/platform-stats') {
+  if (item.to === '/admin/platform-stats' || item.to === '/admin/integrations') {
     return can('admin.override')
   }
   if (item.to === '/admin/attendance') {

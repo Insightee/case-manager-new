@@ -104,6 +104,11 @@ const ICONS = {
       <rect x="6" y="6" width="8" height="8" rx="1" {...STROKE} />
     </Svg>
   ),
+  plug: (
+    <Svg>
+      <path d="M8 3v4M12 3v4M6 7h8v3a4 4 0 01-8 0V7zM10 14v3" {...STROKE} />
+    </Svg>
+  ),
 }
 
 export function NavIcon({ name, className = 'app-sidebar__link-icon' }) {
