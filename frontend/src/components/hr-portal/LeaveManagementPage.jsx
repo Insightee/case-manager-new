@@ -156,7 +156,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     setError('')
     try {
       const data = await apiFetch(
-        `/api/v1/leave/report?year=${reportYear}&granularity=${reportGranularity}`,
+        `/api/v1/leave/period-export?year=${reportYear}&granularity=${reportGranularity}`,
       )
       setReportRows(data.rows || [])
     } catch (err) {
@@ -302,7 +302,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   async function exportCsv() {
     try {
       await apiDownload(
-        `/api/v1/leave/report?year=${reportYear}&granularity=${reportGranularity}&format=csv`,
+        `/api/v1/leave/period-export?year=${reportYear}&granularity=${reportGranularity}&format=csv`,
         `leave-report-${reportYear}.csv`,
       )
     } catch (err) {

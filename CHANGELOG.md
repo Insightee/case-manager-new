@@ -17,6 +17,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Leave management report tab and CSV export now call `GET /api/v1/leave/period-export` instead of `/leave/report` so browser ad blockers do not silently block the request. Legacy `/leave/report` remains for API clients.
 - Integration profile create stays `PENDING`, refuses an existing row including a soft-deleted listing, and omits login email. Saving a key no longer restarts or revives credential expiry. Goal and IEP reads are paged; strategy rows use `linked_goal_card_id`.
 - Production CORS / frontend guards treat **only** `insightes-projects/frontend` as the Vercel UI (`frontend*.vercel.app` + `insighte.org`). Retired `insightecasestaging` / `insightecasetesting` hosts no longer match the default regex and fail Railway startup if listed in `CORS_ORIGINS` or `FRONTEND_URL`.
 - CM meeting booking: slot picker and validation use the **case manager host calendar** only (therapist/parent availability no longer hides CM open times); conflict checks still apply to all attendees.

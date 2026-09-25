@@ -160,7 +160,7 @@ def test_finance_leave_lists_approved_only():
     )
     assert patch.status_code == 403
 
-    report = client.get("/api/v1/leave/report?year=2026", headers=headers)
+    report = client.get("/api/v1/leave/period-export?year=2026", headers=headers)
     assert report.status_code == 403
 
     absences = client.get("/api/v1/leave/child-absence", headers=headers)

@@ -308,8 +308,39 @@ def leave_summary(
     return summary
 
 
-@router.get("/report")
-def leave_report(
+def _leave_period_export(
+    db: Session,
+    *,
+    year: int,
+    granularity: str,
+    export_format: Optional[str],
+) -> Response | dict:
+    rows = leave_service.build_report(db, year=year, granularity=granularity)
+    balance_cache: dict[int, dict] = {}
+    for row in rows:
+        tid = row.get("therapist_user_id")
+        if not tid:
+            continue
+        if tid not in balance_cache:
+            t = db.get(User, tid)
+            balance_cache[tid] = (
+                policy.get_leave_balance(db, t, year=year) if t else {}
+            )
+        bal = balance_cache[tid]
+        row["paid_remaining"] = bal.get("leave_credit_pending")
+        row["backfill_paid_used"] = bal.get("paid_leaves_taken")
+    if export_format == "csv":
+        csv_text = leave_service.report_to_csv(rows)
+        return Response(
+            content=csv_text,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="leave-report-{year}.csv"'},
+        )
+    return {"year": year, "granularity": granularity, "rows": rows}
+
+
+@router.get("/period-export")
+def leave_period_export(
     year: int = Query(..., ge=2000, le=2100),
     granularity: str = Query("monthly", pattern="^(monthly|yearly)$"),
     format: Optional[str] = Query(None, alias="format"),
@@ -318,23 +349,21 @@ def leave_report(
 ):
     if not user_has_permission(user, "leave.manage"):
         raise HTTPException(status_code=403, detail="leave.manage permission required")
-    rows = leave_service.build_report(db, year=year, granularity=granularity)
-    for row in rows:
-        tid = row.get("therapist_user_id")
-        if tid:
-            t = db.get(User, tid)
-            if t:
-                bal = policy.get_leave_balance(db, t, year=year)
-                row["paid_remaining"] = bal["leave_credit_pending"]
-                row["backfill_paid_used"] = bal["paid_leaves_taken"]
-    if format == "csv":
-        csv_text = leave_service.report_to_csv(rows)
-        return Response(
-            content=csv_text,
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="leave-report-{year}.csv"'},
-        )
-    return {"year": year, "granularity": granularity, "rows": rows}
+    return _leave_period_export(db, year=year, granularity=granularity, export_format=format)
+
+
+@router.get("/report", deprecated=True)
+def leave_report_legacy(
+    year: int = Query(..., ge=2000, le=2100),
+    granularity: str = Query("monthly", pattern="^(monthly|yearly)$"),
+    format: Optional[str] = Query(None, alias="format"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Legacy path kept for API clients; browsers may block `/report` (ad blockers)."""
+    if not user_has_permission(user, "leave.manage"):
+        raise HTTPException(status_code=403, detail="leave.manage permission required")
+    return _leave_period_export(db, year=year, granularity=granularity, export_format=format)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
