@@ -581,3 +581,48 @@ def log_to_read(
         elif status == "REJECTED":
             data["status_label"] = "Second session same day — rejected"
     return data
+
+
+def delete_log_for_absence_replacement(
+    db: Session,
+    log: DailyLog,
+    therapist_user_id: int,
+) -> None:
+    """Remove an unsubmitted/rejected log so the visit can be voided and child absence filed."""
+    session = log.session or db.get(TherapySession, log.session_id)
+    if not session or session.therapist_user_id != therapist_user_id:
+        raise ValueError("Access denied")
+    status = log.approval_status
+    if isinstance(status, str):
+        try:
+            status = LogApprovalStatus(status)
+        except ValueError:
+            pass
+    if status == LogApprovalStatus.APPROVED:
+        raise ValueError(
+            "This session log was already approved — contact your case manager if you need a correction."
+        )
+    if status not in (LogApprovalStatus.PENDING, LogApprovalStatus.REJECTED):
+        raise ValueError("This session log cannot be removed this way")
+
+    from app.models.ledger_billing import BillableStatus, BillingLedger
+
+    has_invoiced = db.scalars(
+        select(BillingLedger).where(
+            BillingLedger.session_id == session.id,
+            BillingLedger.billable_status == BillableStatus.INVOICED,
+        )
+    ).first()
+    if has_invoiced:
+        raise ValueError("Billing records exist for this session — contact your case manager")
+
+    db.execute(delete(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == log.id))
+    db.execute(delete(StrategyUseEvent).where(StrategyUseEvent.daily_log_id == log.id))
+    db.execute(
+        delete(DocumentComment).where(
+            DocumentComment.entity_type == DocumentEntityType.DAILY_LOG,
+            DocumentComment.entity_id == log.id,
+        )
+    )
+    db.delete(log)
+    db.flush()

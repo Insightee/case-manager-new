@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -15,10 +15,21 @@ from app.schemas.session_absence import (
     SessionAbsenceRead,
     SessionAbsenceReview,
     SessionAbsenceStatusResponse,
+    TodayAbsenceSessionsResponse,
 )
 from app.services import session_absence_service as absence_svc
 
 router = APIRouter(prefix="/sessions", tags=["session-absence"])
+
+
+@router.get("/absence/today-sessions", response_model=TodayAbsenceSessionsResponse)
+def list_today_sessions_for_absence(
+    case_id: int = Query(..., ge=1),
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    items = absence_svc.list_today_sessions_for_absence(db, user, case_id)
+    return {"items": items}
 
 
 @router.post("/child-absence/backfill", response_model=SessionAbsenceRead, status_code=201)
@@ -72,6 +83,7 @@ def create_session_absence(
             reason=payload.reason,
             notes=payload.notes,
             leave_billing_category=payload.leave_billing_category,
+            confirm_replace_log=payload.confirm_replace_log,
         )
     except HTTPException:
         raise

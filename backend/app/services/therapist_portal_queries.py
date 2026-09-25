@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from app.core.timezone import today_ist
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -155,7 +156,7 @@ def fetch_upcoming_sessions(
 ) -> list[TherapySession]:
     if not case_ids:
         return []
-    today = date.today()
+    today = today_ist()
     end = today + timedelta(days=days)
     blocked = absence_blocked_session_ids(db, user, case_ids)
     stmt = (
@@ -230,7 +231,7 @@ def upcoming_count_by_case(
 ) -> dict[int, int]:
     if not case_ids:
         return {}
-    today = date.today()
+    today = today_ist()
     end = today + timedelta(days=days)
     blocked = absence_blocked_session_ids(db, user, case_ids)
     stmt = (
@@ -248,6 +249,32 @@ def upcoming_count_by_case(
         stmt = stmt.where(TherapySession.id.not_in(blocked))
     rows = db.execute(stmt).all()
     return {int(cid): int(cnt) for cid, cnt in rows}
+
+
+def fetch_today_sessions_for_absence(
+    db: Session,
+    user: User,
+    case_id: int,
+) -> list[TherapySession]:
+    """Today's visits for a case — used by the child-absence composer (same IST calendar day)."""
+    today = today_ist()
+    stmt = (
+        select(TherapySession)
+        .where(
+            TherapySession.therapist_user_id == user.id,
+            TherapySession.case_id == case_id,
+            TherapySession.scheduled_date == today,
+            TherapySession.status.not_in(
+                (SessionStatus.CLIENT_ABSENT, SessionStatus.THERAPIST_LEAVE),
+            ),
+        )
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
+        )
+        .order_by(TherapySession.start_time.asc(), TherapySession.id.asc())
+    )
+    return list(db.scalars(stmt).all())
 
 
 def fetch_home_reports(
