@@ -9,6 +9,7 @@ import {
   fetchMyStaffLeaves,
   fetchStaffLeaveBalance,
 } from '../../lib/staffAttendanceApi.js'
+import { StaffAttendanceHistory } from './StaffAttendanceHistory.jsx'
 import { StaffTimerPanel } from './StaffTimerPanel.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, StatusBadge } from './ui/index.js'
 import './staff-attendance.css'
@@ -79,38 +80,7 @@ export function SpotAttendancePage() {
         </p>
       ) : null}
 
-      <AdminPanel title="Session history" padded={false}>
-        {loading ? (
-          <p className="admin-muted" style={{ padding: '1rem' }}>
-            Loading…
-          </p>
-        ) : rows.length === 0 ? (
-          <AdminEmptyState title="No sessions yet" description="Clock in from your dashboard to start tracking." />
-        ) : (
-          <div className="staff-attendance-table-wrap">
-            <table className="staff-attendance-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th>Working time</th>
-                  <th>Summary</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{formatDateIN(`${row.work_date}T12:00:00Z`) || row.work_date}</td>
-                    <td>{row.status?.replace(/_/g, ' ') || '—'}</td>
-                    <td>{row.total_work_seconds ? `${Math.floor(row.total_work_seconds / 3600)}h ${Math.floor((row.total_work_seconds % 3600) / 60)}m` : '—'}</td>
-                    <td>{row.work_summary || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </AdminPanel>
+      <StaffAttendanceHistory rows={rows} loading={loading} />
 
       <AdminPanel title="Your leave" style={{ marginTop: 16 }}>
         {leaves.length === 0 ? (

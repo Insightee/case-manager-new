@@ -87,22 +87,22 @@ def clock_in(
 def pause(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    meta: dict = Depends(get_request_meta),
 ):
-    row = attendance_svc.pause(db, user, meta)
-    db.commit()
-    return attendance_svc.serialize_attendance(row, db)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Breaks are no longer tracked. Clock out when you finish, and clock in again when you return.",
+    )
 
 
 @router.post("/resume")
 def resume(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    meta: dict = Depends(get_request_meta),
 ):
-    row = attendance_svc.resume(db, user, meta)
-    db.commit()
-    return attendance_svc.serialize_attendance(row, db)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Breaks are no longer tracked. Clock out when you finish, and clock in again when you return.",
+    )
 
 
 @router.put("/work-summary")
@@ -134,27 +134,12 @@ def forgot_log(
     body: ForgotLogCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    meta: dict = Depends(get_request_meta),
 ):
-    from app.core.permissions import RoleName
-
-    if RoleName.SPOT.value in (user.role_names or []):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forgot-to-log is not available for SPOT accounts. Contact HR if you need a correction.",
-        )
-    row = attendance_svc.create_forgot_log(
-        db,
-        user,
-        work_date=body.work_date,
-        start_at=body.start_at,
-        end_at=body.end_at,
-        work_summary=body.work_summary,
-        reason=body.reason,
-        meta=meta,
+    del body  # retained for OpenAPI schema compatibility
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Forgot-to-log is not available for staff. Contact HR if you need a correction.",
     )
-    db.commit()
-    return attendance_svc.serialize_attendance(row, db)
 
 
 @router.get("/me")
@@ -211,10 +196,8 @@ def export_user_attendance_csv(
             "Status",
             "Clock in",
             "Clock out",
-            "Working time",
-            "Break time",
+            "Total time",
             "Summary",
-            "Reason",
         ]
     )
     for row in items:
@@ -227,9 +210,7 @@ def export_user_attendance_csv(
                 row.get("clock_in_at"),
                 row.get("clock_out_at"),
                 _format_duration(row.get("total_work_seconds")),
-                _format_duration(row.get("total_break_seconds")),
                 row.get("work_summary") or "",
-                row.get("forgot_reason") or "",
             ]
         )
 

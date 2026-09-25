@@ -79,12 +79,7 @@ def test_hr_clock_in_save_and_clock_out():
         "/api/v1/staff-attendance/pause",
         headers=_headers(token),
     )
-    assert r.status_code == 200
-    assert r.json()["is_paused"] is True
-
-    r = client.post("/api/v1/staff-attendance/resume", headers=_headers(token))
-    assert r.status_code == 200
-    assert r.json()["is_paused"] is False
+    assert r.status_code == 403
 
     r = client.post(
         "/api/v1/staff-attendance/clock-out",
@@ -93,28 +88,15 @@ def test_hr_clock_in_save_and_clock_out():
     )
     assert r.status_code == 200
     assert r.json()["status"] == "COMPLETED"
-    assert r.json()["total_break_seconds"] >= 0
+
+    r = client.post("/api/v1/staff-attendance/clock-in", headers=_headers(token))
+    assert r.status_code == 200
+    assert r.json()["status"] == "IN_PROGRESS"
 
 
-def test_forgot_log_blocked_on_approved_leave_day():
-    token = _login("admin@demo.com")
+def test_forgot_log_disabled_for_staff():
+    token = _login("hr@demo.com")
     leave_date = today_ist()
-    r = client.post(
-        "/api/v1/staff-attendance/leaves",
-        headers=_headers(token),
-        json={"leave_date": leave_date.isoformat(), "reason": "Personal errand"},
-    )
-    assert r.status_code == 200
-    leave_id = r.json()["id"]
-
-    hr = _login("hr@demo.com")
-    r = client.patch(
-        f"/api/v1/staff-attendance/leaves/{leave_id}",
-        headers=_headers(hr),
-        json={"status": "APPROVED"},
-    )
-    assert r.status_code == 200
-
     start = datetime.combine(leave_date, datetime.min.time().replace(hour=9), tzinfo=IST).astimezone(timezone.utc)
     end = datetime.combine(leave_date, datetime.min.time().replace(hour=18), tzinfo=IST).astimezone(timezone.utc)
     r = client.post(
@@ -128,7 +110,7 @@ def test_forgot_log_blocked_on_approved_leave_day():
             "reason": "Missed clock in",
         },
     )
-    assert r.status_code == 400
+    assert r.status_code == 403
 
 
 def test_super_admin_can_list_staff_attendance():

@@ -4,7 +4,9 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminCmHome } from '../../hooks/useAdminCmHome.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatApiDateIN } from '../../lib/datetime.js'
+import { isStaffAttendanceUser } from '../../lib/staffAttendanceAccess.js'
 import { UpcomingMeetingsPanel } from '../shared/UpcomingMeetingsPanel.jsx'
+import { StaffTimerPanel } from './StaffTimerPanel.jsx'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminStatCard, StatusBadge } from './ui/index.js'
 import './admin-cm-home.css'
 import './admin-dashboard.css'
@@ -143,6 +145,10 @@ export function AdminCaseManagerHomePage() {
           </div>
         }
       />
+
+      {isStaffAttendanceUser(user) ? (
+        <StaffTimerPanel title="Start your day" className="admin-dashboard__timer" />
+      ) : null}
 
       {error ? (
         <p className="admin-alert admin-alert--error">

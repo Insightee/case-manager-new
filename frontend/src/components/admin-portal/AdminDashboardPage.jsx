@@ -11,8 +11,10 @@ import {
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
+import { isStaffAttendanceUser } from '../../lib/staffAttendanceAccess.js'
 import { UpcomingMeetingsPanel } from '../shared/UpcomingMeetingsPanel.jsx'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
+import { StaffTimerPanel } from './StaffTimerPanel.jsx'
 import './admin-dashboard.css'
 
 const ALLOTMENT_KIND_LABELS = {
@@ -120,6 +122,10 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
           ) : null
         }
       />
+
+      {isStaffAttendanceUser(user) ? (
+        <StaffTimerPanel title="Start your day" className="admin-dashboard__timer" />
+      ) : null}
 
       {roleHome?.alerts?.length ? (
         <section className="admin-home-alerts" aria-label="Alerts">

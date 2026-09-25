@@ -116,7 +116,14 @@ def _first_last_times(attendance: StaffAttendance) -> tuple[datetime | None, dat
 
 
 def serialize_attendance(attendance: StaffAttendance, db: Session) -> dict:
+    now = _utc_now()
+    if attendance.status == StaffAttendanceStatus.IN_PROGRESS:
+        _recalculate_totals(attendance, now)
     first, last = _first_last_times(attendance)
+    open_seg = _open_segment(attendance) if attendance.status == StaffAttendanceStatus.IN_PROGRESS else None
+    session_start = None
+    if open_seg and open_seg.started_at:
+        session_start = ensure_utc_aware(open_seg.started_at)
     user = db.get(User, attendance.user_id)
     return {
         "id": attendance.id,
@@ -134,6 +141,7 @@ def serialize_attendance(attendance: StaffAttendance, db: Session) -> dict:
         "auto_closed": attendance.auto_closed,
         "clock_in_at": first.isoformat() if first else None,
         "clock_out_at": last.isoformat() if last else None,
+        "session_start_at": session_start.isoformat() if session_start else None,
         "created_at": attendance.created_at.isoformat() if attendance.created_at else None,
         "updated_at": attendance.updated_at.isoformat() if attendance.updated_at else None,
         "record_kind": "attendance",

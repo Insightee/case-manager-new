@@ -1,15 +1,62 @@
+.staff-timer-panel {
+  margin-bottom: 20px;
+}
+
+.admin-dashboard__timer {
+  margin-bottom: 24px;
+}
+
+.staff-timer-panel__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.staff-timer-panel__live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4f46e5;
+  animation: staff-timer-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes staff-timer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.staff-timer-panel__notice {
+  margin-top: 20px;
+}
+
 .staff-attendance-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.staff-attendance-stats--timer {
+  margin-top: 4px;
 }
 
 .staff-attendance-stat {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 12px 14px;
+  border-radius: 14px;
+  padding: 18px 20px;
 }
 
 .staff-attendance-stat__label {
@@ -22,22 +69,47 @@
 
 .staff-attendance-stat__value {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 700;
   color: #0f172a;
+}
+
+.staff-attendance-stat__value--time {
+  font-size: 1.125rem;
 }
 
 .staff-attendance-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 16px 0;
+  gap: 12px;
+  margin: 8px 0 24px;
+}
+
+.staff-attendance-log {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
 }
 
 .staff-attendance-log textarea {
   width: 100%;
-  min-height: 120px;
+  min-height: 100px;
   resize: vertical;
+  margin-bottom: 12px;
+}
+
+.staff-attendance-history__loading {
+  padding: 1.25rem 1.5rem;
+}
+
+.staff-attendance-history__mobile {
+  padding: 0 16px 16px;
+}
+
+@media (min-width: 768px) {
+  .staff-attendance-history__mobile {
+    display: none;
+  }
 }
 
 .staff-attendance-table-wrap {

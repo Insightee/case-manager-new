@@ -26,7 +26,6 @@ import './staff-attendance.css'
 const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'completed_logs', label: 'Completed logs' },
-  { value: 'forgot_to_log', label: 'Forgot to log' },
   { value: 'leaves', label: 'Leaves' },
 ]
 
@@ -207,10 +206,9 @@ export function AdminStaffAttendanceDetailPage() {
                     <th>Date</th>
                     <th>Day</th>
                     <th>Type</th>
-                    <th>Clock in</th>
-                    <th>Clock out</th>
-                    <th>Working</th>
-                    <th>Break</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Total</th>
                     <th>Summary</th>
                     <th />
                   </tr>
@@ -228,7 +226,6 @@ export function AdminStaffAttendanceDetailPage() {
                       <td>{row.clock_in_at ? formatTimeIST(row.clock_in_at) : '—'}</td>
                       <td>{row.clock_out_at ? formatTimeIST(row.clock_out_at) : '—'}</td>
                       <td>{formatDurationSeconds(row.total_work_seconds)}</td>
-                      <td>{formatDurationSeconds(row.total_break_seconds)}</td>
                       <td>
                         <div>{row.work_summary || '—'}</div>
                         {row.forgot_reason ? (
@@ -272,9 +269,8 @@ export function AdminStaffAttendanceDetailPage() {
                   </div>
                   <p className="admin-muted" style={{ margin: '0 0 6px' }}>
                     {row.clock_in_at ? formatTimeIST(row.clock_in_at) : '—'} →{' '}
-                    {row.clock_out_at ? formatTimeIST(row.clock_out_at) : '—'} · Work{' '}
-                    {formatDurationSeconds(row.total_work_seconds)} · Break{' '}
-                    {formatDurationSeconds(row.total_break_seconds)}
+                    {row.clock_out_at ? formatTimeIST(row.clock_out_at) : '—'} · Total{' '}
+                    {formatDurationSeconds(row.total_work_seconds)}
                   </p>
                   <p style={{ margin: 0 }}>{row.work_summary || '—'}</p>
                   {row.record_kind === 'attendance' ? (
