@@ -20,6 +20,7 @@ STAFF_LOGIN_ROLES: frozenset[str] = frozenset(
         RoleName.FINANCE.value,
         RoleName.HR.value,
         RoleName.SCHOOL_COORDINATOR.value,
+        RoleName.SPOT.value,
     }
 )
 

@@ -26,6 +26,7 @@ class RoleName(str, Enum):
     HR = "HR"
     PARENT = "PARENT"
     SCHOOL_COORDINATOR = "SCHOOL_COORDINATOR"
+    SPOT = "SPOT"
 
 
 ALL_PERMISSIONS = [
@@ -180,6 +181,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
     RoleName.PARENT: ["parent.read", "slot.book_parent"],
     RoleName.SCHOOL_COORDINATOR: ["case.read.scoped", "session.read"],
+    RoleName.SPOT: [],
 }
 
 # Highest privilege first — used when a single "effective" role is required.
@@ -195,6 +197,7 @@ ROLE_PRECEDENCE: tuple[RoleName, ...] = (
     RoleName.VIEWER,
     RoleName.PARENT,
     RoleName.SCHOOL_COORDINATOR,
+    RoleName.SPOT,
 )
 
 

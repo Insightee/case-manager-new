@@ -31,6 +31,7 @@ import {
   primaryLandingHint,
 } from '../../lib/rbacDisplay.js'
 import { staffDepartmentLabel } from '../../lib/staffDepartments.js'
+import { StaffEmploymentFields, staffEmploymentPayload } from './ui/StaffEmploymentFields.jsx'
 
 const EMPTY_FORM = {
   email: '',
@@ -43,6 +44,10 @@ const EMPTY_FORM = {
   module_access_grants: {},
   feature_overrides: {},
   view_only: false,
+  staff_employment_type: '',
+  staff_probation_months: '',
+  staff_employment_start_date: '',
+  staff_leave_credit_balance: '',
 }
 
 function staffAttendanceAction(userId) {
@@ -82,6 +87,12 @@ export function AdminStaffManageSection({
   const [editViewOnly, setEditViewOnly] = useState(false)
   const [editRoles, setEditRoles] = useState([])
   const [editDepartment, setEditDepartment] = useState(null)
+  const [editEmployment, setEditEmployment] = useState({
+    staff_employment_type: '',
+    staff_probation_months: '',
+    staff_employment_start_date: '',
+    staff_leave_credit_balance: '',
+  })
   const [showCreatePassword, setShowCreatePassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [rowBusy, setRowBusy] = useState(null)
@@ -197,6 +208,7 @@ export function AdminStaffManageSection({
             department: form.department || undefined,
             region: form.region || null,
             ...access,
+            ...staffEmploymentPayload(form),
           }),
         })
         setForm(EMPTY_FORM)
@@ -239,6 +251,7 @@ export function AdminStaffManageSection({
           role_names: editRoles,
           department: editDepartment,
           ...access,
+          ...staffEmploymentPayload(editEmployment),
         }),
       })
       setEditingId(null)
@@ -401,6 +414,8 @@ export function AdminStaffManageSection({
               viewOnly={form.view_only}
               onViewOnlyChange={(view_only) => setForm((prev) => ({ ...prev, view_only }))}
             />
+
+            <StaffEmploymentFields value={form} onChange={setForm} disabled={submitting} />
 
             {landingHint ? (
               <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: -8 }}>
@@ -565,6 +580,12 @@ export function AdminStaffManageSection({
                                   setEditViewOnly(u.is_view_only ?? false)
                                   setEditRoles([...(u.roles || [])])
                                   setEditDepartment(u.department || null)
+                                  setEditEmployment({
+                                    staff_employment_type: u.staff_employment_type || '',
+                                    staff_probation_months: u.staff_probation_months ?? '',
+                                    staff_employment_start_date: u.staff_employment_start_date || '',
+                                    staff_leave_credit_balance: u.staff_leave_credit_balance ?? '',
+                                  })
                                 }
                               }}
                             >
@@ -609,6 +630,7 @@ export function AdminStaffManageSection({
                               viewOnly={editViewOnly}
                               onViewOnlyChange={setEditViewOnly}
                             />
+                            <StaffEmploymentFields value={editEmployment} onChange={setEditEmployment} />
                             <div className="admin-btn-group" style={{ marginTop: 12 }}>
                               <button
                                 type="button"
@@ -669,6 +691,12 @@ export function AdminStaffManageSection({
                                   setEditViewOnly(u.is_view_only ?? false)
                                   setEditRoles([...(u.roles || [])])
                                   setEditDepartment(u.department || null)
+                                  setEditEmployment({
+                                    staff_employment_type: u.staff_employment_type || '',
+                                    staff_probation_months: u.staff_probation_months ?? '',
+                                    staff_employment_start_date: u.staff_employment_start_date || '',
+                                    staff_leave_credit_balance: u.staff_leave_credit_balance ?? '',
+                                  })
                                 }
                               }}
                             >
@@ -740,6 +768,7 @@ export function AdminStaffManageSection({
                               viewOnly={editViewOnly}
                               onViewOnlyChange={setEditViewOnly}
                             />
+                            <StaffEmploymentFields value={editEmployment} onChange={setEditEmployment} />
                             <div className="admin-btn-group" style={{ marginTop: 12 }}>
                               <button
                                 type="button"

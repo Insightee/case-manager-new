@@ -77,6 +77,10 @@ const PORTALS = [
         title: 'People & HR',
         accounts: [{ email: 'hr@demo.com', label: 'HR', hint: 'People, leave, memos' }],
       },
+      {
+        title: 'SPOT School',
+        accounts: [{ email: 'spot@demo.com', label: 'SPOT Teacher', hint: 'Attendance & leave only' }],
+      },
     ],
   },
 ]

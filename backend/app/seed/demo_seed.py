@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 """Run: python -m app.seed.demo_seed"""
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import Base, SessionLocal, engine, ensure_sqlite_schema_patches
+from app.core.timezone import IST
 from app.core.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS, RoleName
 from app.core.security import hash_password
 from app.models import (
@@ -1309,6 +1310,85 @@ def run():
                     subcategory="other",
                     priority="NORMAL",
                     status=IncidentStatus.REPORTED,
+                )
+            )
+
+        spot_teacher = get_or_create_user(
+            db,
+            "spot@demo.com",
+            "demo123",
+            "SPOT Teacher Priya",
+            RoleName.SPOT.value,
+        )
+        from app.models.user import StaffEmploymentType
+        from app.services import staff_employment_service as staff_employment
+
+        staff_employment.apply_staff_employment_fields(
+            spot_teacher,
+            employment_type=StaffEmploymentType.EMPLOYEE,
+            employment_start_date=date.today().replace(day=1),
+            leave_credit_balance=12,
+        )
+
+        from app.models.staff_attendance import (
+            StaffAttendance,
+            StaffAttendanceEntryType,
+            StaffAttendanceSegment,
+            StaffAttendanceSegmentType,
+            StaffAttendanceStatus,
+        )
+        from app.models.staff_leave import StaffLeave
+
+        if not db.scalars(
+            select(StaffAttendance).where(
+                StaffAttendance.user_id == spot_teacher.id,
+                StaffAttendance.work_date == date.today(),
+            )
+        ).first():
+            yesterday = date.today() - timedelta(days=1)
+            for work_date, summary in (
+                (yesterday, "SPOT classroom sessions and student support."),
+                (date.today(), "Morning circle and learning activities."),
+            ):
+                att = StaffAttendance(
+                    user_id=spot_teacher.id,
+                    work_date=work_date,
+                    entry_type=StaffAttendanceEntryType.LIVE,
+                    status=StaffAttendanceStatus.COMPLETED if work_date < date.today() else StaffAttendanceStatus.IN_PROGRESS,
+                    work_summary=summary,
+                    total_work_seconds=6 * 3600 if work_date < date.today() else 2 * 3600,
+                    total_break_seconds=30 * 60,
+                )
+                db.add(att)
+                db.flush()
+                start = datetime.combine(work_date, datetime.min.time()).replace(tzinfo=IST) + timedelta(hours=9)
+                db.add(
+                    StaffAttendanceSegment(
+                        attendance_id=att.id,
+                        segment_type=StaffAttendanceSegmentType.WORK,
+                        started_at=start,
+                        ended_at=start + timedelta(hours=3),
+                    )
+                )
+
+        if not db.scalars(select(StaffLeave).where(StaffLeave.staff_user_id == spot_teacher.id)).first():
+            db.add(
+                StaffLeave(
+                    staff_user_id=spot_teacher.id,
+                    leave_date=date.today() + timedelta(days=14),
+                    reason="Family commitment",
+                    billing_category=LeaveBillingCategory.PAID,
+                    status=LeaveStatus.APPROVED,
+                    reviewed_by_user_id=hr_user.id,
+                )
+            )
+            db.add(
+                StaffLeave(
+                    staff_user_id=spot_teacher.id,
+                    leave_date=date.today() + timedelta(days=21),
+                    reason="Personal day",
+                    billing_category=LeaveBillingCategory.PAID,
+                    status=LeaveStatus.PENDING,
                 )
             )
 

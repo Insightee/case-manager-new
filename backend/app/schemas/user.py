@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.core.departments import validate_staff_department
+from app.models.user import StaffEmploymentType
 
 
 class UserCreate(BaseModel):
@@ -21,11 +23,26 @@ class UserCreate(BaseModel):
     org_capability_grants: Optional[dict] = None
     feature_overrides: Optional[dict] = None
     view_only: bool = False
+    staff_employment_type: Optional[StaffEmploymentType] = None
+    staff_probation_months: Optional[int] = Field(None, ge=1, le=24)
+    staff_employment_start_date: Optional[date] = None
+    staff_leave_credit_balance: Optional[int] = Field(None, ge=0)
 
     @field_validator("department")
     @classmethod
     def _validate_department(cls, value: Optional[str]) -> Optional[str]:
         return validate_staff_department(value)
+
+    @model_validator(mode="after")
+    def _validate_staff_employment(self) -> "UserCreate":
+        if self.staff_employment_type == StaffEmploymentType.PROBATION:
+            if not self.staff_probation_months:
+                raise ValueError("Probation period (months) is required for Probation employment type.")
+            if not self.staff_employment_start_date:
+                raise ValueError("Employment start date is required for Probation employment type.")
+        elif self.staff_probation_months is not None:
+            raise ValueError("Probation period applies only when employment type is Probation.")
+        return self
 
 
 class UserRead(BaseModel):
@@ -57,6 +74,10 @@ class UserRead(BaseModel):
     is_email_suppressed: bool = False
     suppression_reason: Optional[str] = None
     delivery_message: Optional[str] = None
+    staff_employment_type: Optional[str] = None
+    staff_probation_months: Optional[int] = None
+    staff_employment_start_date: Optional[date] = None
+    staff_leave_credit_balance: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -73,11 +94,28 @@ class UserUpdate(BaseModel):
     region: Optional[str] = None
     is_active: Optional[bool] = None
     view_only: Optional[bool] = None
+    staff_employment_type: Optional[StaffEmploymentType] = None
+    staff_probation_months: Optional[int] = Field(None, ge=1, le=24)
+    staff_employment_start_date: Optional[date] = None
+    staff_leave_credit_balance: Optional[int] = Field(None, ge=0)
 
     @field_validator("department")
     @classmethod
     def _validate_department(cls, value: Optional[str]) -> Optional[str]:
         return validate_staff_department(value)
+
+    @model_validator(mode="after")
+    def _validate_staff_employment(self) -> "UserUpdate":
+        fields = self.model_dump(exclude_unset=True)
+        if fields.get("staff_employment_type") == StaffEmploymentType.PROBATION:
+            if "staff_probation_months" in fields and fields["staff_probation_months"] is None:
+                raise ValueError("Probation period (months) is required for Probation employment type.")
+            if "staff_employment_start_date" in fields and fields["staff_employment_start_date"] is None:
+                raise ValueError("Employment start date is required for Probation employment type.")
+        elif "staff_probation_months" in fields and fields["staff_probation_months"] is not None:
+            if fields.get("staff_employment_type") not in (StaffEmploymentType.PROBATION, None):
+                raise ValueError("Probation period applies only when employment type is Probation.")
+        return self
 
 
 class UserDirectoryItem(BaseModel):
@@ -103,6 +141,10 @@ class UserDirectoryItem(BaseModel):
     is_email_suppressed: bool = False
     suppression_reason: Optional[str] = None
     delivery_message: Optional[str] = None
+    staff_employment_type: Optional[str] = None
+    staff_probation_months: Optional[int] = None
+    staff_employment_start_date: Optional[date] = None
+    staff_leave_credit_balance: Optional[int] = None
 
 
 class InviteCreate(BaseModel):

@@ -7,7 +7,7 @@ from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.leave import LeaveStatus
+from app.models.leave import LeaveBillingCategory, LeaveStatus
 
 
 class StaffLeave(Base):
@@ -17,6 +17,7 @@ class StaffLeave(Base):
     staff_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     leave_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     reason: Mapped[Optional[str]] = mapped_column(Text)
+    billing_category: Mapped[Optional[LeaveBillingCategory]] = mapped_column(Enum(LeaveBillingCategory), nullable=True)
     status: Mapped[LeaveStatus] = mapped_column(Enum(LeaveStatus), default=LeaveStatus.PENDING, nullable=False)
     reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     review_note: Mapped[Optional[str]] = mapped_column(Text)

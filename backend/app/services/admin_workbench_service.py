@@ -431,7 +431,15 @@ def widget_section_client_claims(db: Session, user: User, *, limit: int = WIDGET
 
 
 def build_admin_alerts(db: Session, user: User) -> list[dict]:
+    from app.core.permissions import RoleName, user_role_names
+    from app.services import staff_probation_notification_service as probation_notify
+
     alerts: list[dict] = []
+    roles = user_role_names(user)
+    if RoleName.HR.value in roles or RoleName.SUPER_ADMIN.value in roles:
+        probation_notify.process_probation_end_notifications(db)
+        db.flush()
+        alerts.extend(probation_notify.probation_end_alerts_for_hr(db))
     counts = build_ops_counts(db, user)
     if counts.get("observation_checklists_overdue", 0) > 0:
         alerts.append(

@@ -22,6 +22,7 @@ ASSIGNABLE_STAFF_ROLES: tuple[dict[str, str], ...] = (
     {"id": "FINANCE", "label": "Finance", "description": "Invoices, payouts, client payment claims."},
     {"id": "HR", "label": "HR", "description": "People, leave, therapist HR operations."},
     {"id": "SUPER_ADMIN", "label": "Super Admin", "description": "Full access; use sparingly."},
+    {"id": "SPOT", "label": "SPOT Teacher", "description": "School attendance and leave only."},
 )
 
 DEPRECATED_STAFF_ROLES: frozenset[str] = frozenset({"SUPERVISOR", "VIEWER"})

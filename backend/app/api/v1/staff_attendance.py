@@ -136,6 +136,13 @@ def forgot_log(
     user: User = Depends(get_current_user),
     meta: dict = Depends(get_request_meta),
 ):
+    from app.core.permissions import RoleName
+
+    if RoleName.SPOT.value in (user.role_names or []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forgot-to-log is not available for SPOT accounts. Contact HR if you need a correction.",
+        )
     row = attendance_svc.create_forgot_log(
         db,
         user,
@@ -266,6 +273,18 @@ def create_staff_leave(
     row = leave_svc.create_staff_leave(db, user, leave_date=body.leave_date, reason=body.reason, meta=meta)
     db.commit()
     return leave_svc.serialize_staff_leave(row, db)
+
+
+@router.get("/me/leave-balance")
+def my_staff_leave_balance(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    from app.services.staff_attendance_access import assert_staff_attendance_eligible
+    from app.services import staff_employment_service as employment
+
+    assert_staff_attendance_eligible(user)
+    return employment.staff_leave_balance_summary(db, user)
 
 
 @router.get("/leaves/me")

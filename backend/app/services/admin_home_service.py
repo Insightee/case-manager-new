@@ -16,6 +16,7 @@ PRIMARY_ROLE_PRIORITY: tuple[RoleName, ...] = (
     RoleName.SUPERVISOR,
     RoleName.CASE_MANAGER,
     RoleName.ADMIN,
+    RoleName.SPOT,
 )
 
 def resolve_primary_role(user: User) -> str:
@@ -27,6 +28,8 @@ def resolve_primary_role(user: User) -> str:
 
 
 def _landing_route(role: str, user: User, db: Session) -> str:
+    if role == RoleName.SPOT.value:
+        return "/admin"
     if role == RoleName.FINANCE.value:
         return "/admin/invoices"
     if role == RoleName.HR.value:
@@ -42,6 +45,8 @@ def _landing_route(role: str, user: User, db: Session) -> str:
 
 
 def _dashboard_variant(role: str) -> str:
+    if role == RoleName.SPOT.value:
+        return "spot"
     if role == RoleName.FINANCE.value:
         return "finance"
     if role == RoleName.HR.value:
@@ -74,6 +79,14 @@ def _widget(
 
 def build_admin_home(db: Session, user: User) -> dict:
     role = resolve_primary_role(user)
+    if role == RoleName.SPOT.value:
+        return {
+            "role": role,
+            "landing_route": _landing_route(role, user, db),
+            "dashboard_variant": _dashboard_variant(role),
+            "widgets": [],
+            "alerts": [],
+        }
     widgets: list[dict] = []
 
     logs = admin_workbench_service.widget_section_logs(db, user)

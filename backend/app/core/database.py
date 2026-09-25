@@ -117,6 +117,22 @@ def ensure_sqlite_schema_patches() -> None:
             if col not in user_cols:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} VARCHAR(255)"))
+        for col, ddl in (
+            ("staff_employment_type", "VARCHAR(32)"),
+            ("staff_probation_months", "INTEGER"),
+            ("staff_employment_start_date", "DATE"),
+            ("staff_leave_credit_balance", "INTEGER NOT NULL DEFAULT 0"),
+            ("staff_probation_end_notified_at", "DATETIME"),
+        ):
+            if col not in user_cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("staff_leaves"):
+        sl_cols = {c["name"] for c in insp.get_columns("staff_leaves")}
+        if "billing_category" not in sl_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE staff_leaves ADD COLUMN billing_category VARCHAR(32)"))
 
     if insp.has_table("children"):
         child_cols = {c["name"] for c in insp.get_columns("children")}

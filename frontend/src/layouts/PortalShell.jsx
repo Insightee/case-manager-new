@@ -9,6 +9,7 @@ import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
 import { STAFF_LOGIN_ROLES } from '../lib/portalLogin.js'
+import { isSpotOnlyUser, spotNav } from '../lib/spotPortal.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
@@ -314,12 +315,16 @@ export function PortalShell({ portal }) {
   if (portal === 'parent') nav = PARENT_NAV
   if (portal === 'admin') {
     const roles = user?.roles || []
-    const cmFocused = isCaseManagerOnlyRole(roles)
-    const clinicalIds = clinicalProductModuleIds(user)
-    const baseNav = cmFocused ? caseManagerNav(clinicalIds) : adminNav(clinicalIds)
-    nav = baseNav.filter((item) =>
-      filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOnly }),
-    )
+    if (isSpotOnlyUser(user)) {
+      nav = spotNav()
+    } else {
+      const cmFocused = isCaseManagerOnlyRole(roles)
+      const clinicalIds = clinicalProductModuleIds(user)
+      const baseNav = cmFocused ? caseManagerNav(clinicalIds) : adminNav(clinicalIds)
+      nav = baseNav.filter((item) =>
+        filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOnly }),
+      )
+    }
   }
 
   const portalTitle = PORTAL_LABELS[portal] || 'Portal'

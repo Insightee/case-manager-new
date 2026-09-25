@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit
 from app.core.timezone import today_ist
-from app.models.leave import LeaveStatus
+from app.models.leave import LeaveBillingCategory, LeaveStatus
 from app.models.staff_leave import StaffLeave
 from app.models.user import User
 from app.services.staff_attendance_access import assert_staff_attendance_eligible, can_manage_staff_attendance
+from app.services import staff_employment_service as employment
 
 
 def serialize_staff_leave(row: StaffLeave, db: Session) -> dict:
@@ -26,6 +27,7 @@ def serialize_staff_leave(row: StaffLeave, db: Session) -> dict:
         "leave_date": row.leave_date.isoformat(),
         "day_name": row.leave_date.strftime("%A"),
         "reason": row.reason,
+        "billing_category": row.billing_category.value if row.billing_category else None,
         "status": row.status.value,
         "reviewed_by_user_id": row.reviewed_by_user_id,
         "reviewer_name": reviewer.full_name if reviewer else None,
@@ -57,10 +59,12 @@ def create_staff_leave(db: Session, user: User, *, leave_date: date, reason: str
             detail="You already have a leave request for this date.",
         )
 
+    billing = employment.preview_staff_leave_billing_category(db, user, leave_date)
     row = StaffLeave(
         staff_user_id=user.id,
         leave_date=leave_date,
         reason=cleaned,
+        billing_category=billing,
         status=LeaveStatus.PENDING,
     )
     db.add(row)
@@ -144,6 +148,10 @@ def review_staff_leave(
     row.status = status
     row.reviewed_by_user_id = actor.id
     row.review_note = (review_note or "").strip() or None
+    if status == LeaveStatus.APPROVED:
+        staff = db.get(User, row.staff_user_id)
+        if staff:
+            employment.apply_staff_leave_approval(db, staff, row)
     log_audit(
         db,
         actor_user_id=actor.id,

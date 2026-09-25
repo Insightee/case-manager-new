@@ -115,6 +115,12 @@ const AdminPeoplePage = lazy(() =>
 const StaffAttendancePage = lazy(() =>
   import('../components/admin-portal/StaffAttendancePage.jsx').then((m) => ({ default: m.StaffAttendancePage }))
 )
+const SpotAttendancePage = lazy(() =>
+  import('../components/admin-portal/SpotPortalPages.jsx').then((m) => ({ default: m.SpotAttendancePage }))
+)
+const SpotLeavePage = lazy(() =>
+  import('../components/admin-portal/SpotPortalPages.jsx').then((m) => ({ default: m.SpotLeavePage }))
+)
 const AdminStaffAttendanceDetailPage = lazy(() =>
   import('../components/admin-portal/AdminStaffAttendanceDetailPage.jsx').then((m) => ({
     default: m.AdminStaffAttendanceDetailPage,
@@ -604,6 +610,22 @@ export function AppRoutes() {
           element={
             <Lazy>
               <StaffAttendancePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="spot-attendance"
+          element={
+            <Lazy>
+              <SpotAttendancePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="spot-leave"
+          element={
+            <Lazy>
+              <SpotLeavePage />
             </Lazy>
           }
         />

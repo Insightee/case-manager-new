@@ -76,6 +76,10 @@ export function fetchMyStaffLeaves() {
   return apiFetch('/api/v1/staff-attendance/leaves/me')
 }
 
+export function fetchStaffLeaveBalance() {
+  return apiFetch('/api/v1/staff-attendance/me/leave-balance')
+}
+
 export function fetchStaffLeavesAdmin({ status = 'PENDING', search = '', limit = 50, offset = 0 } = {}) {
   const params = new URLSearchParams({ status, limit: String(limit), offset: String(offset) })
   if (search?.trim()) params.set('search', search.trim())

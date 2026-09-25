@@ -1,10 +1,18 @@
 import { Navigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminHome } from '../../hooks/useAdminHome.js'
+import { isSpotOnlyUser } from '../../lib/spotPortal.js'
 import { AdminDashboardPage } from './AdminDashboardPage.jsx'
+import { SpotDashboardPage } from './SpotPortalPages.jsx'
 
 /** Role-aware admin index: redirect CM/finance or render operations dashboard. */
 export function AdminIndexPage() {
+  const { user } = useAuth()
   const { data: roleHome, isLoading } = useAdminHome()
+
+  if (isSpotOnlyUser(user)) {
+    return <SpotDashboardPage />
+  }
 
   if (isLoading) {
     return <p className="admin-muted" style={{ padding: '1.5rem' }}>Loading your dashboard…</p>

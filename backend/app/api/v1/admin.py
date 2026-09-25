@@ -124,6 +124,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _admin_dashboard_user(user: User = Depends(get_current_user)) -> User:
+    roles = set(user.role_names or [])
+    if RoleName.SPOT.value in roles:
+        return user
     if not (
         user_has_permission(user, "case.read.all")
         or user_has_permission(user, "case.read.team")
@@ -190,6 +193,10 @@ def _user_to_read(u: User, *, db: Session | None = None, login_meta: dict | None
         is_email_suppressed=meta.get("is_email_suppressed", False),
         suppression_reason=meta.get("suppression_reason"),
         delivery_message=meta.get("delivery_message"),
+        staff_employment_type=u.staff_employment_type.value if u.staff_employment_type else None,
+        staff_probation_months=u.staff_probation_months,
+        staff_employment_start_date=u.staff_employment_start_date,
+        staff_leave_credit_balance=u.staff_leave_credit_balance,
     )
 
 
@@ -1767,6 +1774,10 @@ def _directory_item_from_user(u: User, meta: dict) -> "UserDirectoryItem":
         is_email_suppressed=meta.get("is_email_suppressed", False),
         suppression_reason=meta.get("suppression_reason"),
         delivery_message=meta.get("delivery_message"),
+        staff_employment_type=u.staff_employment_type.value if u.staff_employment_type else None,
+        staff_probation_months=u.staff_probation_months,
+        staff_employment_start_date=u.staff_employment_start_date,
+        staff_leave_credit_balance=u.staff_leave_credit_balance,
     )
 
 
@@ -1875,6 +1886,58 @@ def update_user(
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         apply_external_employee_id(target, user_updates["external_employee_id"])
+    staff_fields = (
+        "staff_employment_type",
+        "staff_probation_months",
+        "staff_employment_start_date",
+        "staff_leave_credit_balance",
+    )
+    if any(k in user_updates for k in staff_fields):
+        from app.services import staff_employment_service as staff_employment
+
+        merged_type = (
+            payload.staff_employment_type
+            if "staff_employment_type" in user_updates
+            else target.staff_employment_type
+        )
+        merged_probation = (
+            payload.staff_probation_months
+            if "staff_probation_months" in user_updates
+            else target.staff_probation_months
+        )
+        merged_start = (
+            payload.staff_employment_start_date
+            if "staff_employment_start_date" in user_updates
+            else target.staff_employment_start_date
+        )
+        staff_employment.validate_staff_employment_fields(
+            employment_type=merged_type,
+            probation_months=merged_probation,
+            employment_start_date=merged_start,
+        )
+        staff_employment.apply_staff_employment_fields(
+            target,
+            employment_type=payload.staff_employment_type
+            if "staff_employment_type" in user_updates
+            else None,
+            probation_months=payload.staff_probation_months
+            if "staff_probation_months" in user_updates
+            else None,
+            employment_start_date=payload.staff_employment_start_date
+            if "staff_employment_start_date" in user_updates
+            else None,
+            leave_credit_balance=payload.staff_leave_credit_balance
+            if "staff_leave_credit_balance" in user_updates
+            else None,
+            clear_unset_probation="staff_employment_type" in user_updates,
+        )
+        from app.models.user import StaffEmploymentType
+
+        if (
+            "staff_employment_type" in user_updates
+            and payload.staff_employment_type != StaffEmploymentType.PROBATION
+        ):
+            target.staff_probation_end_notified_at = None
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="update", entity_type="user", entity_id=user_id, **meta)
     db.commit()
@@ -1917,6 +1980,29 @@ def create_user(
         view_only=payload.view_only,
         db=db,
     )
+    if any(
+        getattr(payload, field, None) is not None
+        for field in (
+            "staff_employment_type",
+            "staff_probation_months",
+            "staff_employment_start_date",
+            "staff_leave_credit_balance",
+        )
+    ):
+        from app.services import staff_employment_service as staff_employment
+
+        staff_employment.validate_staff_employment_fields(
+            employment_type=payload.staff_employment_type,
+            probation_months=payload.staff_probation_months,
+            employment_start_date=payload.staff_employment_start_date,
+        )
+        staff_employment.apply_staff_employment_fields(
+            new_user,
+            employment_type=payload.staff_employment_type,
+            probation_months=payload.staff_probation_months,
+            employment_start_date=payload.staff_employment_start_date,
+            leave_credit_balance=payload.staff_leave_credit_balance,
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="user", entity_id=new_user.id, **meta)
     db.commit()
