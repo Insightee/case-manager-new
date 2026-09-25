@@ -2110,10 +2110,9 @@ def admin_set_user_password(
         raise HTTPException(status_code=404, detail="User not found")
     target.password_hash = hash_password(payload.password)
     target.is_active = True
-    from app.services.family_admin_service import consume_pending_parent_invites
+    from app.services import user_provision_service
 
-    if "PARENT" in (target.role_names or []):
-        consume_pending_parent_invites(db, target.email, reason="admin_set_password")
+    user_provision_service.consume_pending_portal_invites(db, target, reason="admin_set_password")
     meta = get_request_meta(request)
     log_audit(
         db,

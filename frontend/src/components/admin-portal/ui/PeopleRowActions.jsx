@@ -110,6 +110,7 @@ export function PeopleRowActions({
         body: JSON.stringify({ password: nextPassword }),
       })
       onSuccess?.(`Password updated for ${user.email}.`)
+      onReload?.()
     } catch (err) {
       onError?.(err.message || 'Could not update password')
     }

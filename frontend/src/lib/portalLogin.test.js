@@ -29,6 +29,12 @@ describe('portalLogin', () => {
     assert.equal(portalHomePath({ roles: ['THERAPIST'] }), '/therapist')
     assert.equal(portalHomePath({ roles: ['HR'] }), '/admin')
     assert.equal(portalHomePath({ roles: ['CASE_MANAGER'] }), '/admin')
+    assert.equal(portalHomePath({ roles: ['SPOT'] }), '/admin')
+  })
+
+  it('maps SPOT to the admin sign-in page', () => {
+    assert.equal(loginPathFromRoleName('SPOT'), SIGN_IN_PATH.admin)
+    assert.equal(resolveAuthPortal({ roles: ['SPOT'] }, 'admin'), 'admin')
   })
 
   it('ignores stale portal selection when inferring home route', () => {

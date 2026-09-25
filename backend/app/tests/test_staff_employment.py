@@ -93,6 +93,65 @@ def test_probation_one_paid_leave_per_month():
         db.close()
 
 
+def test_set_password_clears_pending_invite_for_spot_user():
+    """Pending invite + user without roles: set-password applies SPOT from invite."""
+    import time
+
+    from app.core.security import hash_password
+
+    headers = _headers(_login("moduleadmin@demo.com"))
+    email = f"spot.manual.{int(time.time())}@demo.com"
+
+    invite = client.post(
+        "/api/v1/admin/therapists/invite",
+        headers=headers,
+        json={
+            "email": email,
+            "full_name": "SPOT demo",
+            "role_name": "SPOT",
+            "send_email": False,
+        },
+    )
+    assert invite.status_code == 200, invite.text
+
+    db = SessionLocal()
+    try:
+        user = User(
+            email=email.lower(),
+            password_hash=hash_password("temp-pass-1"),
+            full_name="SPOT demo",
+            is_active=True,
+        )
+        user.roles = []
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        user_id = user.id
+    finally:
+        db.close()
+
+    blocked = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "temp-pass-1", "portal": "staff"},
+    )
+    assert blocked.status_code == 403, blocked.text
+
+    set_pw = client.post(
+        f"/api/v1/admin/users/{user_id}/set-password",
+        headers=headers,
+        json={"password": "demo123"},
+    )
+    assert set_pw.status_code == 200, set_pw.text
+    assert "SPOT" in set_pw.json().get("roles", [])
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "demo123", "portal": "staff"},
+    )
+    assert login.status_code == 200, login.text
+    assert "SPOT" in (login.json().get("user") or {}).get("roles", [])
+
+
 def test_admin_home_spot_variant():
     token = _login("spot@demo.com")
     r = client.get("/api/v1/admin/home", headers=_headers(token))
