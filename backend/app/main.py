@@ -28,6 +28,7 @@ def _run_startup_bootstrap() -> None:
     _repair_postgres_schema_drift()
     _apply_sqlite_patches_if_needed()
     _maybe_seed_demo_on_empty_db()
+    _sync_missing_coded_roles()
     _verify_sqlite_writable()
     _log_schema_health()
     import logging
@@ -135,6 +136,24 @@ def _verify_sqlite_writable() -> None:
             settings.database_url,
             exc,
         )
+
+
+def _sync_missing_coded_roles() -> None:
+    """Create registry rows for newly coded roles (e.g. SPOT) on existing databases."""
+    from app.core.database import SessionLocal
+    from app.services.role_registry_service import sync_missing_coded_roles
+
+    db = SessionLocal()
+    try:
+        sync_missing_coded_roles(db)
+        db.commit()
+    except Exception as exc:  # pragma: no cover — startup resilience
+        db.rollback()
+        import logging
+
+        logging.getLogger("insightcase").warning("Role registry sync skipped: %s", exc)
+    finally:
+        db.close()
 
 
 def _maybe_seed_demo_on_empty_db() -> None:

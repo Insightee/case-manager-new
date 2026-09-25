@@ -43,7 +43,9 @@ def create_user(
 ) -> User:
     from app.services.external_employee_id_service import normalize_external_employee_id
 
-    roles = db.scalars(select(Role).where(Role.name.in_(role_names))).all()
+    from app.services.role_registry_service import ensure_roles
+
+    roles = ensure_roles(db, role_names)
     user = User(
         email=email.lower(),
         external_employee_id=normalize_external_employee_id(external_employee_id),

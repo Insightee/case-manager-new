@@ -11,8 +11,10 @@ from app.core.database import SessionLocal
 from app.core.permissions import RoleName
 from app.main import app
 from app.models.leave import LeaveBillingCategory, LeaveStatus
+from app.models.role import Role
 from app.models.staff_leave import StaffLeave
 from app.models.user import StaffEmploymentType, User
+from sqlalchemy import select
 from app.seed.demo_seed import get_or_create_user, run as seed_run
 from app.services import staff_employment_service as employment
 
@@ -150,6 +152,61 @@ def test_set_password_clears_pending_invite_for_spot_user():
     )
     assert login.status_code == 200, login.text
     assert "SPOT" in (login.json().get("user") or {}).get("roles", [])
+
+
+def test_patch_spot_role_when_registry_row_missing():
+    """Assigning SPOT must create the role row — not silently clear roles."""
+    headers = _headers(_login("moduleadmin@demo.com"))
+    db = SessionLocal()
+    try:
+        spot = db.scalars(select(Role).where(Role.name == RoleName.SPOT.value)).first()
+        if spot:
+            db.delete(spot)
+            db.commit()
+    finally:
+        db.close()
+
+    import time
+
+    email = f"spot.registry.{int(time.time())}@demo.com"
+    try:
+        create = client.post(
+            "/api/v1/admin/users",
+            headers=headers,
+            json={
+                "email": email,
+                "password": "demo123",
+                "full_name": "Registry SPOT",
+                "role_names": ["CASE_MANAGER"],
+                "module_assignments": ["homecare"],
+            },
+        )
+        assert create.status_code == 201, create.text
+        user_id = create.json()["id"]
+
+        patch = client.patch(
+            f"/api/v1/admin/users/{user_id}",
+            headers=headers,
+            json={"role_names": ["SPOT"]},
+        )
+        assert patch.status_code == 200, patch.text
+        assert patch.json().get("roles") == ["SPOT"]
+    finally:
+        restore_db = SessionLocal()
+        try:
+            from app.services.role_registry_service import ensure_role
+
+            ensure_role(restore_db, RoleName.SPOT.value)
+            get_or_create_user(
+                restore_db,
+                "spot@demo.com",
+                "demo123",
+                "SPOT Teacher Priya",
+                RoleName.SPOT.value,
+            )
+            restore_db.commit()
+        finally:
+            restore_db.close()
 
 
 def test_admin_home_spot_variant():

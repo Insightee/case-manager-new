@@ -22,7 +22,6 @@ from app.services import password_reset_service
 def consume_pending_portal_invites(db: Session, user: User, *, reason: str = "activated") -> None:
     """Mark open portal invites consumed; apply invite role when the user has none yet."""
     from app.core.rbac_access import sync_user_access_fields
-    from app.models.role import Role
 
     now = datetime.now(timezone.utc)
     email_l = user.email.lower().strip()
@@ -49,7 +48,12 @@ def consume_pending_portal_invites(db: Session, user: User, *, reason: str = "ac
         inv.invite_metadata = meta
 
     if not (user.role_names or []) and latest.role_name:
-        role = db.scalars(select(Role).where(Role.name == latest.role_name)).first()
+        from app.services.role_registry_service import ensure_role
+
+        try:
+            role = ensure_role(db, latest.role_name)
+        except ValueError:
+            role = None
         if role:
             user.roles = [role]
             sync_user_access_fields(

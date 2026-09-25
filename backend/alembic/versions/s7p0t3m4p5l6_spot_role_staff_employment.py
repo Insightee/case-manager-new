@@ -41,6 +41,14 @@ def upgrade() -> None:
         if "billing_category" not in sl_cols:
             op.add_column("staff_leaves", sa.Column("billing_category", sa.String(32), nullable=True))
 
+    if has_table("roles"):
+        op.execute(
+            sa.text(
+                "INSERT INTO roles (name) SELECT 'SPOT' "
+                "WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'SPOT')"
+            )
+        )
+
 
 def downgrade() -> None:
     if has_table("staff_leaves"):

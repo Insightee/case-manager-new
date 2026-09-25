@@ -1843,10 +1843,9 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
     if payload.role_names is not None:
         _ensure_assignable_roles(payload.role_names)
-        from app.models.role import Role
+        from app.services.role_registry_service import ensure_roles
 
-        roles = db.scalars(select(Role).where(Role.name.in_(payload.role_names))).all()
-        target.roles = list(roles)
+        target.roles = ensure_roles(db, payload.role_names)
     if (
         payload.module_assignments is not None
         or payload.module_access_grants is not None
