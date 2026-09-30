@@ -47,6 +47,46 @@ def test_per_session_amount():
     assert billing.compute_session_line_amount(case, SessionLineType.PER_SESSION) == 600.0
 
 
+def test_monthly_fixed_line_amount_without_package_count():
+    """Monthly cases must not require a package size to price a session line."""
+    case = Case(
+        id=3,
+        case_code="T-3",
+        child_id=1,
+        service_type="Homecare",
+        product_module="homecare",
+    )
+    case.billing_type = BillingType.MONTHLY_FIXED
+    case.package_session_count = None
+    case.compensation_mode = CompensationMode.FIXED_LUMP
+    case.therapist_fixed_pay_inr = 18000
+    case.client_monthly_rate_inr = 25000
+    assert billing.compute_session_line_amount(case, SessionLineType.INCLUDED) == 0.0
+    lines = [
+        {"included": True, "line_type": SessionLineType.INCLUDED.value, "amount_inr": 0, "flags": {}},
+    ]
+    _, _, total = billing.compute_case_totals(case, lines)
+    assert total == 18000.0
+
+
+def test_monthly_fixed_shadow_line_uses_day_rate():
+    from app.services.finance_payout_preview_service import SHADOW_MONTHLY_DAYS
+
+    case = Case(
+        id=4,
+        case_code="T-4",
+        child_id=1,
+        service_type="Shadow",
+        product_module="shadow_support",
+    )
+    case.billing_type = BillingType.MONTHLY_FIXED
+    case.package_session_count = None
+    case.compensation_mode = CompensationMode.FIXED_LUMP
+    case.therapist_fixed_pay_inr = 18000
+    amount = billing.compute_session_line_amount(case, SessionLineType.INCLUDED)
+    assert amount == round(18000 / SHADOW_MONTHLY_DAYS, 2)
+
+
 def test_per_session_fixed_amount():
     case = _case_per_session()
     case.compensation_mode = CompensationMode.FIXED_LUMP

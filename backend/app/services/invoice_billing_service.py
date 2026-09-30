@@ -113,6 +113,11 @@ def compute_session_line_amount(
     _ = line_type
     if case.billing_type == BillingType.PER_SESSION:
         return round(_per_session_amount(case, db=db, as_of=as_of), 2)
+    # New cases are monthly fixed and do not have a package size. Dividing by
+    # package_session_count raised MISSING_PACKAGE_COUNT and 500'd the preview.
+    if case.billing_type == BillingType.MONTHLY_FIXED:
+        share = _per_session_amount(case, db=db, as_of=as_of)
+        return payout_cycle.per_unit_from_share(case, share)
     return round(_package_per_session_rate(case, db=db, as_of=as_of), 2)
 
 
