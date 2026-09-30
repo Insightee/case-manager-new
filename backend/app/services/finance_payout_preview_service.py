@@ -415,7 +415,9 @@ def _therapists_with_hours_in_month(
     db: Session, case_id: int, start: date, end: date
 ) -> set[int]:
     rows = db.execute(
-        select(TherapySession.therapist_user_id.distinct()).where(
+        select(TherapySession.therapist_user_id)
+        .distinct()
+        .where(
             TherapySession.case_id == case_id,
             TherapySession.status == SessionStatus.COMPLETED,
             TherapySession.scheduled_date >= start,

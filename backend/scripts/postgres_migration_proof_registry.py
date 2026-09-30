@@ -1094,6 +1094,62 @@ register_head(
 )
 
 
+def _seed_s7p0t3m4p5l6(db: Session) -> dict[str, Any]:
+    from datetime import date
+
+    from app.core.timezone import today_ist
+    from app.models.leave import LeaveBillingCategory, LeaveStatus
+    from app.models.staff_leave import StaffLeave
+    from app.models.user import StaffEmploymentType, User
+
+    user = db.scalar(select(User).where(User.email == "hr@demo.com"))
+    if not user:
+        user = db.scalar(select(User).limit(1))
+    if not user:
+        raise RuntimeError("Need seeded user — run demo_seed first")
+
+    if user.staff_employment_type is None:
+        user.staff_employment_type = StaffEmploymentType.PROBATION
+        user.staff_probation_months = 3
+        user.staff_employment_start_date = date(2099, 1, 1)
+        user.staff_leave_credit_balance = 12
+
+    leave = db.scalar(select(StaffLeave).limit(1))
+    if not leave:
+        leave = StaffLeave(
+            staff_user_id=user.id,
+            leave_date=today_ist(),
+            reason="Migration proof staff leave billing category",
+            status=LeaveStatus.PENDING,
+        )
+        db.add(leave)
+        db.flush()
+    if leave.billing_category is None:
+        leave.billing_category = LeaveBillingCategory.PAID
+        db.flush()
+
+    return {
+        "user_id": user.id,
+        "leave_id": leave.id,
+        "billing_category": leave.billing_category.value if leave.billing_category else None,
+    }
+
+
+register_head(
+    "s7p0t3m4p5l6",
+    tables_added=[],
+    columns_added=[
+        ("users", "staff_employment_type"),
+        ("users", "staff_probation_months"),
+        ("users", "staff_employment_start_date"),
+        ("users", "staff_leave_credit_balance"),
+        ("users", "staff_probation_end_notified_at"),
+        ("staff_leaves", "billing_category"),
+    ],
+    seed=_seed_s7p0t3m4p5l6,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
