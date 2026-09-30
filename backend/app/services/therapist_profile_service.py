@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.pagination import normalize_pagination, paginate_query
 from app.core.permissions import RoleName
+from app.core.therapist_qualification_levels import normalize_qualification_level
 from app.core.therapist_services import get_service_categories, validate_service_ids
 from app.core.timezone import today_ist
 from app.models.daily_log import DailyLog
@@ -34,6 +35,7 @@ SNAPSHOT_FIELDS = (
     "display_name",
     "short_bio",
     "academic_qualifications",
+    "academic_qualification_level",
     "professional_certificates",
     "services_offered",
 )
@@ -45,6 +47,7 @@ def build_profile_snapshot(profile: TherapistProfile) -> dict:
         "display_name": profile.display_name,
         "short_bio": profile.short_bio,
         "academic_qualifications": profile.academic_qualifications,
+        "academic_qualification_level": profile.academic_qualification_level,
         "professional_certificates": list(profile.professional_certificates or []),
         "services_offered": list(profile.services_offered or []),
     }
@@ -61,6 +64,7 @@ def build_submission_snapshot(data: dict, db: Session | None = None) -> dict:
         "display_name": (data.get("display_name") or "").strip() or None,
         "short_bio": (data.get("short_bio") or "").strip() or None,
         "academic_qualifications": (data.get("academic_qualifications") or "").strip() or None,
+        "academic_qualification_level": normalize_qualification_level(data.get("academic_qualification_level")),
         "professional_certificates": _normalize_certs(data.get("professional_certificates")),
         "services_offered": list(services),
     }
@@ -159,6 +163,7 @@ def profile_to_dict(
         "display_name": profile.display_name,
         "short_bio": profile.short_bio,
         "academic_qualifications": profile.academic_qualifications,
+        "academic_qualification_level": profile.academic_qualification_level,
         "professional_certificates": profile.professional_certificates or [],
         "services_offered": profile.services_offered or [],
         "status": status_value,
@@ -195,6 +200,7 @@ def needs_listing_to_dict(user: User) -> dict:
         "display_name": user.full_name,
         "short_bio": None,
         "academic_qualifications": None,
+        "academic_qualification_level": None,
         "professional_certificates": [],
         "services_offered": [],
         "status": NEEDS_LISTING_STATUS,
@@ -262,6 +268,11 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         profile.short_bio = data["short_bio"]
     if "academic_qualifications" in data:
         profile.academic_qualifications = data["academic_qualifications"]
+    if "academic_qualification_level" in data:
+        level = data["academic_qualification_level"]
+        if level is not None and normalize_qualification_level(level) is None:
+            raise HTTPException(status_code=400, detail="Select a valid qualification level")
+        profile.academic_qualification_level = normalize_qualification_level(level)
     if "professional_certificates" in data:
         profile.professional_certificates = _normalize_certs(data["professional_certificates"])
     if "services_offered" in data:

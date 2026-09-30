@@ -190,6 +190,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_year_snapshots JSON"))
             if "deleted_at" not in tp_cols:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN deleted_at DATETIME"))
+            if "academic_qualification_level" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN academic_qualification_level VARCHAR(32)"))
 
     if insp.has_table("therapist_leaves"):
         tl_cols = {c["name"] for c in insp.get_columns("therapist_leaves")}

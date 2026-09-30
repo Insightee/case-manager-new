@@ -8,6 +8,7 @@ import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
 import { TherapistLeaveBalancePanel } from '../hr-portal/TherapistLeaveBalancePanel.jsx'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
+import { qualificationLevelLabel } from '../../lib/therapistQualificationLevels.js'
 import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
 import { AdminStaffSelect } from './ui/AdminStaffSelect.jsx'
 import {
@@ -183,6 +184,7 @@ const EMPTY_FORM = {
   display_name: '',
   short_bio: '',
   academic_qualifications: '',
+  academic_qualification_level: '',
   professional_certificates: '',
   services_offered: [],
   supervisor_user_id: '',
@@ -346,6 +348,7 @@ export function AdminTherapistProfilesPage() {
           display_name: form.display_name.trim(),
           short_bio: form.short_bio.trim() || null,
           academic_qualifications: form.academic_qualifications.trim() || null,
+          academic_qualification_level: form.academic_qualification_level || null,
           professional_certificates: certs,
           services_offered: form.services_offered,
           status: 'APPROVED',
@@ -801,13 +804,19 @@ export function AdminTherapistProfilesPage() {
                 <>
               <ProfileChangesSection profile={selected} categories={categories} />
 
-              {(selected.short_bio || selected.academic_qualifications || (selected.professional_certificates || []).length) ? (
+              {(selected.short_bio || selected.academic_qualification_level || selected.academic_qualifications || (selected.professional_certificates || []).length) ? (
                 <section className="therapist-profile-drawer__section">
                   <h3 className="therapist-profile-drawer__section-title">Profile</h3>
                   {selected.short_bio ? <p className="therapist-profile-drawer__text">{selected.short_bio}</p> : null}
+                  {selected.academic_qualification_level ? (
+                    <p className="therapist-profile-drawer__text" style={{ marginTop: 8, color: '#64748b' }}>
+                      <strong>Highest qualification:</strong>{' '}
+                      {qualificationLevelLabel(selected.academic_qualification_level)}
+                    </p>
+                  ) : null}
                   {selected.academic_qualifications ? (
                     <p className="therapist-profile-drawer__text" style={{ marginTop: 8, color: '#64748b' }}>
-                      <strong>Qualifications:</strong> {selected.academic_qualifications}
+                      <strong>Additional details:</strong> {selected.academic_qualifications}
                     </p>
                   ) : null}
                   {(selected.professional_certificates || []).length ? (

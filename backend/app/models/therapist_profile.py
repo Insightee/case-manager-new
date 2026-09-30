@@ -26,6 +26,7 @@ class TherapistProfile(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(255))
     short_bio: Mapped[Optional[str]] = mapped_column(Text)
     academic_qualifications: Mapped[Optional[str]] = mapped_column(Text)
+    academic_qualification_level: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     professional_certificates: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     services_offered: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     status: Mapped[TherapistProfileStatus] = mapped_column(

@@ -35,9 +35,11 @@ from app.schemas.auth import (
     RefreshRequest,
     ResetPasswordPreviewResponse,
     ResetPasswordRequest,
+    TherapistProfileCompletionRead,
     TokenResponse,
     UserMeResponse,
 )
+from app.services import therapist_profile_completion_service as profile_completion_service
 from app.services import address_service, auth_service, avatar_service, password_reset_service
 from app.services.portal_login_service import (
     default_login_portal_for_roles,
@@ -325,6 +327,8 @@ def _avatar_url(user: User) -> Optional[str]:
 
 def _user_me_response(user: User, db: Session) -> UserMeResponse:
     module_summaries = [ModuleSummary(**m) for m in modules_for_api(user, db)]
+    completion_raw = profile_completion_service.completion_for_therapist_user(db, user)
+    completion = TherapistProfileCompletionRead(**completion_raw) if completion_raw else None
     return UserMeResponse(
         id=user.id,
         email=user.email,
@@ -348,6 +352,7 @@ def _user_me_response(user: User, db: Session) -> UserMeResponse:
         is_view_only=is_view_only_user(user),
         features=get_user_features(user, db),
         modules=module_summaries,
+        profile_completion=completion,
     )
 
 

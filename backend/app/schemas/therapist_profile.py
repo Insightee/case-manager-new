@@ -10,6 +10,7 @@ class TherapistProfileBase(BaseModel):
     display_name: Optional[str] = Field(None, max_length=255)
     short_bio: Optional[str] = Field(None, max_length=2000)
     academic_qualifications: Optional[str] = Field(None, max_length=4000)
+    academic_qualification_level: Optional[str] = Field(None, max_length=32)
     professional_certificates: list[str] = Field(default_factory=list)
     services_offered: list[str] = Field(default_factory=list)
 

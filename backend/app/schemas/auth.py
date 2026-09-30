@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.address import AddressRead
 
@@ -49,6 +49,12 @@ class ClinicalProductModuleRead(BaseModel):
     label: str
 
 
+class TherapistProfileCompletionRead(BaseModel):
+    percent: int = 0
+    complete: bool = False
+    missing_fields: list[str] = Field(default_factory=list)
+
+
 class UserMeResponse(BaseModel):
     id: int
     email: str
@@ -72,6 +78,7 @@ class UserMeResponse(BaseModel):
     is_view_only: bool = False
     features: list[str] = []
     modules: list[ModuleSummary] = []
+    profile_completion: Optional[TherapistProfileCompletionRead] = None
 
     model_config = {"from_attributes": True}
 

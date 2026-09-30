@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { QualificationLevelPicker } from '../shared/QualificationLevelPicker.jsx'
 import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
+import { qualificationLevelLabel } from '../../lib/therapistQualificationLevels.js'
 
 const PROFILE_STATUS = {
   DRAFT: { bg: '#f4f4f5', color: '#52525b', label: 'Draft' },
@@ -21,6 +23,7 @@ function profileFormFromRecord(prof) {
     display_name: source.display_name || prof?.full_name || '',
     short_bio: source.short_bio || '',
     academic_qualifications: source.academic_qualifications || '',
+    academic_qualification_level: source.academic_qualification_level || prof?.academic_qualification_level || '',
     professional_certificates: (source.professional_certificates || []).join('\n'),
     services_offered: source.services_offered || [],
     employment_start_date: prof?.employment_start_date || '',
@@ -32,13 +35,14 @@ function publishedFormFromRecord(prof) {
     display_name: prof?.display_name || prof?.full_name || '',
     short_bio: prof?.short_bio || '',
     academic_qualifications: prof?.academic_qualifications || '',
+    academic_qualification_level: prof?.academic_qualification_level || '',
     professional_certificates: (prof?.professional_certificates || []).join('\n'),
     services_offered: prof?.services_offered || [],
     employment_start_date: prof?.employment_start_date || '',
   }
 }
 
-export function TherapistServiceProfileSection() {
+export function TherapistServiceProfileSection({ onProfileUpdated }) {
   const [editing, setEditing] = useState(false)
   const [categories, setCategories] = useState([])
   const [profile, setProfile] = useState(null)
@@ -46,6 +50,7 @@ export function TherapistServiceProfileSection() {
     display_name: '',
     short_bio: '',
     academic_qualifications: '',
+    academic_qualification_level: '',
     professional_certificates: '',
     services_offered: [],
     employment_start_date: '',
@@ -103,6 +108,7 @@ export function TherapistServiceProfileSection() {
           display_name: form.display_name.trim(),
           short_bio: form.short_bio.trim() || null,
           academic_qualifications: form.academic_qualifications.trim() || null,
+          academic_qualification_level: form.academic_qualification_level || null,
           professional_certificates: certs,
           services_offered: form.services_offered,
           employment_start_date: form.employment_start_date || null,
@@ -116,6 +122,7 @@ export function TherapistServiceProfileSection() {
           ? 'Submitted for admin approval. Your live listing stays unchanged until approved.'
           : 'Profile updated.',
       )
+      await onProfileUpdated?.()
     } catch (err) {
       setError(err.message || 'Could not submit')
     } finally {
@@ -200,13 +207,19 @@ export function TherapistServiceProfileSection() {
             </span>
           </div>
           <div className="therapist-profile__field">
-            <span className="therapist-profile__field-label">Qualifications</span>
+            <span className="therapist-profile__field-label">Highest qualification</span>
             <span
-              className={`therapist-profile__field-value ${!viewForm.academic_qualifications ? 'therapist-profile__field-value--empty' : ''}`}
+              className={`therapist-profile__field-value ${!viewForm.academic_qualification_level ? 'therapist-profile__field-value--empty' : ''}`}
             >
-              {viewForm.academic_qualifications || 'Not added'}
+              {qualificationLevelLabel(viewForm.academic_qualification_level) || 'Select your highest level'}
             </span>
           </div>
+          {viewForm.academic_qualifications ? (
+            <div className="therapist-profile__field">
+              <span className="therapist-profile__field-label">Additional qualification details</span>
+              <span className="therapist-profile__field-value">{viewForm.academic_qualifications}</span>
+            </div>
+          ) : null}
           {(viewForm.professional_certificates || '').trim() ? (
             <div className="therapist-profile__field">
               <span className="therapist-profile__field-label">Certificates</span>
@@ -269,14 +282,23 @@ export function TherapistServiceProfileSection() {
           />
         </label>
 
+        <div>
+          <p style={{ fontSize: '0.875rem', fontWeight: 500, marginBottom: 8 }}>Highest qualification</p>
+          <QualificationLevelPicker
+            value={form.academic_qualification_level}
+            onChange={(academic_qualification_level) => setForm({ ...form, academic_qualification_level })}
+            disabled={paused}
+          />
+        </div>
+
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-          Academic qualifications
+          Additional qualification details (optional)
           <textarea
             value={form.academic_qualifications}
             onChange={(e) => setForm({ ...form, academic_qualifications: e.target.value })}
             disabled={paused}
             rows={2}
-            placeholder="Degrees, certifications, institutions"
+            placeholder="Degree name, institution, year"
             style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
           />
         </label>

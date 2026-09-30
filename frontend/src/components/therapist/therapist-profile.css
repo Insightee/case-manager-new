@@ -332,3 +332,42 @@
     min-height: 44px;
   }
 }
+
+.therapist-profile__qual-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.therapist-profile__qual-level {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  background: #fff;
+}
+
+.therapist-profile__qual-level--active {
+  border-color: #6366f1;
+  background: #eef2ff;
+}
+
+.therapist-profile__qual-level input {
+  margin: 0;
+}
+
+.therapist-profile-completion-modal__backdrop {
+  pointer-events: none;
+}
+
+.therapist-profile-completion-modal__missing {
+  margin: 12px 0 16px;
+  padding-left: 1.25rem;
+  color: #475569;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}

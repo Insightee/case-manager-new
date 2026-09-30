@@ -228,7 +228,7 @@ export function TherapistProfilePage() {
         )}
       </section>
 
-      <TherapistServiceProfileSection />
+      <TherapistServiceProfileSection onProfileUpdated={reload} />
 
       <section className="therapist-profile__card">
         <h2 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 600 }}>Assigned services</h2>
