@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core.database import SessionLocal
-from app.core.timezone import IST, ensure_utc_aware, today_ist
+from app.core.timezone import IST, ensure_utc_aware, now_ist, today_ist
 from app.main import app
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
@@ -45,14 +45,20 @@ def _create_in_progress(
     therapist_id: int,
     case_id: int,
     session_day: date,
-    started_at: datetime,
+    started_at: datetime | None = None,
 ) -> TherapySession:
+    """IN_PROGRESS row whose auto-end cap stays in the future when CI runs late IST."""
+    now = now_ist()
+    if started_at is None:
+        started_at = (now - timedelta(minutes=15)).astimezone(timezone.utc)
+    sched_start = (now - timedelta(minutes=20)).time()
+    sched_end = (now + timedelta(hours=3)).time()
     session = TherapySession(
         case_id=case_id,
         therapist_user_id=therapist_id,
         scheduled_date=session_day,
-        start_time=time(10, 0),
-        end_time=time(11, 0),
+        start_time=sched_start,
+        end_time=sched_end,
         mode=SessionMode.HOME,
         status=SessionStatus.IN_PROGRESS,
         actual_start_at=started_at,
@@ -83,14 +89,15 @@ def test_same_day_in_progress_blocks_new_session():
             therapist_id=therapist.id,
             case_id=active_case_id,
             session_day=today,
-            started_at=utc_started_at_on_session_day(today, minutes_ago=30),
         )
+        block_start = (now_ist() + timedelta(minutes=30)).time()
+        block_end = (now_ist() + timedelta(hours=1, minutes=30)).time()
         scheduled = TherapySession(
             case_id=scheduled_case_id,
             therapist_user_id=therapist.id,
             scheduled_date=today,
-            start_time=time(15, 0),
-            end_time=time(16, 0),
+            start_time=block_start,
+            end_time=block_end,
             mode=SessionMode.HOME,
             status=SessionStatus.SCHEDULED,
         )

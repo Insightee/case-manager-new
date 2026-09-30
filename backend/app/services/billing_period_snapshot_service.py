@@ -183,7 +183,9 @@ def close_billing_month(
             case_ids.add(int(cid))
 
     ledger_case_ids = db.scalars(
-        select(BillingLedger.case_id.distinct()).where(BillingLedger.ledger_month == ym)
+        select(BillingLedger.case_id)
+        .distinct()
+        .where(BillingLedger.ledger_month == ym)
     ).all()
     case_ids.update(ledger_case_ids)
 
