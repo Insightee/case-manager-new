@@ -866,3 +866,43 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+.support-ticket-report {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: calc(var(--portal-bottom-nav-offset, 76px) + 4.75rem);
+}
+
+.support-ticket-report__note {
+  margin: 0;
+  color: var(--admin-muted, #64748b);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.support-ticket-report__kpis {
+  margin-bottom: 0;
+}
+
+.support-ticket-report__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.support-ticket-report__footer {
+  position: sticky;
+  bottom: var(--portal-bottom-nav-offset, 12px);
+  z-index: 6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--admin-bg, #f8fafc) 72%, transparent);
+}
+
+.support-ticket-report__footer .admin-btn {
+  min-height: 44px;
+  min-width: 148px;
+}
