@@ -6,6 +6,9 @@ import {
   emptyKeyDraft,
   keyPayloadFromDraft,
   parseCaseIds,
+  caseIdsToText,
+  filterGrantCases,
+  toggleGrantedCaseId,
   scopesFromDraft,
   validateKeyDraft,
   validateWebhookDraft,
@@ -51,6 +54,19 @@ describe('integrationDesk', () => {
   it('parses case ids and rejects words', () => {
     assert.deepEqual(parseCaseIds('12, 48 48'), { ids: [12, 48], error: '' })
     assert.match(parseCaseIds('12, abc').error, /numbers/)
+  })
+
+  it('filters grant cases by status and search, and toggles ids', () => {
+    const rows = [
+      { id: 1, case_code: 'HC-1', child_name: 'Aarav', status: 'ACTIVE', therapist_name: 'Neha' },
+      { id: 2, case_code: 'SS-2', child_name: 'Diya', status: 'CLOSED', therapist_name: 'Neha' },
+      { id: 3, case_code: 'HC-3', child_name: 'Kabir', status: 'SUSPENDED', case_manager_name: 'Priya' },
+    ]
+    assert.deepEqual(filterGrantCases(rows, { status: 'ACTIVE' }).map((row) => row.id), [1])
+    assert.deepEqual(filterGrantCases(rows, { query: 'priya' }).map((row) => row.id), [3])
+    assert.deepEqual(toggleGrantedCaseId([1], 2), [1, 2])
+    assert.deepEqual(toggleGrantedCaseId([1, 2], 1), [2])
+    assert.equal(caseIdsToText([2, 1, 1]), '2, 1')
   })
 
   it('sends structured flags instead of free-text scopes', () => {

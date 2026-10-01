@@ -17,6 +17,8 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Integration API key sheet grants cases from a filtered picker (all, assigned to me, status) instead of typing IDs.
+- Therapist listing quality is scored live (photo, address + pincode, 10-digit phone, 40-word public bio, one degree, services). Submit at 50%+; auto-publish above 80% when photo, pincode, bio, and a degree are present. Below that, admin reviews or requests changes. Login popup stays off after a prior submit.
 - Therapist profile completion is a reminder, not a hard gate: sessions and session logs stay available. A popup with deadline **3 October** and **Edit your details** appears on login and again on sign-out until the profile is submitted.
 - Leave management report tab and CSV export now call `GET /api/v1/leave/period-export` instead of `/leave/report` so browser ad blockers do not silently block the request. Legacy `/leave/report` remains for API clients.
 - Integration profile create stays `PENDING`, refuses an existing row including a soft-deleted listing, and omits login email. Saving a key no longer restarts or revives credential expiry. Goal and IEP reads are paged; strategy rows use `linked_goal_card_id`.

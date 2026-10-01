@@ -6,11 +6,14 @@ import { AddressFormFields, addressFromApi, addressToPayload, emptyAddress } fro
 import { AvatarUpload } from '../shared/AvatarUpload.jsx'
 import {
   PROFILE_COMPLETION_ACCOUNT_FIELDS,
+  PROFILE_COMPLETION_SECTION_IDS,
   PROFILE_COMPLETION_SERVICE_FIELDS,
 } from '../../lib/therapistQualificationLevels.js'
 import { TherapistProfileCompletionGuide } from './TherapistProfileCompletionGuide.jsx'
+import { TherapistProfileQualityPanel } from './TherapistProfileQualityPanel.jsx'
 import { TherapistServiceProfileSection } from './TherapistServiceProfileSection.jsx'
 import { TherapistReviewsSection } from './TherapistReviewsSection.jsx'
+import { evaluateProfileQuality } from '../../lib/therapistProfileQuality.js'
 import './therapist-profile.css'
 
 const STATUS_COLORS = {
@@ -57,6 +60,7 @@ export function TherapistProfilePage() {
   const [error, setError] = useState('')
   const [focusSectionId, setFocusSectionId] = useState(null)
   const [serviceEditRequestKey, setServiceEditRequestKey] = useState(null)
+  const [listingDraft, setListingDraft] = useState(null)
 
   useEffect(() => {
     if (user) {
@@ -117,6 +121,19 @@ export function TherapistProfilePage() {
 
   const statusStyle = STATUS_COLORS[form.employment_status] || STATUS_COLORS.ACTIVE
   const homeSummary = [user?.home_address?.city, user?.home_address?.state].filter(Boolean).join(', ')
+  const liveQuality = evaluateProfileQuality({
+    email: user?.email,
+    phone: editingAccount ? form.phone : user?.phone,
+    avatarUrl: user?.avatar_url,
+    addressLine1: editingAccount ? home.address_line1 : user?.home_address?.address_line1,
+    city: editingAccount ? home.city : user?.home_address?.city,
+    pincode: editingAccount ? home.pincode : user?.home_address?.pincode,
+    displayName: listingDraft?.display_name,
+    fullName: editingAccount ? form.full_name : user?.full_name,
+    shortBio: listingDraft?.short_bio,
+    servicesOffered: listingDraft?.services_offered,
+    qualificationEntries: listingDraft?.professional_qualification_entries,
+  })
 
   function handleGoToCompletionField(fieldKey, sectionId) {
     setFocusSectionId(sectionId)
@@ -144,6 +161,10 @@ export function TherapistProfilePage() {
         </p>
       </header>
 
+      <TherapistProfileQualityPanel
+        quality={liveQuality}
+        onJump={(key) => handleGoToCompletionField(key, PROFILE_COMPLETION_SECTION_IDS[key])}
+      />
       <TherapistProfileCompletionGuide
         completion={user?.profile_completion}
         onGoToField={handleGoToCompletionField}
@@ -269,6 +290,8 @@ export function TherapistProfilePage() {
         onProfileUpdated={reload}
         editRequestKey={serviceEditRequestKey}
         onEditRequestHandled={() => setServiceEditRequestKey(null)}
+        onListingDraft={setListingDraft}
+        liveQuality={liveQuality}
         sectionClassName={sectionFocusClass('therapist-profile-service')}
       />
 

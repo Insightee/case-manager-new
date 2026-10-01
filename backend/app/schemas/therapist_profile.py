@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class QualificationEntry(BaseModel):
+    kind: Literal["degree", "certificate"] = "certificate"
+    title: str = Field(..., min_length=1, max_length=255)
+    year: Optional[int] = Field(None, ge=1950, le=2035)
 
 
 class TherapistProfileBase(BaseModel):
@@ -12,6 +18,7 @@ class TherapistProfileBase(BaseModel):
     academic_qualifications: Optional[str] = Field(None, max_length=4000)
     academic_qualification_level: Optional[str] = Field(None, max_length=32)
     professional_certificates: list[str] = Field(default_factory=list)
+    professional_qualification_entries: list[QualificationEntry] = Field(default_factory=list)
     services_offered: list[str] = Field(default_factory=list)
 
 
@@ -51,6 +58,7 @@ class TherapistProfileRead(TherapistProfileBase):
     last_session_log_at: Optional[datetime] = None
     days_since_last_session_log: Optional[int] = None
     tds_rate_percent: Optional[float] = None
+    quality: Optional[dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 
@@ -65,6 +73,10 @@ class TherapistProfileAdminCreate(TherapistProfileBase):
 
 class TherapistProfileReview(BaseModel):
     admin_note: Optional[str] = None
+
+
+class TherapistProfileRequestChanges(BaseModel):
+    admin_note: str = Field(..., min_length=8, max_length=2000)
 
 
 class ProductModuleDef(BaseModel):

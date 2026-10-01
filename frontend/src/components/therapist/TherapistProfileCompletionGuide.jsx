@@ -29,7 +29,7 @@ export function TherapistProfileCompletionGuide({ completion, onGoToField }) {
   return (
     <section className="therapist-profile-completion-guide" aria-labelledby="profile-completion-guide-title">
       <div className="therapist-profile-completion-guide__head">
-        <p className="therapist-profile-completion-guide__eyebrow">Still to finish</p>
+        <p className="therapist-profile-completion-guide__eyebrow">Still to finish · {completion.percent}%</p>
         <h2 id="profile-completion-guide-title" className="therapist-profile-completion-guide__title">
           1 of {remaining} remaining
         </h2>

@@ -55,6 +55,8 @@ class TherapistProfileCompletionRead(BaseModel):
     missing_fields: list[str] = Field(default_factory=list)
     total_steps: int = 0
     completed_steps: int = 0
+    needs_nudge: bool = False
+    quality: Optional[dict] = None
 
 
 class UserMeResponse(BaseModel):

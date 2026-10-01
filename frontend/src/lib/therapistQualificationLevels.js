@@ -16,13 +16,13 @@ export function qualificationLevelLabel(value) {
 }
 
 export const PROFILE_COMPLETION_FIELD_ORDER = [
-  'full_name',
-  'phone',
-  'home_address',
   'avatar',
-  'display_name',
+  'home_address',
+  'pincode',
+  'phone',
+  'email',
   'short_bio',
-  'qualification_level',
+  'degree',
   'services_offered',
 ]
 
@@ -30,10 +30,13 @@ export const PROFILE_COMPLETION_FIELD_LABELS = {
   full_name: 'Full name',
   phone: 'Phone number',
   home_address: 'Home / base address',
+  pincode: 'Pincode',
+  email: 'Email id',
   avatar: 'Profile photo',
   display_name: 'Display name',
-  short_bio: 'Short bio',
+  short_bio: 'Public bio',
   qualification_level: 'Highest qualification',
+  degree: 'Degree',
   services_offered: 'Services offered',
 }
 
@@ -42,19 +45,23 @@ export const PROFILE_COMPLETION_SECTION_IDS = {
   full_name: 'therapist-profile-contact',
   phone: 'therapist-profile-contact',
   home_address: 'therapist-profile-contact',
+  pincode: 'therapist-profile-contact',
+  email: 'therapist-profile-contact',
   avatar: 'therapist-profile-avatar',
   display_name: 'therapist-profile-service',
   short_bio: 'therapist-profile-service',
   qualification_level: 'therapist-profile-service',
+  degree: 'therapist-profile-service',
   services_offered: 'therapist-profile-service',
 }
 
-export const PROFILE_COMPLETION_ACCOUNT_FIELDS = new Set(['full_name', 'phone', 'home_address'])
+export const PROFILE_COMPLETION_ACCOUNT_FIELDS = new Set(['full_name', 'phone', 'home_address', 'pincode', 'email'])
 
 export const PROFILE_COMPLETION_SERVICE_FIELDS = new Set([
   'display_name',
   'short_bio',
   'qualification_level',
+  'degree',
   'services_offered',
 ])
 
@@ -68,5 +75,7 @@ export const PROFILE_COMPLETION_DEADLINE_LABEL = '3 October'
 export const PROFILE_COMPLETION_EDIT_PATH = '/therapist/profile?edit=1'
 
 export function isProfileCompletionIncomplete(completion) {
-  return Boolean(completion && completion.complete === false)
+  if (!completion) return false
+  if (typeof completion.needs_nudge === 'boolean') return completion.needs_nudge
+  return completion.complete === false
 }

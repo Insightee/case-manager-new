@@ -87,6 +87,7 @@ from app.schemas.therapist_profile import (
     ServiceCategoryUpdate,
     TherapistProfileAdminCreate,
     TherapistProfileRead,
+    TherapistProfileRequestChanges,
     TherapistProfileReview,
     TherapistProfileUpdate,
 )
@@ -2687,6 +2688,34 @@ def admin_approve_profile(
     profile.reviewed_at = datetime.now(timezone.utc)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve_profile", entity_type="therapist_profile", entity_id=profile_id, **meta)
+    db.commit()
+    db.refresh(profile)
+    return TherapistProfileRead(**profile_svc.profile_to_dict(profile, db.get(User, profile.user_id)))
+
+
+@router.post("/therapist-profiles/{profile_id}/request-changes", response_model=TherapistProfileRead)
+def admin_request_profile_changes(
+    profile_id: int,
+    payload: TherapistProfileRequestChanges,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    profile = db.get(TherapistProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    profile_svc.admin_request_changes(profile, payload.admin_note)
+    profile.reviewed_by_user_id = user.id
+    profile.reviewed_at = datetime.now(timezone.utc)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="request_profile_changes",
+        entity_type="therapist_profile",
+        entity_id=profile_id,
+        **meta,
+    )
     db.commit()
     db.refresh(profile)
     return TherapistProfileRead(**profile_svc.profile_to_dict(profile, db.get(User, profile.user_id)))

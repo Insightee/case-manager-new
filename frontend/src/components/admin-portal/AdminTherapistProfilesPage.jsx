@@ -41,11 +41,15 @@ const DIFF_FIELDS = [
   { key: 'short_bio', label: 'Short bio', type: 'text' },
   { key: 'academic_qualifications', label: 'Qualifications', type: 'text' },
   { key: 'professional_certificates', label: 'Certificates', type: 'list' },
+  { key: 'professional_qualification_entries', label: 'Qualification cards', type: 'cards' },
   { key: 'services_offered', label: 'Services', type: 'services' },
 ]
 
 function normalizeForDiff(value, type) {
   if (type === 'text') return (value ?? '').toString().trim()
+  if (type === 'cards') {
+    return [...(value || [])].map((row) => `${row.kind || ''}:${row.title || ''}:${row.year || ''}`).filter(Boolean)
+  }
   return [...(value || [])].map((v) => String(v)).filter(Boolean)
 }
 
@@ -79,7 +83,7 @@ function formatDiffValue(value, type, categories) {
     const labels = serviceLabels(value, categories)
     return labels.length ? labels.join(', ') : '—'
   }
-  if (type === 'list') {
+  if (type === 'list' || type === 'cards') {
     return value.length ? value.join(', ') : '—'
   }
   return value || '—'
@@ -88,7 +92,10 @@ function formatDiffValue(value, type, categories) {
 function ProfileChangesSection({ profile, categories }) {
   const needsReview =
     profile &&
-    (profile.status === 'PENDING' || profile.has_pending_changes || profile.status === 'DRAFT')
+    (profile.status === 'PENDING' ||
+      profile.status === 'CHANGES_REQUESTED' ||
+      profile.has_pending_changes ||
+      profile.status === 'DRAFT')
   if (!needsReview) return null
 
   const changes = computeProfileChanges(profile)
@@ -175,7 +182,7 @@ function formatLastSessionLog(profile) {
 /** Badge/filter status: approved listings with unreviewed edits count as Pending. */
 function profileDisplayStatus(profile) {
   if (profile?.status === 'NEEDS_LISTING' || profile?.status === 'DELETED') return profile.status
-  if (profile?.has_pending_changes) return 'PENDING'
+  if (profile?.has_pending_changes || profile?.status === 'CHANGES_REQUESTED') return 'PENDING'
   return profile?.status || 'DRAFT'
 }
 
@@ -315,6 +322,10 @@ export function AdminTherapistProfilesPage() {
   async function act(path, profileId) {
     setError('')
     setSuccess('')
+    if (path === 'request-changes' && (note || '').trim().length < 8) {
+      setError('Add a short note so they know what to update.')
+      return
+    }
     try {
       await apiFetch(`/api/v1/admin/therapist-profiles/${profileId}/${path}`, {
         method: 'POST',
@@ -322,7 +333,7 @@ export function AdminTherapistProfilesPage() {
       })
       setNote('')
       setSelected(null)
-      setSuccess(`Profile ${path}d.`)
+      setSuccess(path === 'request-changes' ? 'Asked for a few updates.' : `Profile ${path}d.`)
       await load()
     } catch (err) {
       setError(err.message || 'Action failed')
@@ -955,6 +966,24 @@ export function AdminTherapistProfilesPage() {
                 )}
               </section>
 
+              {selected.quality ? (
+                <section className="therapist-profile-drawer__section">
+                  <h3 className="therapist-profile-drawer__section-title">
+                    Quality score · {selected.quality.percent}%
+                    {selected.quality.auto_pass ? ' · would auto-publish' : ''}
+                  </h3>
+                  {selected.quality.reminders?.length ? (
+                    <ul className="therapist-profile-drawer__text">
+                      {selected.quality.reminders.map((row) => (
+                        <li key={row.key}>{row.message}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="therapist-profile-drawer__text">All quality checks passed.</p>
+                  )}
+                </section>
+              ) : null}
+
               <TherapistLeaveBalancePanel therapistUserId={selected.user_id} canEdit={canManageUsers} />
 
               <section className="therapist-profile-drawer__section">
@@ -980,10 +1009,22 @@ export function AdminTherapistProfilesPage() {
                     Restore as paused
                   </button>
                 ) : null}
-                {canEditProfiles && (selected.status === 'PENDING' || selected.has_pending_changes) ? (
-                  <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
-                    Approve
-                  </button>
+                {canEditProfiles &&
+                (selected.status === 'PENDING' ||
+                  selected.status === 'CHANGES_REQUESTED' ||
+                  selected.has_pending_changes) ? (
+                  <>
+                    <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--secondary admin-btn--sm"
+                      onClick={() => act('request-changes', selected.id)}
+                    >
+                      Request changes
+                    </button>
+                  </>
                 ) : null}
                 {canEditProfiles && selected.status === 'APPROVED' ? (
                   <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => act('pause', selected.id)}>
