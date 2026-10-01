@@ -78,5 +78,47 @@ def test_margin_by_case_includes_pct_and_low_flag():
         assert "marginPct" in sample
         assert "lowMargin" in sample
         assert "marginFlag" in sample
+
+
+def test_finance_report_catalog_lists_picker_reports():
+    headers = _headers("finance@demo.com")
+    r = client.get("/api/v1/admin/finance-reports/catalog", headers=headers)
+    assert r.status_code == 200
+    keys = [item["key"] for item in r.json()["reports"]]
+    assert "therapist-payout-preview" in keys
+    assert "collections" in keys
+    assert "monthly-billing" in keys
+    collections = next(item for item in r.json()["reports"] if item["key"] == "collections")
+    assert "date_from" in collections["filters"]
+    assert "status" in collections["filters"]
+
+
+def test_collections_accepts_period_and_status():
+    headers = _headers("superadmin@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/collections"
+        "?date_from=2026-10-01&date_to=2026-10-31&status=CONFIRMED&page=1&page_size=50",
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["count"] >= len(data["rows"])
+    for row in data["rows"]:
+        assert row.get("paymentStatus") == "CONFIRMED"
+        sample = str(row)
         assert "Therapist Share" not in sample
         assert "pay_share_pct" not in sample
+
+
+def test_monthly_billing_accepts_month_case_type_and_status():
+    headers = _headers("superadmin@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/monthly-billing"
+        "?billing_month=2026-10&product_module=homecare&status=PAID&page=1&page_size=50",
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "rows" in data
+    for row in data["rows"]:
+        assert row.get("status") == "PAID"

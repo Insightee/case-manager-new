@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
+import {
+  currentBillingMonthIST,
+  isoMonthToLongLabel,
+  longLabelToIsoMonth,
+} from '../../lib/datetime.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
   IEP_CATEGORY_ID,
@@ -13,6 +18,8 @@ import {
   AdminPageHeader,
   AdminSearchInput,
   AdminToolbar,
+  FilterMonth,
+  FilterSelect,
   ServiceFilterSelect,
 } from './ui/index.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
@@ -20,7 +27,17 @@ import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
 import { AdminClientStatusReportSection } from './AdminClientStatusReportSection.jsx'
 import { AdminMeetingsReportSection } from './AdminMeetingsReportSection.jsx'
+import { AdminReportLibrary } from './AdminReportLibrary.jsx'
 import './admin-reports.css'
+
+const CLINICAL_STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'UNDER_REVIEW', label: 'Under review' },
+  { value: 'APPROVED', label: 'Approved' },
+  { value: 'PUBLISHED', label: 'Published' },
+  { value: 'REJECTED', label: 'Rejected' },
+]
 
 async function downloadExport(path, filename) {
   const { access } = getTokens()
@@ -44,7 +61,7 @@ function buildListQuery(filters, page, pageSize) {
   if (filters.search) p.set('search', filters.search)
   if (filters.status) p.set('status', filters.status)
   if (filters.module) p.set('product_module', filters.module)
-  if (filters.month) p.set('month', filters.month)
+  if (filters.month) p.set('month', isoMonthToLongLabel(filters.month) || filters.month)
   if (filters.category) p.set('category', filters.category)
   if (filters.parentReview) p.set('parent_review_status', filters.parentReview)
   if (filters.caseId) p.set('case_id', filters.caseId)
@@ -56,6 +73,7 @@ const CATEGORY_OPTIONS = reportCategoryOptions()
 const BASE_VIEW_OPTIONS = [
   { value: 'queue', label: 'Review queue' },
   { value: 'all', label: 'All reports' },
+  { value: 'library', label: 'Downloads' },
   { value: 'missing', label: 'Missing monthly' },
   { value: 'iep', label: 'Pending IEP' },
   { value: 'meetings', label: 'Meetings report' },
@@ -64,8 +82,9 @@ const BASE_VIEW_OPTIONS = [
 ]
 
 function viewOptionsForUser(seesAllCases) {
-  if (seesAllCases) return BASE_VIEW_OPTIONS
-  return BASE_VIEW_OPTIONS.filter((o) => o.value !== 'client-status' && o.value !== 'operations')
+  const options = BASE_VIEW_OPTIONS.filter((o) => o.value !== 'library')
+  if (seesAllCases) return options
+  return options.filter((o) => o.value !== 'client-status' && o.value !== 'operations')
 }
 
 function parseDrawerId(searchParams) {
@@ -168,11 +187,9 @@ export function AdminReportsPage() {
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [status, setStatus] = useState(searchParams.get('status') || '')
   const [module, setModule] = useState(searchParams.get('module') || '')
-  const [month, setMonth] = useState(searchParams.get('month') || '')
+  const [month, setMonth] = useState(() => longLabelToIsoMonth(searchParams.get('month') || '') || '')
   const [category, setCategory] = useState(searchParams.get('category') || '')
-  const [missingMonth, setMissingMonth] = useState(
-    () => new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
-  )
+  const [missingMonth, setMissingMonth] = useState(() => currentBillingMonthIST())
   const [missingRows, setMissingRows] = useState([])
   const [iepRows, setIepRows] = useState([])
   const [iepSummary, setIepSummary] = useState(null)
@@ -282,7 +299,7 @@ export function AdminReportsPage() {
     if (tab !== 'missing') return
     setLoading(true)
     try {
-      const q = new URLSearchParams({ month: missingMonth })
+      const q = new URLSearchParams({ month: isoMonthToLongLabel(missingMonth) || missingMonth })
       if (module) q.set('product_module', module)
       const rows = await apiFetch(`/api/v1/admin/reports/missing-monthly?${q}`)
       setMissingRows(rows || [])
@@ -298,7 +315,7 @@ export function AdminReportsPage() {
   useEffect(() => {
     if (tab === 'missing') loadMissing()
     else if (tab === 'iep') loadIepPending()
-    else if (tab === 'client-status' || tab === 'operations') return
+    else if (tab === 'client-status' || tab === 'operations' || tab === 'library') return
     else loadList()
   }, [tab, loadList, loadMissing, loadIepPending])
 
@@ -328,6 +345,7 @@ export function AdminReportsPage() {
   }
 
   useEffect(() => {
+    if (tab === 'library') return
     if (!viewTabOptions.some((o) => o.value === tab)) {
       setTab('queue')
     }
@@ -575,12 +593,47 @@ export function AdminReportsPage() {
       <AdminPageHeader
         title="Report management"
         subtitle={
-          seesAllCases
-            ? 'Review and approve reports across all cases in your programmes.'
-            : 'Review and approve reports for cases assigned to you as case manager.'
+          tab === 'library'
+            ? 'Pick any export, set month, case type, period, and status, then generate or download.'
+            : seesAllCases
+              ? 'Review and approve reports across all cases in your programmes.'
+              : 'Review and approve reports for cases assigned to you as case manager.'
         }
       />
 
+      <div className="admin-reports__modes" role="tablist" aria-label="Reports workspace">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab !== 'library'}
+          className={`admin-reports__mode${tab !== 'library' ? ' is-active' : ''}`}
+          onClick={() => {
+            if (tab === 'library') setTab('queue')
+          }}
+        >
+          Clinical review
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'library'}
+          className={`admin-reports__mode${tab === 'library' ? ' is-active' : ''}`}
+          onClick={() => setTab('library')}
+        >
+          Downloads
+        </button>
+      </div>
+
+      {tab === 'library' ? (
+        <AdminReportLibrary
+          embedded
+          defaultCategory={can('invoice.approve') ? 'finance' : 'hr_attendance'}
+          defaultReportKey={can('invoice.approve') ? 'therapist-payout-preview' : 'bulk-attendance'}
+        />
+      ) : null}
+
+      {tab === 'library' ? null : (
+      <>
       <p
         className={`admin-reports__scope ${seesAllCases ? 'admin-reports__scope--all' : 'admin-reports__scope--team'}`}
         role="status"
@@ -727,6 +780,7 @@ export function AdminReportsPage() {
             <label className="admin-reports__filter">
               <span className="admin-reports__filter-label">Month</span>
               <input
+                type="month"
                 className="admin-input admin-reports__filter-select"
                 value={missingMonth}
                 onChange={(e) => setMissingMonth(e.target.value)}
@@ -742,33 +796,26 @@ export function AdminReportsPage() {
           onChange={setSearch}
           placeholder="Child, case, month, therapist…"
         />
-        {tab === 'all' ? (
-          <label className="admin-filter-field">
-            <span className="admin-filter-field__label">Status</span>
-            <select className="admin-select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Report status">
-              <option value="">All statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="UNDER_REVIEW">Under review</option>
-              <option value="PUBLISHED">Published</option>
-              <option value="REJECTED">Rejected</option>
-            </select>
-          </label>
+        {tab === 'queue' || tab === 'all' ? (
+          <FilterSelect
+            label="Report status"
+            id="clinical-report-status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            options={CLINICAL_STATUS_OPTIONS}
+          />
         ) : null}
         <label className="admin-filter-field">
-          <span className="admin-filter-field__label">Service</span>
-          <ServiceFilterSelect value={module} onChange={setModule} />
+          <span className="admin-filter-field__label">Case type</span>
+          <ServiceFilterSelect className="admin-filter-select__input" value={module} onChange={setModule} />
         </label>
-        {(typeFilter === 'all' || typeFilter === 'monthly') && tab === 'all' ? (
-          <label className="admin-filter-field">
-            <span className="admin-filter-field__label">Month</span>
-            <input
-              className="admin-input"
-              placeholder="Month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              aria-label="Report month"
-            />
-          </label>
+        {tab === 'queue' || tab === 'all' || tab === 'missing' ? (
+          <FilterMonth
+            label="Month"
+            id="clinical-report-month"
+            value={tab === 'missing' ? missingMonth : month}
+            onChange={(e) => (tab === 'missing' ? setMissingMonth(e.target.value) : setMonth(e.target.value))}
+          />
         ) : null}
         <label className="admin-filter-field">
           <span className="admin-filter-field__label">Page size</span>
@@ -929,7 +976,11 @@ export function AdminReportsPage() {
             Reference exports for ops review and bulk data planning. Each workbook includes stable IDs
             (case, therapist, client) plus a column guide sheet. Session and report metrics use the
             selected month; identity and billing fields are current snapshot. For attendance, session
-            compliance, replacements, and CM meeting exports, use{' '}
+            compliance, replacements, and CM meeting exports,             use the{' '}
+            <button type="button" className="admin-link-btn" onClick={() => setTab('library')}>
+              Downloads
+            </button>{' '}
+            tab or{' '}
             <Link to="/admin/hr-reports">People &amp; HR → Reports</Link>.
           </p>
           <div
@@ -1069,6 +1120,8 @@ export function AdminReportsPage() {
         </button>
       </div>
       ) : null}
+      </>
+      )}
 
       {drawerId != null ? (
         <AdminReportDetailDrawer

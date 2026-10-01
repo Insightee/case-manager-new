@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.core.module_access import is_view_only_user
-from app.core.permissions import RoleName
+from app.core.permissions import RoleName, user_has_permission
 from app.models.user import User
 from app.services import (
     case_service,
@@ -365,6 +365,14 @@ def save_draft_report(report_id: int, user: User = Depends(get_current_user), db
 def approve_report(report_id: int, payload: ApproveBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     report = _report_or_404(db, report_id)
     _case_for_user(db, user, report.case_id)
+    if not (
+        user_has_permission(user, "monthly_report.approve")
+        or user_has_permission(user, "admin.override")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Case access alone does not grant approval. A reviewer role is required.",
+        )
     try:
         report_status_service.approve_report(db, report, user, share_parent=payload.share_with_parent)
     except ValueError as e:

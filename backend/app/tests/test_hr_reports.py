@@ -293,7 +293,7 @@ def test_parent_portal_usage_json():
         assert "Therapist ID" in row
         assert "Login Status" in row
         assert "Last Login" in row
-        assert "Days Since Last Activity" in row
+        assert "Days Since Last Login" in row
         assert "Case Status" in row
         assert row["Case Status"] not in {"CLOSED", "DEACTIVATED"}
         assert "Has Logged In" not in row

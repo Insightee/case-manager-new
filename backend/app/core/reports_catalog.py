@@ -4,10 +4,10 @@ from __future__ import annotations
 from typing import Any
 
 REPORT_CATEGORIES: list[dict[str, str]] = [
-    {"id": "hr_attendance", "label": "HR & attendance"},
-    {"id": "session_ops", "label": "Session logs & billing"},
-    {"id": "crm_lifecycle", "label": "CRM & client lifecycle"},
-    {"id": "case_manager", "label": "Case manager compliance"},
+    {"id": "hr_attendance", "label": "Attendance and delivery"},
+    {"id": "session_ops", "label": "Work and session ops"},
+    {"id": "crm_lifecycle", "label": "Business and cases"},
+    {"id": "case_manager", "label": "Work and approvals"},
     {"id": "legacy", "label": "Legacy exports"},
 ]
 
@@ -89,7 +89,7 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
     {
         "key": "parent-portal-usage",
         "label": "Parent portal usage",
-        "description": "Parent portal login status (Active/Inactive) and last login by case (excludes CLOSED and DEACTIVATED).",
+        "description": "Parent portal login status (Active/Inactive) and last login by case (excludes CLOSED and DEACTIVATED). Login is not application activity.",
         "category": "crm_lifecycle",
         "filters": ["product_module", "case_manager_user_id"],
         "formats": ["csv", "xlsx", "pdf"],

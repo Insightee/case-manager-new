@@ -3,14 +3,15 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.user import User
 from app.services import support_history_service as hist_svc
-from app.services.support_access_service import support_hub_capabilities, support_scope
+from app.services import support_ticket_report_service as ticket_report
+from app.services.support_access_service import can_view_support_tickets, support_hub_capabilities, support_scope
 
 router = APIRouter(prefix="/admin/support", tags=["admin-support"])
 
@@ -18,6 +19,11 @@ router = APIRouter(prefix="/admin/support", tags=["admin-support"])
 def _require_support_reports(user: User, db: Session) -> None:
     if support_scope(user, db) == "none":
         raise HTTPException(status_code=403, detail="Support reports access required")
+
+
+def _require_ticket_report(user: User, db: Session) -> None:
+    if not can_view_support_tickets(user, db):
+        raise HTTPException(status_code=403, detail="Support ticket report is available to staff who handle tickets.")
 
 
 @router.get("/capabilities")
@@ -86,4 +92,67 @@ def support_history_export(
         csv_text,
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=support-history.csv"},
+    )
+
+
+@router.get("/ticket-report")
+def support_ticket_report(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    product_module: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Read-only counts and queue. Does not reply, close, or change tickets."""
+    _require_ticket_report(user, db)
+    try:
+        return ticket_report.build_support_ticket_report(
+            db,
+            user,
+            status=status,
+            category=category,
+            product_module=product_module,
+            assigned_to=assigned_to,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except ticket_report.ReportFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/ticket-report.xlsx")
+def support_ticket_report_xlsx(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    product_module: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_ticket_report(user, db)
+    try:
+        payload = ticket_report.build_support_ticket_report(
+            db,
+            user,
+            status=status,
+            category=category,
+            product_module=product_module,
+            assigned_to=assigned_to,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except ticket_report.ReportFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    filters = payload["filters"]
+    filename = f"support-tickets-report-{filters['date_from']}-to-{filters['date_to']}.xlsx"
+    data = ticket_report.report_to_xlsx(payload, user)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
