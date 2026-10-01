@@ -41,6 +41,7 @@ INTEGRATION_SCOPES: frozenset[str] = frozenset(
         "iep:read",
         "profiles:read",
         "profiles:write",
+        "finance:read",
     }
 )
 
@@ -52,6 +53,7 @@ class IntegrationClient(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=IntegrationClientStatus.ACTIVE.value, index=True)
     scopes_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    all_cases: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     rate_limit_per_minute: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     access_token_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
     key_ttl_days: Mapped[int] = mapped_column(Integer, nullable=False, default=365)

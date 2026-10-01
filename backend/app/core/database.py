@@ -585,6 +585,7 @@ def ensure_sqlite_schema_patches() -> None:
                         name VARCHAR(128) NOT NULL,
                         status VARCHAR(32) NOT NULL DEFAULT 'active',
                         scopes_json JSON NOT NULL,
+                        all_cases BOOLEAN NOT NULL DEFAULT 0,
                         rate_limit_per_minute INTEGER NOT NULL DEFAULT 60,
                         access_token_minutes INTEGER NOT NULL DEFAULT 15,
                         key_ttl_days INTEGER NOT NULL DEFAULT 365,
@@ -640,6 +641,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE integration_clients ADD COLUMN key_ttl_days INTEGER NOT NULL DEFAULT 365"))
             if "mcp_enabled" not in client_cols:
                 conn.execute(text("ALTER TABLE integration_clients ADD COLUMN mcp_enabled BOOLEAN NOT NULL DEFAULT 1"))
+            if "all_cases" not in client_cols:
+                conn.execute(text("ALTER TABLE integration_clients ADD COLUMN all_cases BOOLEAN NOT NULL DEFAULT 0"))
         if not fresh_integration.has_table("integration_webhooks"):
             with engine.begin() as conn:
                 conn.execute(

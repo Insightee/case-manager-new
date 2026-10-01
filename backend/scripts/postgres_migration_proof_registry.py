@@ -1193,6 +1193,34 @@ register_head(
 )
 
 
+def _seed_i2all3cases4fin(db: Session) -> dict[str, Any]:
+    from app.models.integration import IntegrationClient, IntegrationClientStatus
+    from app.models.user import User
+
+    actor = db.scalar(select(User).limit(1))
+    if not actor:
+        raise RuntimeError("Need a user — run demo_seed first")
+    client = IntegrationClient(
+        name="migration-proof-all-cases",
+        status=IntegrationClientStatus.ACTIVE.value,
+        scopes_json=["finance:read"],
+        all_cases=True,
+        rate_limit_per_minute=30,
+        created_by_user_id=actor.id,
+    )
+    db.add(client)
+    db.flush()
+    return {"client_id": client.id, "all_cases": True}
+
+
+register_head(
+    "i2all3cases4fin",
+    tables_added=[],
+    columns_added=[("integration_clients", "all_cases")],
+    seed=_seed_i2all3cases4fin,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

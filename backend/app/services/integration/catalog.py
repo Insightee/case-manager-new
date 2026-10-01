@@ -50,6 +50,7 @@ INFO_DOMAINS: tuple[InfoDomain, ...] = (
     InfoDomain("reporting", "reporting:pending", None),
     InfoDomain("ops", "ops:summary", None),
     InfoDomain("profiles", "profiles:read", "profiles:write"),
+    InfoDomain("finance", "finance:read", None),
 )
 
 _DOMAIN_BY_ID = {domain.id: domain for domain in INFO_DOMAINS}

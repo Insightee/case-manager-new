@@ -57,6 +57,13 @@ export const INFO_ACCESS = [
     readScope: 'profiles:read',
     writeScope: 'profiles:write',
   },
+  {
+    id: 'finance',
+    label: 'Finance',
+    hint: 'Receivables and ledger totals for granted cases. No child names. Needs every case, or a case list.',
+    readScope: 'finance:read',
+    writeScope: null,
+  },
 ]
 
 export const KEY_TTL_OPTIONS = [
@@ -94,6 +101,7 @@ export function emptyKeyDraft() {
     accessTokenMinutes: 15,
     keyTtlDays: 90,
     mcpEnabled: true,
+    allCases: false,
     caseIdsText: '',
     rateLimit: 60,
   }
@@ -197,6 +205,9 @@ export function validateKeyDraft(draft) {
   }
   const cases = parseCaseIds(draft.caseIdsText)
   if (cases.error) return cases.error
+  if (draft.infoAccess?.includes('finance') && !draft.allCases && !cases.ids.length) {
+    return 'Finance needs every case, or at least one granted case. An empty list is not an empty month.'
+  }
   if (![15, 60, 480, 1440].includes(Number(draft.accessTokenMinutes))) {
     return 'Choose how long each access token stays valid.'
   }
@@ -218,7 +229,8 @@ export function keyDraftFromClient(client) {
     accessTokenMinutes: Number(client?.access_token_minutes) || 15,
     keyTtlDays: client?.key_ttl_days == null ? 365 : Number(client.key_ttl_days),
     mcpEnabled: client?.mcp_enabled !== false,
-    caseIdsText: (client?.case_ids || []).join(', '),
+    allCases: Boolean(client?.all_cases),
+    caseIdsText: client?.all_cases ? '' : (client?.case_ids || []).join(', '),
     rateLimit: Number(client?.rate_limit_per_minute) || 60,
   }
 }
@@ -233,7 +245,8 @@ export function keyPayloadFromDraft(draft) {
     access_token_minutes: Number(draft.accessTokenMinutes),
     key_ttl_days: Number(draft.keyTtlDays),
     mcp_enabled: Boolean(draft.mcpEnabled),
-    case_ids: cases.ids,
+    all_cases: Boolean(draft.allCases),
+    case_ids: draft.allCases ? [] : cases.ids,
     rate_limit_per_minute: Number(draft.rateLimit) || 60,
   }
 }
