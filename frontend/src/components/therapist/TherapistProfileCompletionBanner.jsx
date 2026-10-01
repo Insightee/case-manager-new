@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { PROFILE_COMPLETION_DEADLINE_LABEL } from '../../lib/therapistQualificationLevels.js'
 import './therapist-profile-completion-banner.css'
 
 /**
@@ -20,7 +21,8 @@ export function TherapistProfileCompletionBanner({ completion }) {
     >
       <span className="therapist-profile-completion-banner__label">Important</span>
       <span className="therapist-profile-completion-banner__text">
-        Your profile is {completion.percent}% complete — tap here to finish your profile
+        Your profile is {completion.percent}% complete — finish by {PROFILE_COMPLETION_DEADLINE_LABEL}. Sessions and
+        logs stay available.
       </span>
       <span className="therapist-profile-completion-banner__chevron" aria-hidden>
         →

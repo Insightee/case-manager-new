@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AddressFormFields, addressFromApi, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
@@ -47,6 +48,7 @@ function ProfileField({ label, value, emptyText = 'Not set' }) {
 
 export function TherapistProfilePage() {
   const { user, reload } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [editingAccount, setEditingAccount] = useState(false)
   const [form, setForm] = useState({ full_name: '', phone: '', employment_status: 'ACTIVE' })
   const [home, setHome] = useState(emptyAddress())
@@ -66,6 +68,14 @@ export function TherapistProfilePage() {
       setHome(addressFromApi(user.home_address))
     }
   }, [user])
+
+  useEffect(() => {
+    if (searchParams.get('edit') !== '1') return
+    setEditingAccount(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('edit')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   function cancelEdit() {
     setEditingAccount(false)

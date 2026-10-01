@@ -62,3 +62,11 @@ export function orderedMissingFields(missingFields) {
   const missing = new Set(missingFields || [])
   return PROFILE_COMPLETION_FIELD_ORDER.filter((key) => missing.has(key))
 }
+
+export const PROFILE_COMPLETION_DEADLINE_ISO = '2026-10-03'
+export const PROFILE_COMPLETION_DEADLINE_LABEL = '3 October'
+export const PROFILE_COMPLETION_EDIT_PATH = '/therapist/profile?edit=1'
+
+export function isProfileCompletionIncomplete(completion) {
+  return Boolean(completion && completion.complete === false)
+}

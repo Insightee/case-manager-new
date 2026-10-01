@@ -18,6 +18,8 @@ import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
 import { TherapistProfileCompletionBanner } from '../components/therapist/TherapistProfileCompletionBanner.jsx'
+import { TherapistProfileCompletionModal } from '../components/therapist/TherapistProfileCompletionModal.jsx'
+import { isProfileCompletionIncomplete } from '../lib/therapistQualificationLevels.js'
 import '../components/shared/notification-bell.css'
 
 const THERAPIST_NAV = [
@@ -254,6 +256,30 @@ export function PortalShell({ portal }) {
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const profileIncomplete = portal === 'therapist' && isProfileCompletionIncomplete(user?.profile_completion)
+  const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false)
+  const [profileLogoutOpen, setProfileLogoutOpen] = useState(false)
+
+  useEffect(() => {
+    if (!profileIncomplete) {
+      setProfileWelcomeOpen(false)
+      setProfileLogoutOpen(false)
+      return
+    }
+    if (location.pathname.startsWith('/therapist/profile')) return
+    setProfileWelcomeOpen(true)
+    // One reminder per login, not on every route change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileIncomplete, user?.id])
+
+  function requestLogout() {
+    if (profileIncomplete) {
+      setProfileLogoutOpen(true)
+      setProfileWelcomeOpen(false)
+      return
+    }
+    logout()
+  }
   const financeRoute =
     portal === 'admin'
       && (location.pathname.startsWith('/admin/invoices')
@@ -446,7 +472,7 @@ export function PortalShell({ portal }) {
                     type="button"
                     className="app-mobile-account-menu__logout"
                     role="menuitem"
-                    onClick={logout}
+                    onClick={requestLogout}
                   >
                     Logout
                   </button>
@@ -542,7 +568,7 @@ export function PortalShell({ portal }) {
                 className="app-sidebar__drawer-action app-sidebar__drawer-action--logout"
                 onClick={() => {
                   setMobileNavOpen(false)
-                  logout()
+                  requestLogout()
                 }}
               >
                 Sign out
@@ -612,7 +638,7 @@ export function PortalShell({ portal }) {
             </div>
           )}
 
-          <button type="button" className="app-sidebar__logout" onClick={logout}>
+          <button type="button" className="app-sidebar__logout" onClick={requestLogout}>
             <svg
               className="app-sidebar__logout-icon"
               viewBox="0 0 20 20"
@@ -683,6 +709,22 @@ export function PortalShell({ portal }) {
         ) : null}
         <Outlet />
       </main>
+      <TherapistProfileCompletionModal
+        open={profileWelcomeOpen}
+        completion={user?.profile_completion}
+        mode="welcome"
+        onContinue={() => setProfileWelcomeOpen(false)}
+      />
+      <TherapistProfileCompletionModal
+        open={profileLogoutOpen}
+        completion={user?.profile_completion}
+        mode="logout"
+        onContinue={() => setProfileLogoutOpen(false)}
+        onSignOut={() => {
+          setProfileLogoutOpen(false)
+          logout()
+        }}
+      />
       <PortalInstallBanner />
     </div>
     </PortalInstallProvider>
