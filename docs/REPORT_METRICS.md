@@ -31,12 +31,12 @@ Synthetic identifiers in examples are fictional.
 | **Date basis** | Billing month (`YYYY-MM`, also `Oct 2026` / `October 2026`). Not “paid during the period” — therapist `invoices` have no payout paid-at timestamp |
 | **Included** | Live `payout_preview_rows` unless the month is closed, then snapshot rows |
 | **Excluded** | Payout formula changes; Control Tower; client collections |
-| **Filters** | Billing month; product module (and case/therapist when the UI sends them) |
+| **Filters** | Billing month; period start/end (IST); product module / case type; report status; case/therapist when sent |
 | **Limitation** | Live path is case/segment work. Preview must be explicitly generated. Export may hit `MAX_EXPORT_ROWS` (5000); the UI must not treat a 50-row preview as the full total |
 
 Do not rename this report. Collections, receivables, and contribution are **different** views.
 
-### Collections (API; not the Finance Reports landing page)
+### Collections
 
 | | |
 |---|---|

@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.billing_month import (
+    ist_date_range_utc_bounds,
     ist_month_utc_bounds,
     month_date_bounds,
     parse_billing_month,
@@ -47,6 +48,192 @@ REPORT_LABELS: dict[str, str] = {
 
 REPORT_KEYS = frozenset(REPORT_LABELS.keys())
 
+_INVOICE_STATUS_OPTIONS = [
+    {"value": "", "label": "All statuses"},
+    {"value": "GENERATED", "label": "Generated"},
+    {"value": "ISSUED", "label": "Issued"},
+    {"value": "SENT", "label": "Sent"},
+    {"value": "PARTIALLY_PAID", "label": "Partially paid"},
+    {"value": "PAID", "label": "Paid"},
+    {"value": "OVERDUE", "label": "Overdue"},
+    {"value": "DISPUTED", "label": "Disputed"},
+    {"value": "CLOSED", "label": "Closed"},
+    {"value": "CANCELLED", "label": "Cancelled"},
+]
+
+_PAYOUT_STATUS_OPTIONS = [
+    {"value": "", "label": "All statuses"},
+    {"value": "DRAFT", "label": "Draft"},
+    {"value": "IN_REVIEW", "label": "In review"},
+    {"value": "APPROVED", "label": "Approved"},
+    {"value": "EXPORTING", "label": "Exporting"},
+    {"value": "PAID", "label": "Paid"},
+    {"value": "QUERIED", "label": "Queried"},
+    {"value": "REJECTED", "label": "Rejected"},
+]
+
+_PAYMENT_STATUS_OPTIONS = [
+    {"value": "", "label": "All statuses"},
+    {"value": "CONFIRMED", "label": "Confirmed"},
+    {"value": "PENDING_REVIEW", "label": "Pending review"},
+    {"value": "REJECTED", "label": "Rejected"},
+]
+
+FINANCE_REPORT_DEFINITIONS: list[dict] = [
+    {
+        "key": "therapist-payout-preview",
+        "label": "Therapist payout preview",
+        "description": "Projected therapist pay for the billing month. Generate before export. Close month freezes the snapshot.",
+        "category": "finance",
+        "filters": ["month", "date_from", "date_to", "product_module", "status", "case_id", "therapist_user_id"],
+        "formats": ["csv", "xlsx"],
+        "generateFirst": True,
+        "closeMonth": True,
+    },
+    {
+        "key": "monthly-billing",
+        "label": "Monthly billing",
+        "description": "Client invoices for the selected billing month.",
+        "category": "finance",
+        "filters": ["month", "date_from", "date_to", "product_module", "status"],
+        "statusOptions": _INVOICE_STATUS_OPTIONS,
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "outstanding",
+        "label": "Outstanding balances",
+        "description": "Current unpaid client invoices. Month limits the cohort; amounts are today’s balances.",
+        "category": "finance",
+        "filters": ["month", "date_from", "date_to", "product_module", "status"],
+        "statusOptions": _INVOICE_STATUS_OPTIONS,
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "collections",
+        "label": "Collections",
+        "description": "Family payments. Default date basis is cash received in the IST period. Confirmed totals only.",
+        "category": "finance",
+        "filters": ["month", "date_from", "date_to", "product_module", "status"],
+        "statusOptions": _PAYMENT_STATUS_OPTIONS,
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "therapist-payouts",
+        "label": "Therapist payouts",
+        "description": "Therapist payout statements for the billing month (not paid-at).",
+        "category": "finance",
+        "filters": ["month", "status"],
+        "statusOptions": _PAYOUT_STATUS_OPTIONS,
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "pending-payout-approvals",
+        "label": "Pending payout approvals",
+        "description": "Therapist statements still in review.",
+        "category": "finance",
+        "filters": ["month"],
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "ledger-missing",
+        "label": "Ledger missing",
+        "description": "Cases with completed sessions in the month and no ledger row.",
+        "category": "finance",
+        "filters": ["month", "product_module"],
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "manual-adjustments",
+        "label": "Manual adjustments",
+        "description": "Manual fees, discounts, and therapist manual lines.",
+        "category": "finance",
+        "filters": ["month"],
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "revenue-by-service",
+        "label": "Invoiced by service",
+        "description": "Client invoice totals grouped by service type for the billing month. Not recognised revenue.",
+        "category": "finance",
+        "filters": ["month", "product_module"],
+        "formats": ["csv", "xlsx"],
+    },
+    {
+        "key": "margin-by-case",
+        "label": "Margin by case",
+        "description": "Client billable vs therapist pay for the month. On-demand reconcile.",
+        "category": "finance",
+        "filters": ["month", "product_module"],
+        "formats": ["csv", "xlsx"],
+        "generateFirst": True,
+    },
+]
+
+
+def catalog_payload() -> dict:
+    return {
+        "categories": [{"id": "finance", "label": "Finance"}],
+        "reports": FINANCE_REPORT_DEFINITIONS,
+    }
+
+
+def report_definition(key: str) -> dict | None:
+    for item in FINANCE_REPORT_DEFINITIONS:
+        if item["key"] == key:
+            return item
+    return None
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    raw = (value or "").strip()
+    if len(raw) < 10:
+        return None
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+def _case_ids_for_module(db: Session, product_module: str | None) -> set[int] | None:
+    if not product_module:
+        return None
+    return set(db.scalars(select(Case.id).where(Case.product_module == product_module)).all())
+
+
+def _apply_common_filters(
+    db: Session,
+    rows: list[dict],
+    *,
+    product_module: str | None = None,
+    status: str | None = None,
+    case_id: int | None = None,
+    therapist_user_id: int | None = None,
+) -> list[dict]:
+    out = rows
+    if case_id:
+        cid = int(case_id)
+        out = [r for r in out if int(r.get("caseId") or 0) == cid]
+    if therapist_user_id:
+        tid = int(therapist_user_id)
+        out = [r for r in out if int(r.get("therapistUserId") or 0) == tid]
+    if status:
+        needle = status.strip().upper()
+        out = [
+            r
+            for r in out
+            if str(r.get("status") or r.get("paymentStatus") or "").upper() == needle
+        ]
+    if product_module:
+        ids = _case_ids_for_module(db, product_module) or set()
+        mod = product_module.strip().lower()
+        out = [
+            r
+            for r in out
+            if r.get("caseId") in ids
+            or str(r.get("serviceType") or r.get("product_module") or "").strip().lower() == mod
+        ]
+    return out
+
 
 def _ym(month: str | None) -> str:
     return parse_billing_month(month)
@@ -62,11 +249,24 @@ def report_rows(
     case_id: int | None = None,
     therapist_user_id: int | None = None,
     date_basis: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status: str | None = None,
 ) -> list[dict]:
     if report_key not in REPORT_KEYS:
         raise ValueError(f"Unknown report: {report_key}")
     ym = _ym(billing_month)
     month_keys = therapist_invoice_month_keys(ym)
+
+    def finish(rows: list[dict]) -> list[dict]:
+        return _apply_common_filters(
+            db,
+            rows,
+            product_module=product_module,
+            status=status,
+            case_id=case_id,
+            therapist_user_id=therapist_user_id,
+        )
 
     if report_key == "monthly-billing":
         rows = db.scalars(
@@ -74,7 +274,7 @@ def report_rows(
             .where(ClientInvoice.billing_month == ym)
             .order_by(ClientInvoice.id.desc())
         ).all()
-        return [
+        return finish([
             {
                 "invoiceId": r.id,
                 "invoiceNumber": r.invoice_number,
@@ -85,7 +285,7 @@ def report_rows(
                 "serviceType": r.service_type or "",
             }
             for r in rows
-        ]
+        ])
 
     if report_key == "outstanding":
         open_statuses = [
@@ -99,7 +299,7 @@ def report_rows(
         if billing_month:
             stmt = stmt.where(ClientInvoice.billing_month == ym)
         rows = db.scalars(stmt.order_by(ClientInvoice.id.desc())).all()
-        return [
+        return finish([
             {
                 "invoiceId": r.id,
                 "invoiceNumber": r.invoice_number,
@@ -112,7 +312,7 @@ def report_rows(
                 "dateBasis": "current_snapshot_for_invoice_month" if billing_month else "current_snapshot",
             }
             for r in rows
-        ]
+        ])
 
     if report_key == "collections":
         basis = (date_basis or "cash_period").strip().lower()
@@ -124,10 +324,15 @@ def report_rows(
         if basis == "invoice_cohort":
             stmt = stmt.where(ClientInvoice.billing_month == ym)
         else:
-            start_utc, end_utc = ist_month_utc_bounds(ym)
+            start_d = _parse_iso_date(date_from)
+            end_d = _parse_iso_date(date_to)
+            if start_d and end_d:
+                start_utc, end_utc = ist_date_range_utc_bounds(start_d, end_d)
+            else:
+                start_utc, end_utc = ist_month_utc_bounds(ym)
             stmt = stmt.where(ClientPayment.paid_at >= start_utc, ClientPayment.paid_at < end_utc)
         pairs = db.execute(stmt).all()
-        return [
+        return finish([
             {
                 "paymentId": pay.id,
                 "invoiceId": pay.client_invoice_id,
@@ -143,13 +348,13 @@ def report_rows(
                 "dateBasis": "invoice_cohort" if basis == "invoice_cohort" else "cash_period",
             }
             for pay, inv in pairs
-        ]
+        ])
 
     if report_key == "therapist-payouts":
         rows = db.scalars(
             select(Invoice).where(Invoice.month.in_(month_keys)).order_by(Invoice.id.desc())
         ).all()
-        return [
+        return finish([
             {
                 "invoiceId": r.id,
                 "therapistUserId": r.therapist_user_id,
@@ -159,7 +364,7 @@ def report_rows(
                 "paidAmountInr": float(r.paid_amount_inr or 0),
             }
             for r in rows
-        ]
+        ])
 
     if report_key == "therapist-payout-preview":
         from app.services import billing_period_snapshot_service
@@ -176,16 +381,14 @@ def report_rows(
                 case_id=case_id,
                 therapist_user_id=therapist_user_id,
             )
-        if case_id:
-            rows = [r for r in rows if int(r.get("caseId") or 0) == int(case_id)]
-        return rows
+        return finish(rows)
 
     if report_key == "pending-payout-approvals":
         stmt = select(Invoice).where(Invoice.status == InvoiceStatus.IN_REVIEW)
         if billing_month:
             stmt = stmt.where(Invoice.month.in_(month_keys))
         rows = db.scalars(stmt.order_by(Invoice.id)).all()
-        return [
+        return finish([
             {
                 "invoiceId": r.id,
                 "therapistUserId": r.therapist_user_id,
@@ -193,7 +396,7 @@ def report_rows(
                 "amountInr": float(r.amount_inr or 0),
             }
             for r in rows
-        ]
+        ])
 
     if report_key == "ledger-missing":
         start, end = month_date_bounds(ym)
@@ -224,9 +427,10 @@ def report_rows(
                     "childName": "",
                     "sessionsCompleted": sessions_completed,
                     "billingMonth": ym,
+                    "product_module": getattr(case, "product_module", "") or "",
                 }
             )
-        return out
+        return finish(out)
 
     if report_key == "manual-adjustments":
         client_stmt = (
@@ -261,7 +465,7 @@ def report_rows(
                     "type": "manual_line",
                 }
             )
-        return rows
+        return finish(rows)
 
     if report_key == "revenue-by-service":
         rows = db.execute(
@@ -273,21 +477,21 @@ def report_rows(
             .where(ClientInvoice.billing_month == ym)
             .group_by(ClientInvoice.service_type)
         ).all()
-        return [
+        return finish([
             {
                 "serviceType": r[0] or "unknown",
                 "invoiceCount": int(r[1] or 0),
                 "totalInr": float(r[2] or 0),
             }
             for r in rows
-        ]
+        ])
 
     if report_key == "margin-by-case":
         from app.services import billing_period_snapshot_service
 
         frozen = billing_period_snapshot_service.margin_rows_from_case_snapshots(db, ym)
         if frozen is not None:
-            return frozen
+            return finish(frozen)
 
         from app.services import billing_ledger_service
 
@@ -312,9 +516,9 @@ def report_rows(
                     }
                 )
             )
-        return out
+        return finish(out)
 
-    return []
+    return finish([])
 
 
 def report_csv(report_key: str, rows: list[dict]) -> str:

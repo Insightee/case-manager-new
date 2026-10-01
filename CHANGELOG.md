@@ -22,7 +22,8 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
-- Finance Reports stays **Therapist payout preview** (not a collections generator). Generate preview before running payout math; IST billing month; service/case/therapist filters; pagination that does not treat 50 rows as the full total. Close month still freezes the snapshot.
+- Finance, HR, and Operations **Downloads** share one report library: pick any permitted export, set month / case type / period start and end / report status, then generate or download. Clinical `/admin/reports` stays the review workspace, with a Downloads tab for the same library.
+- Clinical `/admin/reports` month is a real month picker; report status and case type stay visible on the queue and all-reports views.
 - Shared billing-month parser (`YYYY-MM`, `Oct 2026`, `October 2026`) for HR, finance, and control-tower month filters. IST defaults replace UTC `toISOString()` / `date.today()` on those surfaces.
 - Dashboard ticket cards drill into `/admin/support?tab=ticket-report`. Open and in-progress stay separate; needs action is both.
 - HR report categories grouped as Attendance and delivery, Work and session ops, Business and cases, Work and approvals.
@@ -53,7 +54,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
-- Super-admin `/admin` home shows the period-aware leadership overview for `module_admin` and `legacy_admin` (SUPER_ADMIN maps to `module_admin`, not `operations`). HR on `/admin` keeps trimmed KPIs.
+- Finance Reports page no longer uses unstyled invoice filter classes, so month, case type, period start/end, and report status are actually pickable on every generateable export. The same library lists payouts, collections, outstanding, and monthly billing.
 - Clinical-engine approve rejects therapists with 403 (reviewer role required), not a 400 status-state error.
 - Collections totals use `client_payments.payment_status` (not a missing `status` field) and honour cash-period vs invoice-month cohort. Outstanding stays a current snapshot unless the caller asks for a billing-month cohort. Control tower matches therapist `Invoice.month` aliases including `May 2026`. Case status mix includes `PENDING_REPLACEMENT` and `DEACTIVATED`. Monthly/observation completed counts include `PUBLISHED` as well as `APPROVED`. Parent portal export columns say login, not activity.
 - CI Alembic head gates now match `tp_qual_level_2703` (academic qualification level) and register that revision in the Postgres migration proof.

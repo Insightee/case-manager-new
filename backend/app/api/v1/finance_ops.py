@@ -296,6 +296,13 @@ def close_billing_month(
     return result
 
 
+@router.get("/finance-reports/catalog")
+def finance_report_catalog(
+    user: User = Depends(require_permission("invoice.approve")),
+):
+    return finance_reports_service.catalog_payload()
+
+
 @router.get("/finance-reports/{report_key}")
 def finance_report(
     report_key: str,
@@ -305,6 +312,9 @@ def finance_report(
     case_id: Optional[int] = Query(None),
     therapist_user_id: Optional[int] = Query(None),
     date_basis: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     user: User = Depends(require_permission("invoice.approve")),
@@ -320,6 +330,9 @@ def finance_report(
             case_id=case_id,
             therapist_user_id=therapist_user_id,
             date_basis=date_basis,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

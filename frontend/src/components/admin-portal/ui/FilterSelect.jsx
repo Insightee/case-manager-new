@@ -38,6 +38,31 @@ export function FilterSelect({
   )
 }
 
+export function FilterMonth({
+  label = 'Month',
+  value,
+  onChange,
+  id,
+  className = '',
+  ariaLabel,
+}) {
+  const inputId = id || 'filter-month'
+  return (
+    <label className={`admin-filter-field ${className}`.trim()} htmlFor={inputId}>
+      {label ? <span className="admin-filter-field__label">{label}</span> : null}
+      <input
+        id={inputId}
+        type="month"
+        className="admin-filter-select__input admin-filter-select__input--date"
+        value={value}
+        onChange={onChange}
+        aria-label={ariaLabel || label || 'Month'}
+        autoComplete="off"
+      />
+    </label>
+  )
+}
+
 export function FilterDateRange({ label, from, to, onFromChange, onToChange, className = '' }) {
   return (
     <div className={`admin-filter-field admin-filter-field--range ${className}`.trim()}>
@@ -45,18 +70,20 @@ export function FilterDateRange({ label, from, to, onFromChange, onToChange, cla
       <div className="admin-filter-date-range">
         <input
           type="date"
-          className="admin-filter-select__input admin-filter-date-range__input"
+          className="admin-filter-select__input admin-filter-select__input--date admin-filter-date-range__input"
           value={from}
           onChange={onFromChange}
-          aria-label={`${label || 'Opened'} from`}
+          aria-label={`${label || 'Period'} start`}
+          autoComplete="off"
         />
         <span className="admin-filter-date-range__sep">to</span>
         <input
           type="date"
-          className="admin-filter-select__input admin-filter-date-range__input"
+          className="admin-filter-select__input admin-filter-select__input--date admin-filter-date-range__input"
           value={to}
           onChange={onToChange}
-          aria-label={`${label || 'Opened'} to`}
+          aria-label={`${label || 'Period'} end`}
+          autoComplete="off"
         />
       </div>
     </div>

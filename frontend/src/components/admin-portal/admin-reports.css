@@ -1,3 +1,43 @@
+.admin-reports__modes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 4px;
+  border: 1px solid var(--admin-border, #e2e8f0);
+  border-radius: 999px;
+  background: #f8fafc;
+}
+
+.admin-reports__mode {
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+}
+
+.admin-reports__mode.is-active {
+  background: #fff;
+  color: #312e81;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.admin-link-btn {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #4338ca;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .admin-reports__kpis {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--kpi-grid-min, 118px), 1fr));
