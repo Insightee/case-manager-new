@@ -364,7 +364,7 @@ def save_draft_report(report_id: int, user: User = Depends(get_current_user), db
 @router.post("/reports/{report_id}/approve")
 def approve_report(report_id: int, payload: ApproveBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     report = _report_or_404(db, report_id)
-    _case_for_user_share(db, user, report.case_id)
+    _case_for_user(db, user, report.case_id)
     if not (
         user_has_permission(user, "monthly_report.approve")
         or user_has_permission(user, "admin.override")
