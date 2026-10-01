@@ -279,3 +279,4 @@ Minimum relationships:
 - PRD-aligned baseline: `v1.0`
 - This README is the implementation starting point and will evolve module-by-module.
 
+hello
