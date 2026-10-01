@@ -35,7 +35,7 @@ import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday, getBlockingLogForCase, isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
+import { canStartSessionToday, getBlockingLogForCase, isAbsenceConflict, isPendingLogBlock, resolveBlockingLogSession } from '../../lib/sessionStartRules.js'
 import { PendingLogGate, discardPendingLogWithDraft } from './PendingLogGate.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { ActiveSessionCard } from './ActiveSessionCard.jsx'
@@ -532,6 +532,11 @@ export function DailyLogsPage() {
                 attendanceStatus={l.attendance_status}
                 isAbsenceRecord={isAbsenceRecord}
               />
+              {!isVirtual && (l.mentor_reviewed || l.mentor_reviewed_at) ? (
+                <span className="ic-badge ic-badge--neutral" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                  Reviewed by mentor
+                </span>
+              ) : null}
               {formatLogCommentCount(l.comment_count) ? (
                 <LogCommentCountPill count={l.comment_count} className="log-comment-count-pill--inline" />
               ) : null}
@@ -717,9 +722,7 @@ export function DailyLogsPage() {
       { id: sessionId, scheduled_date: todayIsoIST() }
     const caseBlocking = getBlockingLogForCase(needsLog, meta.case_id)
     if (caseBlocking && caseBlocking.id !== sessionId && !activeInProgress) {
-      setError(
-        'This client\'s most recent visit still needs a log. Complete it below or remove the draft visit to continue.',
-      )
+      openLogForm(caseBlocking, { required: true })
       return
     }
     const guard = canStartSessionToday(meta)
@@ -735,8 +738,16 @@ export function DailyLogsPage() {
         allowDuplicate ? { allow_duplicate: true } : {},
       )
       if (!result.ok) {
-        if (result.pendingLog?.message) {
-          setError(result.pendingLog.message)
+        if (result.pendingLog) {
+          const blocked = resolveBlockingLogSession(needsLog, result.pendingLog, meta.case_id)
+          if (blocked) {
+            openLogForm(blocked, { required: true })
+            return
+          }
+          setError(
+            result.pendingLog.message ||
+              'This client’s previous visit still needs a log before starting a new session.',
+          )
           return
         }
         if (result.absenceBlock?.message) {
@@ -1145,6 +1156,18 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           liveBlocked={!!activeInProgress}
           pendingLogBlocked={pendingLogBlockedForComposer}
+          onPendingLogRequired={(pending) => {
+            const blocked =
+              resolveBlockingLogSession(needsLog, pending, composerCaseId) || composerBlockingSession
+            if (blocked) {
+              openLogForm(blocked, { required: true })
+              return
+            }
+            setError(
+              pending?.message ||
+                'This client’s previous visit still needs a log before starting a new session.',
+            )
+          }}
           selectedCaseId={composerCaseId}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
@@ -1242,9 +1265,8 @@ export function DailyLogsPage() {
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
                 const dayExisting = existingVisitForDay(s, deepLinkContext)
-                const caseBlocking = getBlockingLogForCase(needsLog, s.case_id)
                 const canStartFresh =
-                  !activeInProgress && !caseBlocking && !dayExisting && canStartSessionToday(s).ok
+                  !activeInProgress && !dayExisting && canStartSessionToday(s).ok
                 return (
                   <article
                     key={s.id}

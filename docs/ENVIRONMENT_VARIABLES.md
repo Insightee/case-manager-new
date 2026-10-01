@@ -59,6 +59,13 @@ Loaded from environment via [`backend/app/core/config.py`](../backend/app/core/c
 | `JWT_SECRET_KEY` | yes (prod) | dev placeholder | Access token signing secret. |
 | `JWT_REFRESH_SECRET_KEY` | yes (prod) | dev placeholder | Refresh token signing secret. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Access token TTL. |
+| `INTEGRATION_API_ENABLED` | no | `false` | Enable machine-client integration API (`/api/v1/integrations/*`). |
+| `MCP_ENABLED` | no | `false` | Mount remote MCP Streamable HTTP at `/mcp` (requires `INTEGRATION_API_ENABLED=true`). |
+| `INTEGRATION_JWT_SECRET_KEY` | yes when integration on (prod) | dev placeholder | HS256 secret for integration access tokens (keep distinct from user JWT secrets). |
+| `INTEGRATION_ACCESS_TOKEN_MINUTES` | no | `15` | Short-lived integration access token TTL. |
+| `INTEGRATION_DEFAULT_RATE_LIMIT_PER_MINUTE` | no | `60` | Default per-client request rate limit. |
+| `INTEGRATION_MAX_PAGE_SIZE` | no | `50` | Hard max page size for integration list endpoints. |
+| `INTEGRATION_CREDENTIAL_DEFAULT_TTL_DAYS` | no | `365` | Default expiry for newly issued client secrets. |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | no | `7` | Refresh token TTL. |
 
 ### CORS & frontend links
@@ -66,7 +73,7 @@ Loaded from environment via [`backend/app/core/config.py`](../backend/app/core/c
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `CORS_ORIGINS` | yes (prod) | `http://localhost:5173,...` | Comma-separated browser origins allowed for API calls. Include **every** active production UI host (custom domains + legacy `vercel.app`). Custom domains like `insighte.org` are **not** covered by the default regex. |
-| `CORS_ORIGIN_REGEX` | no | auto in prod | Optional regex for extra origins (e.g. Vercel previews). If unset in production, defaults to `https://frontend-*.vercel.app`. |
+| `CORS_ORIGIN_REGEX` | no | auto in prod | Optional regex for extra origins. If unset in production, defaults to official `frontend*.vercel.app` plus `insighte.org`. Retired `insightecasestaging` / `insightecasetesting` hosts do not match and fail production startup if listed. |
 | `FRONTEND_URL` | yes (prod) | `http://localhost:5173` | Base URL for invite links, password reset, booking emails — use the **canonical** production host (`https://www.insighte.org`). |
 
 **Production example (three parallel Vercel domains):**
@@ -141,6 +148,7 @@ Setup: [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md)
 | `TICKET_ATTACHMENT_MAX_FILES` | no | `3` | Max attachments per ticket. |
 | `CASE_DOCUMENT_MAX_BYTES` | no | 5 MiB | Max case document upload size. |
 | `MEETING_INVITE_CALENDAR_TIMEZONE` | no | `Asia/Kolkata` | Google Calendar `ctz` for CM meeting invites. |
+| `SCHEDULING_WEEKENDS_ENABLED` | no | `false` | When true, default staff availability and session templates include Saturday/Sunday until a user saves narrower hours. |
 
 ### SQLite dev-only
 
@@ -240,7 +248,8 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `VITE_ENABLE_BILLING` | unset/false | Legacy alias for `VITE_ENABLE_CLIENT_BILLING` (one-release fallback). |
 | `ZOHO_BOOKS_API_KEY` | empty | Zoho Books sync seam; empty → visible "not configured" status (never fake success). |
 | `ZOHO_BOOKS_LIVE_PUSH` | `false` | When true and API key set, push/update client invoices to Zoho Books. |
-| `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset/false | Stage 1 read-only Finance Control Tower on `/admin/invoices?tab=overview`. Forced off on canonical production via `readClientModuleFlag`. |
+| `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset → **on** in non-prod; off when `false` | Stage 1 read-only Finance Control Tower + snapshot on Client invoices → Tools → Snapshot. Non-production defaults on when unset. Canonical production stays off unless paired with `VITE_FINANCE_DASHBOARD_ALLOW_PROD`. |
+| `VITE_FINANCE_DASHBOARD_ALLOW_PROD` | unset/false | Opt-in for canonical production only. When `true` **and** `VITE_ENABLE_FINANCE_DASHBOARD_V1=true`, the read-only tower may load on `insighte.org` / Vercel Production. Leave unset for normal prod. |
 | `ENABLE_STRUCTURED_EVIDENCE` | `false` | Session-log IEP identity registry + evidence taps. Flag off → zero registry writes; evidence payload ignored. |
 | `ENABLE_CLINICAL_REPORTS_ENGINE` | `true` on production | Observation + IEP clinical report builders (`/api/v1/cases/.../reports/observation|iep`). Requires Alembic revision `c7r8e9p0o1r2`. Set `true` on Railway production, staging, and testing. |
 | `VITE_REPORTS_REVAMP` | on (unless `false`) | Therapist reports dashboard + observation/IEP builder UI. Defaults on when reports are enabled, including production. Set `false` to compare the legacy reports page. |
@@ -254,9 +263,15 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `PAYOUT_PROVIDER` | `MOCK` | `MOCK` or `RAZORPAY` (stub until live wiring). |
 | `PAYOUT_PROVIDER_LIVE` | `false` | When true with `RAZORPAY`, uses live provider adapter (cutover only). |
 | `FINANCE_DEFAULT_TDS_RATE_PERCENT` | `10` | Default TDS rate when therapist profile has no override. |
+| `INVOICE_COMPANY_NAME` | `Insighte Childcare Pvt Ltd` | Letterhead on therapist statement PDF. |
+| `INVOICE_COMPANY_ADDRESS` | AECS Layout address | PDF company address line. |
+| `INVOICE_COMPANY_EMAIL` | `techsupport@insighte.org` | PDF contact email. |
+| `INVOICE_COMPANY_PHONE` | `+91 63646 56234` | PDF contact phone. |
+| `INVOICE_COMPANY_WEBSITE` | `www.insighte.org` | PDF website. |
+| `INVOICE_COMPANY_GSTIN` | empty | Optional GSTIN on PDF. |
 | `BILLING_DISPUTE_LEGACY_ADJUSTMENT` | `false` | When false, admin dispute resolve rejects free-field `adjustment_inr` — use finance correction instead. |
 
-Cutover sequence: see [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md).
+Cutover sequence: see [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md). **Stage 1 snapshot on insighte.org:** see [FINANCE_SNAPSHOT_PROD_CUTOVER.md](./FINANCE_SNAPSHOT_PROD_CUTOVER.md) (`ENABLE_BILLING=true` + both Vite prod opt-in flags; ledger writes stay off).
 
-Staging may set `ENABLE_BILLING=true` (required for Control Tower routers to mount) with `BILLING_LEDGER_WRITES=false` for read-only verification. Enable `VITE_ENABLE_FINANCE_DASHBOARD_V1` only on non-production frontend builds. Production cutover is a separate deliberate event after `monthly_case_review` classification.
+Staging may set `ENABLE_BILLING=true` (required for Control Tower routers to mount) with `BILLING_LEDGER_WRITES=false` for read-only verification. Non-production frontends enable `VITE_ENABLE_FINANCE_DASHBOARD_V1` by default when unset. Canonical production stays gated unless `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true` is set with `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` as a deliberate cutover event after `monthly_case_review` classification.
 

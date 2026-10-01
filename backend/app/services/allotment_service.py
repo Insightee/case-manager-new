@@ -13,6 +13,7 @@ from app.models.therapist_profile import TherapistProfile, TherapistProfileStatu
 from app.models.user import User
 from app.services import address_service, assignment_service, billing_approval_service, case_code_service, case_service
 from app.services.case_day_type_service import validate_allotment_day_type
+from app.services.therapist_eligibility_service import therapist_may_hold_case
 
 _SERVICE_ADDRESS_KEYS = frozenset(
     {
@@ -52,6 +53,8 @@ def list_allotment_therapists(
     result = []
     for t in therapists:
         prof = profiles.get(t.id)
+        if not therapist_may_hold_case(db, t.id):
+            continue
         if not therapist_eligible_for_product_module(
             db,
             services_offered=prof.services_offered if prof else None,
@@ -84,6 +87,8 @@ def allot_case(
     payload: dict,
 ) -> dict:
     data = dict(payload)
+    if "zoho_id" in data:
+        data["zoho_id"] = case_service.normalize_zoho_id(data.get("zoho_id"))
     therapist_id = data.pop("therapist_user_id")
     start = data.pop("assignment_start_date", None) or date.today()
     reason = data.pop("reason_for_change", "Initial allotment")
@@ -92,6 +97,7 @@ def allot_case(
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     client_mode = data.pop("client_billing_mode", None)
@@ -323,6 +329,10 @@ def build_allotment_preview(db: Session, case_id: int, *, session_limit: int = 1
             "client_monthly_rate_inr": case_read.get("client_monthly_rate_inr"),
             "package_session_count": case_read.get("package_session_count"),
             "package_amount_inr": case_read.get("package_amount_inr"),
-            "pay_share_pct": case_read.get("pay_share_pct"),
+            "compensation_mode": case_read.get("compensation_mode"),
+            "pay_share_amount_inr": case_read.get("pay_share_amount_inr"),
+            "therapist_fixed_pay_inr": case_read.get("therapist_fixed_pay_inr"),
+            "therapist_pay_inr": case_read.get("therapist_fixed_pay_inr")
+            or case_read.get("pay_share_amount_inr"),
         },
     }

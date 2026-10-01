@@ -16,7 +16,9 @@ from app.core.module_write import (
     ensure_product_module_write_access,
 )
 from app.core.permissions import (
+    RoleName,
     case_scope_check,
+    has_role,
     require_any_permission,
     require_mutation_permission,
     require_permission,
@@ -36,6 +38,8 @@ from datetime import date as date_type
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.services import client_status_service
 from app.schemas.iep_plan import IepPlanSuggestionCreate
+from app.schemas.case_operational_note import CaseOperationalNoteCreate, CaseOperationalNoteRead
+from app.services import case_operational_note_service as case_ops_note_svc
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -52,8 +56,8 @@ def _apply_case_billing(db: Session, case: Case, billing_data: dict | None, user
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def _case_read(db: Session, case: Case, billing_approval=None) -> CaseRead:
-    result = case_service.case_to_read(case, db)
+def _case_read(db: Session, case: Case, billing_approval=None, *, viewer=None) -> CaseRead:
+    result = case_service.case_to_read(case, db, viewer=viewer)
     return CaseRead(**billing_approval_service.stamp_read(result, billing_approval))
 
 
@@ -129,11 +133,14 @@ def create_case(
     db: Session = Depends(get_db),
 ):
     data = payload.model_dump()
+    if "zoho_id" in data:
+        data["zoho_id"] = case_service.normalize_zoho_id(data.get("zoho_id"))
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     product_module = data.get("product_module", "homecare")
@@ -180,7 +187,7 @@ def create_case(
         )
     db.commit()
     db.refresh(case)
-    return _case_read(db, case, billing_approval)
+    return _case_read(db, case, billing_approval, viewer=user)
 
 
 @router.get("/{case_id}", response_model=CaseRead)
@@ -190,7 +197,7 @@ def get_case(case_id: int, user: User = Depends(get_current_user), db: Session =
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
-    return CaseRead(**case_service.case_to_read(case, db))
+    return CaseRead(**case_service.case_to_read(case, db, viewer=user))
 
 
 @router.patch("/{case_id}", response_model=CaseRead)
@@ -210,11 +217,14 @@ def update_case(
     old_status = case.status
     old = {"status": case.status.value, "case_manager_user_id": case.case_manager_user_id}
     updates = payload.model_dump(exclude_unset=True)
+    if "zoho_id" in updates:
+        updates["zoho_id"] = case_service.normalize_zoho_id(updates.get("zoho_id"))
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
         "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
+        "client_billing_effective_from", "therapist_remuneration_effective_from",
     )}
     service_data = {k: updates.pop(k) for k in list(updates.keys()) if k in _SERVICE_ADDRESS_KEYS}
     for k, v in updates.items():
@@ -264,7 +274,7 @@ def update_case(
         )
     db.commit()
     db.refresh(case)
-    return _case_read(db, case, billing_approval)
+    return _case_read(db, case, billing_approval, viewer=user)
 
 
 @router.patch("/{case_id}/billing", response_model=CaseRead)
@@ -312,7 +322,7 @@ def update_case_billing(
     )
     db.commit()
     db.refresh(case)
-    return _case_read(db, case, billing_approval)
+    return _case_read(db, case, billing_approval, viewer=user)
 
 
 @router.patch("/{case_id}/day-type", response_model=CaseRead)
@@ -499,6 +509,86 @@ def _case_for_user_write(db: Session, user: User, case_id: int) -> Case:
     case = _case_for_user(db, user, case_id)
     ensure_case_write_access(user, case, db)
     return case
+
+
+@router.get("/{case_id}/operational-notes", response_model=list[CaseOperationalNoteRead])
+def list_case_operational_notes(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Staff-only operational note history (newest first)."""
+    _case_for_user(db, user, case_id)
+    return [
+        CaseOperationalNoteRead(**row)
+        for row in case_ops_note_svc.list_notes_for_case(db, case_id=case_id)
+    ]
+
+
+@router.get("/{case_id}/operational-notes/latest", response_model=CaseOperationalNoteRead | None)
+def get_latest_case_operational_note(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _case_for_user(db, user, case_id)
+    row = case_ops_note_svc.latest_note_for_case(db, case_id=case_id)
+    return CaseOperationalNoteRead(**row) if row else None
+
+
+@router.post(
+    "/{case_id}/operational-notes",
+    response_model=CaseOperationalNoteRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_case_operational_note(
+    case_id: int,
+    payload: CaseOperationalNoteCreate,
+    user: User = Depends(require_mutation_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        row = case_ops_note_svc.create_note(
+            db,
+            case=case,
+            heading=payload.heading,
+            body=payload.body,
+            author=user,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return CaseOperationalNoteRead(**row)
+
+
+@router.delete("/{case_id}/operational-notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case_operational_note(
+    case_id: int,
+    note_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not has_role(user, RoleName.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Only super admins can delete operational notes.")
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        case_ops_note_svc.delete_note(db, case=case, note_id=note_id, actor=user)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Note not found")
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete",
+        entity_type="case_operational_note",
+        entity_id=note_id,
+        case_id=case.id,
+        **meta,
+    )
+    db.commit()
+    return None
 
 
 @router.get("/{case_id}/clinical-profile")

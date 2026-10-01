@@ -16,9 +16,15 @@ export const LEARNING_STYLES = [
   { key: 'multimodal', label: 'Multimodal' },
 ]
 
+import { IEP_LEARNING_ENVIRONMENTS } from '../../lib/iepObservationAlign.js'
+
 export const IEP_TAB_ORDER = ['header', 'clinical', 'goals', 'verification']
 
 const EMPTY_ENV = { environment: '', strengths: '', goals: '', strategies: '', supports_needed: '' }
+
+export function defaultLearningEnvironments() {
+  return IEP_LEARNING_ENVIRONMENTS.map((e) => ({ ...EMPTY_ENV, environment: e.label }))
+}
 
 export function emptySections() {
   return {
@@ -38,7 +44,7 @@ export function emptySections() {
       about_child_brief: '',
     },
     observations: '',
-    learning_environments: [{ ...EMPTY_ENV }, { ...EMPTY_ENV }],
+    learning_environments: defaultLearningEnvironments(),
     challenges: '',
     current_performance: PERFORMANCE_DOMAINS.map((d) => ({ domain: d.key, notes: '' })),
     learning_style: { styles: [], elaboration: '' },
@@ -82,9 +88,7 @@ export function normalizeSections(raw, caseContext) {
       verification: { ...base.verification, ...(raw.verification || {}) },
       supplementary_attachment_ids: raw.supplementary_attachment_ids || [],
     }
-    if (!merged.learning_environments?.length) {
-      merged.learning_environments = [{ ...EMPTY_ENV }]
-    }
+    merged.learning_environments = normalizeLearningEnvironments(merged.learning_environments)
     if (!merged.current_performance?.length) {
       merged.current_performance = base.current_performance
     }
@@ -103,7 +107,7 @@ export function normalizeSections(raw, caseContext) {
     },
     challenges: raw.referral || raw.challenges || '',
     observations: raw.observations || '',
-    learning_environments:
+    learning_environments: normalizeLearningEnvironments(
       raw.learning_environments?.length > 0
         ? raw.learning_environments.map((r) => ({
             environment: r.environment || '',
@@ -113,6 +117,7 @@ export function normalizeSections(raw, caseContext) {
             supports_needed: r.supports_needed || '',
           }))
         : base.learning_environments,
+    ),
     interventions: raw.interventions || '',
     verification: {
       ...base.verification,
@@ -121,6 +126,16 @@ export function normalizeSections(raw, caseContext) {
   }
   if (caseContext) applyContext(legacy, caseContext)
   return legacy
+}
+
+export function normalizeLearningEnvironments(rows) {
+  const byLabel = new Map((rows || []).map((r) => [(r.environment || '').trim().toLowerCase(), r]))
+  return IEP_LEARNING_ENVIRONMENTS.map((env) => {
+    const existing = byLabel.get(env.label.toLowerCase()) || byLabel.get(env.id)
+    return existing
+      ? { ...EMPTY_ENV, ...existing, environment: env.label }
+      : { ...EMPTY_ENV, environment: env.label }
+  })
 }
 
 function applyContext(sections, ctx) {

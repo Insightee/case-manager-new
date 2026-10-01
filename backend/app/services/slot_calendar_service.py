@@ -16,6 +16,8 @@ from app.models.schedule_template import TherapistScheduleTemplate, default_temp
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
+from app.models.calendar_availability import StaffAvailabilityRule, StaffBookingPolicy
+from app.services import availability_service
 from app.services.therapist_portal_queries import fetch_calendar_sessions
 
 WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -108,6 +110,65 @@ def upsert_template(db: Session, therapist_user_id: int, config: dict[str, Any])
     row.set_config(config)
     db.flush()
     return row
+
+
+def _staff_slot_duration_minutes(
+    db: Session, therapist_user_id: int, day: date, default: int
+) -> int:
+    rules = list(
+        db.scalars(
+            select(StaffAvailabilityRule).where(
+                StaffAvailabilityRule.user_id == therapist_user_id,
+                StaffAvailabilityRule.weekday == day.weekday(),
+            )
+        ).all()
+    )
+    if not rules:
+        return default
+    return min(max(int(rule.slot_granularity_minutes or 30), 1) for rule in rules)
+
+
+def _slot_within_staff_windows(
+    slot_date: date,
+    start_time: time,
+    end_time: time,
+    windows: list[tuple[time, time]],
+) -> bool:
+    start_dt = datetime.combine(slot_date, start_time)
+    end_dt = datetime.combine(slot_date, end_time)
+    if end_dt <= start_dt:
+        end_dt += timedelta(days=1)
+    for window_start, window_end in windows:
+        window_start_dt = datetime.combine(slot_date, window_start)
+        window_end_dt = datetime.combine(slot_date, window_end)
+        if window_end_dt <= window_start_dt:
+            window_end_dt += timedelta(days=1)
+        if start_dt >= window_start_dt and end_dt <= window_end_dt:
+            return True
+    return False
+
+
+def _prune_stale_available_slots_for_staff_day(
+    db: Session,
+    therapist_user_id: int,
+    day: date,
+    staff_windows: list[tuple[time, time]],
+    existing: set[tuple[date, time]],
+) -> None:
+    """Drop template-era AVAILABLE slots outside staff availability windows."""
+    slots = db.scalars(
+        select(TherapistSlot).where(
+            TherapistSlot.therapist_user_id == therapist_user_id,
+            TherapistSlot.slot_date == day,
+        )
+    ).all()
+    for slot in slots:
+        if slot.status != SlotStatus.AVAILABLE:
+            continue
+        if _slot_within_staff_windows(slot.slot_date, slot.start_time, slot.end_time, staff_windows):
+            continue
+        existing.discard((slot.slot_date, slot.start_time))
+        db.delete(slot)
 
 
 def _existing_slot_keys(db: Session, therapist_user_id: int, from_date: date, to_date: date) -> set[tuple[date, time]]:
@@ -243,6 +304,12 @@ def materialize_range(
     config = get_or_create_template(db, therapist_user_id).get_config() if use_template else default_template_config()
     duration = int(config.get("slot_duration_minutes") or 30)
     days_cfg = config.get("days") or default_template_config()["days"]
+    has_staff_policy = (
+        db.scalars(
+            select(StaffBookingPolicy).where(StaffBookingPolicy.user_id == therapist_user_id)
+        ).first()
+        is not None
+    )
     existing = _existing_slot_keys(db, therapist_user_id, from_date, to_date)
     created = 0
     d = from_date
@@ -250,13 +317,27 @@ def materialize_range(
         if is_therapist_wide_leave_day(db, therapist_user_id, d):
             d += timedelta(days=1)
             continue
-        day_cfg = normalize_day_config(days_cfg.get(_weekday_key(d), {}))
-        if not day_cfg.get("enabled"):
-            d += timedelta(days=1)
-            continue
-        created += _materialize_day_windows(
-            db, therapist_user_id, d, day_cfg["windows"], duration, existing
-        )
+        if has_staff_policy:
+            staff_windows = availability_service.staff_day_windows(db, therapist_user_id, d)
+            if not staff_windows:
+                d += timedelta(days=1)
+                continue
+            _prune_stale_available_slots_for_staff_day(
+                db, therapist_user_id, d, staff_windows, existing
+            )
+            day_duration = _staff_slot_duration_minutes(db, therapist_user_id, d, duration)
+            window_payload = [{"start": start.strftime("%H:%M"), "end": end.strftime("%H:%M")} for start, end in staff_windows]
+            created += _materialize_day_windows(
+                db, therapist_user_id, d, window_payload, day_duration, existing
+            )
+        else:
+            day_cfg = normalize_day_config(days_cfg.get(_weekday_key(d), {}))
+            if not day_cfg.get("enabled"):
+                d += timedelta(days=1)
+                continue
+            created += _materialize_day_windows(
+                db, therapist_user_id, d, day_cfg["windows"], duration, existing
+            )
         d += timedelta(days=1)
     db.flush()
     return created
@@ -571,7 +652,7 @@ def list_available_slots_public(
     from_date: date,
     to_date: date,
 ) -> list[dict[str, Any]]:
-    """Parent-facing: only AVAILABLE slots on non-leave days."""
+    """Parent-facing: only AVAILABLE slots on non-leave days within staff availability."""
     slots = db.scalars(
         select(TherapistSlot).where(
             TherapistSlot.therapist_user_id == therapist_user_id,
@@ -581,16 +662,28 @@ def list_available_slots_public(
         )
     ).all()
     leave_days = _leave_dates(db, therapist_user_id, from_date, to_date)
-    return [
-        {
-            "id": s.id,
-            "slot_date": s.slot_date.isoformat(),
-            "start_time": s.start_time.strftime("%H:%M"),
-            "end_time": s.end_time.strftime("%H:%M"),
-        }
-        for s in slots
-        if s.slot_date.isoformat() not in leave_days
-    ]
+    result: list[dict[str, Any]] = []
+    for slot in slots:
+        if slot.slot_date.isoformat() in leave_days:
+            continue
+        duration = int(slot.slot_duration_minutes or 60)
+        if not availability_service.slot_start_allowed(
+            db,
+            therapist_user_id,
+            slot.slot_date,
+            slot.start_time,
+            duration,
+        ):
+            continue
+        result.append(
+            {
+                "id": slot.id,
+                "slot_date": slot.slot_date.isoformat(),
+                "start_time": slot.start_time.strftime("%H:%M"),
+                "end_time": slot.end_time.strftime("%H:%M"),
+            }
+        )
+    return result
 
 
 def list_therapists_for_case(db: Session, case_id: int) -> list[dict[str, Any]]:

@@ -2,10 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { apiDownload, apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import { IEP_LEARNING_ENVIRONMENTS } from '../../lib/iepObservationAlign.js'
+function formatIepPeriod(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
 import {
   emptySections,
   IEP_TAB_ORDER,
   LEARNING_STYLES,
+  normalizeLearningEnvironments,
   normalizeSections,
   PERFORMANCE_DOMAINS,
   validateSectionsForShare,
@@ -36,6 +44,7 @@ export function IepBuilderPanel({ caseId }) {
   const [versionHistory, setVersionHistory] = useState([])
   const [sections, setSections] = useState(emptySections)
   const [tab, setTab] = useState('header')
+  const [envTab, setEnvTab] = useState(IEP_LEARNING_ENVIRONMENTS[0].label)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -94,13 +103,18 @@ export function IepBuilderPanel({ caseId }) {
     })
   }
 
-  function patchEnv(idx, field, value) {
+  function patchEnvByLabel(envLabel, field, value) {
     setSections((s) => {
-      const rows = [...(s.learning_environments || [])]
+      const rows = normalizeLearningEnvironments(s.learning_environments)
+      const idx = rows.findIndex((r) => r.environment === envLabel)
+      if (idx < 0) return s
       rows[idx] = { ...rows[idx], [field]: value }
       return { ...s, learning_environments: rows }
     })
   }
+
+  const envRows = normalizeLearningEnvironments(sections.learning_environments)
+  const activeEnvRow = envRows.find((r) => r.environment === envTab) || envRows[0]
 
   function patchPerf(domain, notes) {
     setSections((s) => ({
@@ -310,7 +324,8 @@ export function IepBuilderPanel({ caseId }) {
           <h3 style={{ margin: 0 }}>IEP document builder</h3>
           {plan ? (
             <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 0' }}>
-              Version {plan.version} · {plan.status.replace(/_/g, ' ')}
+              Version {plan.version}
+              {plan.created_at ? ` · ${formatIepPeriod(plan.created_at)}` : ''} · {plan.status.replace(/_/g, ' ')}
               {plan.status === 'INTERNAL_REVIEW' ? ' · awaiting CM review' : ''}
             </p>
           ) : null}
@@ -336,7 +351,8 @@ export function IepBuilderPanel({ caseId }) {
           <span className="iep-builder__versions-label">Versions:</span>
           {versionHistory.map((ver) => (
             <span key={ver.id} className="iep-builder__version-chip">
-              {ver.version} ({ver.status.replace(/_/g, ' ')})
+              {ver.version}
+              {ver.created_at ? ` · ${formatIepPeriod(ver.created_at)}` : ''} ({ver.status.replace(/_/g, ' ')})
             </span>
           ))}
         </div>
@@ -390,8 +406,9 @@ export function IepBuilderPanel({ caseId }) {
           <Field label="IEP meeting date">
             <input type="date" value={h.date_of_iep_meeting || ''} disabled={!canEdit} onChange={(e) => patch('header.date_of_iep_meeting', e.target.value)} />
           </Field>
-          <Field label="Review date">
-            <input type="date" value={h.review_date || ''} disabled={!canEdit} onChange={(e) => patch('header.review_date', e.target.value)} />
+          <Field label="Review date for next IEP">
+            <input type="date" value={h.review_date || ''} disabled={!canEdit || h.review_date_locked} onChange={(e) => patch('header.review_date', e.target.value)} />
+            {h.review_date_locked ? <p className="iep-builder__hint">Locked after case manager approval.</p> : null}
           </Field>
           <div style={{ gridColumn: '1 / -1' }}>
             <Field label="About the child">
@@ -444,44 +461,38 @@ export function IepBuilderPanel({ caseId }) {
 
       {tab === 'goals' ? (
         <div className="iep-builder__panel">
-          {(sections.learning_environments || []).map((row, idx) => (
-            <div key={idx} className="iep-builder__env-row">
-              <strong style={{ fontSize: '0.8rem' }}>Environment {idx + 1}</strong>
+          <div className="iep-builder__tabs" role="tablist" style={{ marginBottom: 12 }}>
+            {IEP_LEARNING_ENVIRONMENTS.map((env) => (
+              <button
+                key={env.id}
+                type="button"
+                role="tab"
+                aria-selected={envTab === env.label}
+                className={`iep-builder__tab${envTab === env.label ? ' is-active' : ''}`}
+                onClick={() => setEnvTab(env.label)}
+              >
+                {env.label}
+              </button>
+            ))}
+          </div>
+          {activeEnvRow ? (
+            <div className="iep-builder__env-row">
+              <strong style={{ fontSize: '0.8rem' }}>{activeEnvRow.environment}</strong>
               <div className="iep-builder__grid-2">
-                <Field label="Environment">
-                  <input value={row.environment} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'environment', e.target.value)} />
-                </Field>
                 <Field label="Strengths">
-                  <textarea rows={3} className="iep-builder__textarea-lg" value={row.strengths} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'strengths', e.target.value)} />
+                  <textarea rows={3} className="iep-builder__textarea-lg" value={activeEnvRow.strengths} disabled={!canEdit} onChange={(e) => patchEnvByLabel(activeEnvRow.environment, 'strengths', e.target.value)} />
                 </Field>
                 <Field label="Goals">
-                  <textarea rows={3} className="iep-builder__textarea-lg" value={row.goals} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'goals', e.target.value)} />
+                  <textarea rows={3} className="iep-builder__textarea-lg" value={activeEnvRow.goals} disabled={!canEdit} onChange={(e) => patchEnvByLabel(activeEnvRow.environment, 'goals', e.target.value)} />
                 </Field>
                 <Field label="Strategies">
-                  <textarea rows={4} className="iep-builder__textarea-lg" value={row.strategies} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'strategies', e.target.value)} />
+                  <textarea rows={4} className="iep-builder__textarea-lg" value={activeEnvRow.strategies} disabled={!canEdit} onChange={(e) => patchEnvByLabel(activeEnvRow.environment, 'strategies', e.target.value)} />
                 </Field>
                 <Field label="Supports needed">
-                  <textarea rows={4} className="iep-builder__textarea-lg" value={row.supports_needed} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'supports_needed', e.target.value)} />
+                  <textarea rows={4} className="iep-builder__textarea-lg" value={activeEnvRow.supports_needed} disabled={!canEdit} onChange={(e) => patchEnvByLabel(activeEnvRow.environment, 'supports_needed', e.target.value)} />
                 </Field>
               </div>
             </div>
-          ))}
-          {canEdit ? (
-            <button
-              type="button"
-              className="admin-btn admin-btn--ghost"
-              onClick={() =>
-                setSections((s) => ({
-                  ...s,
-                  learning_environments: [
-                    ...(s.learning_environments || []),
-                    { environment: '', strengths: '', goals: '', strategies: '', supports_needed: '' },
-                  ],
-                }))
-              }
-            >
-              Add environment row
-            </button>
           ) : null}
           <div className="iep-builder__grid-2">
             <Field label="Talent — strengths">

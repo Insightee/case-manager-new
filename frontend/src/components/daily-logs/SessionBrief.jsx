@@ -1,4 +1,4 @@
-import { formatTimeIST, isStartedLateOnSchedule } from '../../lib/datetime.js'
+import { isStartedLateOnSchedule } from '../../lib/datetime.js'
 import {
   canEditSessionTimes,
   effectiveDurationMins,
@@ -59,12 +59,7 @@ export function SessionBrief({ session, childName, caseCode, log = null, onEditT
             <dt>Actual</dt>
             <dd>
               {clockRange}
-              {startedLate ? (
-                <span className="ic-session-brief__late">
-                  {' '}
-                  · Started late ({formatTimeIST(session.actual_start_at)} IST)
-                </span>
-              ) : null}
+              {startedLate ? <span className="ic-session-brief__late"> · Started late</span> : null}
               {session.overage_mins > 0 && session.auto_ended ? (
                 <span className="ic-session-brief__late"> · Exceeded schedule by {session.overage_mins} min</span>
               ) : null}
@@ -87,7 +82,7 @@ export function SessionBrief({ session, childName, caseCode, log = null, onEditT
           </>
         ) : null}
         <dt>Log</dt>
-        <dd>{logPending ? <span className="ic-session-brief__pending">Required before you leave</span> : 'Submitted'}</dd>
+        <dd>{logPending ? <span className="ic-session-brief__pending">Pending</span> : 'Submitted'}</dd>
       </dl>
 
       {(session.checkout_lat != null && session.checkout_lng != null) ? (

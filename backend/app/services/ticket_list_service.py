@@ -12,10 +12,12 @@ from app.core.permissions import user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.child import Child
+from app.models.parent import ParentGuardian, parent_child_link
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketStatus
 from app.models.ticket_attachment import TicketAttachment
 from app.models.user import User
 from app.services import case_service, ticket_escalation_service as ticket_esc
+from app.core.support_status import canonical_ticket_status, ticket_status_predicate
 from app.services.support_access_service import (
     is_team_scoped_support_user,
     may_read_support_ticket,
@@ -29,7 +31,7 @@ def staff_may_see_ticket(db: Session, user: User, ticket: SupportTicket) -> bool
 
 
 def _apply_ticket_search(stmt, search: str | None):
-    """Filter tickets by subject, id, case/client/therapist names, or raiser/assignee."""
+    """Filter tickets by subject, id, case/client/parent/therapist names, or raiser/assignee."""
     q = (search or "").strip()
     if not q:
         return stmt
@@ -58,6 +60,15 @@ def _apply_ticket_search(stmt, search: str | None):
                     .where(
                         CaseAssignment.case_id == Case.id,
                         CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                        User.full_name.ilike(pattern),
+                    )
+                ),
+                exists(
+                    select(parent_child_link.c.child_id)
+                    .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+                    .join(User, User.id == ParentGuardian.user_id)
+                    .where(
+                        parent_child_link.c.child_id == Child.id,
                         User.full_name.ilike(pattern),
                     )
                 ),
@@ -91,7 +102,9 @@ def list_tickets_for_user(
     *,
     category: Optional[TicketCategory] = None,
     product_module: Optional[str] = None,
+    case_id: Optional[int] = None,
     status: Optional[TicketStatus] = None,
+    canonical_status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
@@ -105,7 +118,13 @@ def list_tickets_for_user(
         stmt = stmt.where(SupportTicket.category == category)
     if product_module:
         stmt = stmt.where(SupportTicket.product_module == product_module)
-    if status:
+    if case_id is not None:
+        stmt = stmt.where(SupportTicket.case_id == case_id)
+    if canonical_status:
+        predicate = ticket_status_predicate(canonical_status)
+        if predicate is not None:
+            stmt = stmt.where(predicate)
+    elif status:
         stmt = stmt.where(SupportTicket.status == status)
     stmt = _apply_ticket_search(stmt, search)
 
@@ -221,6 +240,9 @@ def _ticket_row(
         "topic": t.topic.value if t.topic else "OTHER",
         "topic_label": ticket_esc.TOPIC_LABELS.get(t.topic, "Other") if t.topic else "Other",
         "status": t.status.value,
+        "canonical_status": canonical_ticket_status(
+            t.status, escalated_to_department=getattr(t, "escalated_to_department", None)
+        ),
         "assigned_to_user_id": t.assigned_to_user_id,
         "assigned_to_name": assignee.full_name if assignee else None,
         "assignee_role_labels": role_labels(list(assignee.role_names)) if assignee else [],

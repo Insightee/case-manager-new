@@ -248,7 +248,7 @@
     display: none !important;
   }
 
-  .admin-reports__filters:not(.admin-reports__filters--panel) {
+  .admin-reports__filters:not(.admin-reports__filters--panel):not(.admin-reports__filters--primary) {
     display: none !important;
   }
 

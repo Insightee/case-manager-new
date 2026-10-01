@@ -117,6 +117,22 @@ def ensure_sqlite_schema_patches() -> None:
             if col not in user_cols:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} VARCHAR(255)"))
+        for col, ddl in (
+            ("staff_employment_type", "VARCHAR(32)"),
+            ("staff_probation_months", "INTEGER"),
+            ("staff_employment_start_date", "DATE"),
+            ("staff_leave_credit_balance", "INTEGER NOT NULL DEFAULT 0"),
+            ("staff_probation_end_notified_at", "DATETIME"),
+        ):
+            if col not in user_cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("staff_leaves"):
+        sl_cols = {c["name"] for c in insp.get_columns("staff_leaves")}
+        if "billing_category" not in sl_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE staff_leaves ADD COLUMN billing_category VARCHAR(32)"))
 
     if insp.has_table("children"):
         child_cols = {c["name"] for c in insp.get_columns("children")}
@@ -140,6 +156,9 @@ def ensure_sqlite_schema_patches() -> None:
         if "external_case_ref" not in case_cols_ext:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cases ADD COLUMN external_case_ref VARCHAR(128)"))
+        if "zoho_id" not in case_cols_ext:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN zoho_id VARCHAR(64)"))
         if "day_type" not in case_cols_ext:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cases ADD COLUMN day_type VARCHAR(16)"))
@@ -169,6 +188,12 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_updated_by_user_id INTEGER"))
             if "leave_year_snapshots" not in tp_cols:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_year_snapshots JSON"))
+            if "deleted_at" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN deleted_at DATETIME"))
+            if "academic_qualification_level" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN academic_qualification_level VARCHAR(32)"))
+            if "professional_qualification_entries" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN professional_qualification_entries JSON"))
 
     if insp.has_table("therapist_leaves"):
         tl_cols = {c["name"] for c in insp.get_columns("therapist_leaves")}
@@ -370,6 +395,10 @@ def ensure_sqlite_schema_patches() -> None:
                         "ALTER TABLE daily_logs ADD COLUMN visibility_status VARCHAR(32) NOT NULL DEFAULT 'INTERNAL_ONLY'"
                     )
                 )
+            if "mentor_reviewed_at" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN mentor_reviewed_at DATETIME"))
+            if "mentor_reviewed_by_user_id" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN mentor_reviewed_by_user_id INTEGER"))
 
     if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}
@@ -542,6 +571,129 @@ def ensure_sqlite_schema_patches() -> None:
         if "case_id" not in audit_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE audit_events ADD COLUMN case_id INTEGER"))
+        if "integration_client_id" not in audit_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE audit_events ADD COLUMN integration_client_id INTEGER"))
+
+    if not insp.has_table("integration_clients"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE integration_clients (
+                        id INTEGER PRIMARY KEY,
+                        name VARCHAR(128) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'active',
+                        scopes_json JSON NOT NULL,
+                        all_cases BOOLEAN NOT NULL DEFAULT 0,
+                        rate_limit_per_minute INTEGER NOT NULL DEFAULT 60,
+                        access_token_minutes INTEGER NOT NULL DEFAULT 15,
+                        key_ttl_days INTEGER NOT NULL DEFAULT 365,
+                        mcp_enabled BOOLEAN NOT NULL DEFAULT 1,
+                        created_by_user_id INTEGER REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE integration_credentials (
+                        id INTEGER PRIMARY KEY,
+                        integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                        public_client_id VARCHAR(64) NOT NULL UNIQUE,
+                        secret_hash VARCHAR(255) NOT NULL,
+                        expires_at DATETIME,
+                        revoked_at DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE integration_case_grants (
+                        id INTEGER PRIMARY KEY,
+                        integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                        case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (integration_client_id, case_id)
+                    )
+                    """
+                )
+            )
+
+    insp.clear_cache()
+    fresh_integration = insp
+    if fresh_integration.has_table("integration_clients"):
+        client_cols = {c["name"] for c in fresh_integration.get_columns("integration_clients")}
+        with engine.begin() as conn:
+            if "access_token_minutes" not in client_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE integration_clients ADD COLUMN access_token_minutes INTEGER NOT NULL DEFAULT 15"
+                    )
+                )
+            if "key_ttl_days" not in client_cols:
+                conn.execute(text("ALTER TABLE integration_clients ADD COLUMN key_ttl_days INTEGER NOT NULL DEFAULT 365"))
+            if "mcp_enabled" not in client_cols:
+                conn.execute(text("ALTER TABLE integration_clients ADD COLUMN mcp_enabled BOOLEAN NOT NULL DEFAULT 1"))
+            if "all_cases" not in client_cols:
+                conn.execute(text("ALTER TABLE integration_clients ADD COLUMN all_cases BOOLEAN NOT NULL DEFAULT 0"))
+        if not fresh_integration.has_table("integration_webhooks"):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE integration_webhooks (
+                            id INTEGER PRIMARY KEY,
+                            integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                            url VARCHAR(512) NOT NULL,
+                            secret_hash VARCHAR(255) NOT NULL,
+                            events_json JSON NOT NULL,
+                            status VARCHAR(32) NOT NULL DEFAULT 'active',
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_integration_webhooks_client "
+                        "ON integration_webhooks (integration_client_id)"
+                    )
+                )
+        if not fresh_integration.has_table("integration_signals"):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE integration_signals (
+                            id INTEGER PRIMARY KEY,
+                            integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                            case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                            domain VARCHAR(32) NOT NULL,
+                            signal_key VARCHAR(64) NOT NULL,
+                            level INTEGER,
+                            status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_integration_signals_client "
+                        "ON integration_signals (integration_client_id)"
+                    )
+                )
+                conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_integration_signals_case ON integration_signals (case_id)")
+                )
 
     _sqlite_portal_indexes(conn_ctx=engine)
 

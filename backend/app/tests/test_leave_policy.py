@@ -81,18 +81,51 @@ def test_monthly_credits_and_consumption():
         assert earned == 6
         before = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
 
-        db.add(
-            TherapistLeave(
-                therapist_user_id=user.id,
-                leave_type=LeaveType.ANNUAL,
-                service_line="shadow_support",
-                billing_category=LeaveBillingCategory.PAID,
-                includes_shadow_cases=True,
-                start_date=date(2026, 3, 1),
-                end_date=date(2026, 3, 7),
-                status=LeaveStatus.APPROVED,
+        from datetime import time as dt_time
+
+        from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+        from app.models.case import Case
+        from app.models.session import Session as TherapySession
+        from app.models.session import SessionMode, SessionStatus
+
+        assignment = db.scalars(
+            select(CaseAssignment)
+            .join(Case, Case.id == CaseAssignment.case_id)
+            .where(
+                CaseAssignment.therapist_user_id == user.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                Case.product_module == "shadow_support",
             )
+        ).first()
+        assert assignment
+        for offset in range(7):
+            day = date(2026, 3, 1) + timedelta(days=offset)
+            db.add(
+                TherapySession(
+                    case_id=assignment.case_id,
+                    therapist_user_id=user.id,
+                    scheduled_date=day,
+                    start_time=dt_time(9, 0),
+                    end_time=dt_time(10, 0),
+                    mode=SessionMode.SCHOOL,
+                    status=SessionStatus.SCHEDULED,
+                )
+            )
+        leave = TherapistLeave(
+            therapist_user_id=user.id,
+            leave_type=LeaveType.ANNUAL,
+            service_line="shadow_support",
+            billing_category=LeaveBillingCategory.PAID,
+            includes_shadow_cases=True,
+            case_id=assignment.case_id,
+            case_ids=[assignment.case_id],
+            paid_days=6,
+            unpaid_days=1,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 7),
+            status=LeaveStatus.APPROVED,
         )
+        db.add(leave)
         db.commit()
 
         bal = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
@@ -100,6 +133,8 @@ def test_monthly_credits_and_consumption():
         assert bal["paid_leaves_taken"] == before["paid_leaves_taken"] + 6
         assert bal["unpaid_leaves_taken"] == before["unpaid_leaves_taken"] + 1
         assert bal["leave_credit_pending"] == max(earned - bal["paid_leaves_taken"], 0)
+        db.delete(leave)
+        db.commit()
     finally:
         db.close()
 
@@ -117,6 +152,30 @@ def test_credits_zero_without_employment_start():
         assert bal["balance_updated"] is False
     finally:
         db.close()
+
+
+def test_allocate_leave_days_paid_first_across_months():
+    days = policy.allocate_leave_days(
+        date(2026, 8, 31),
+        date(2026, 9, 1),
+        paid_days=1,
+        unpaid_days=1,
+    )
+    assert [(item.day, item.status) for item in days] == [
+        (date(2026, 8, 31), "paid"),
+        (date(2026, 9, 1), "unpaid"),
+    ]
+    msg = policy.format_day_split_message(days, has_shadow_cases=True)
+    assert "31 Aug paid" in msg
+    assert "01 Sep unpaid" in msg
+    aug_paid, aug_unpaid = policy.month_paid_unpaid_from_allocations(
+        days, date(2026, 8, 1), date(2026, 8, 31)
+    )
+    sep_paid, sep_unpaid = policy.month_paid_unpaid_from_allocations(
+        days, date(2026, 9, 1), date(2026, 9, 30)
+    )
+    assert (aug_paid, aug_unpaid) == (1, 0)
+    assert (sep_paid, sep_unpaid) == (0, 1)
 
 
 def test_non_shadow_suggest_unpaid():
@@ -277,3 +336,109 @@ def test_hr_therapist_cases_endpoint():
     assert r.status_code == 200
     assert r.json()["therapist_user_id"] == therapist_id
     assert "items" in r.json()
+
+
+def test_hr_approve_recomputes_paid_when_credits_available():
+    """UNPAID at submit (e.g. missing start date) must not stick through HR approval."""
+    from datetime import time as dt_time
+
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionMode, SessionStatus
+
+    therapist = _login("therapist@demo.com")
+    hr = _login("hr@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        _ensure_therapist_profile(db, user.id, employment_start=date(2025, 11, 1))
+        assignment = db.scalars(
+            select(CaseAssignment)
+            .join(Case, Case.id == CaseAssignment.case_id)
+            .where(
+                CaseAssignment.therapist_user_id == user.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                Case.product_module == "shadow_support",
+            )
+        ).first()
+        assert assignment
+        leave_day = date.today() + timedelta(days=21)
+        db.add(
+            TherapySession(
+                case_id=assignment.case_id,
+                therapist_user_id=user.id,
+                scheduled_date=leave_day,
+                start_time=dt_time(9, 0),
+                end_time=dt_time(10, 0),
+                mode=SessionMode.SCHOOL,
+                status=SessionStatus.SCHEDULED,
+            )
+        )
+        db.commit()
+        case_id = assignment.case_id
+    finally:
+        db.close()
+
+    create = client.post(
+        "/api/v1/leave",
+        headers=_headers(therapist),
+        json={
+            "service_line": "shadow_support",
+            "billing_category": "UNPAID",
+            "case_ids": [case_id],
+            "start_date": leave_day.isoformat(),
+            "end_date": leave_day.isoformat(),
+            "reason": "Forced unpaid at submit",
+        },
+    )
+    assert create.status_code == 201, create.text
+    payload = create.json()
+    assert payload["billing_category"] == "UNPAID"
+    assert payload["paid_days"] == 0
+
+    approve = client.patch(
+        f"/api/v1/leave/{payload['id']}",
+        headers=_headers(hr),
+        json={"status": "APPROVED"},
+    )
+    assert approve.status_code == 200, approve.text
+    approved = approve.json()
+    assert approved["billing_category"] == "PAID"
+    assert approved["paid_days"] == 1
+    assert approved["unpaid_days"] == 0
+    assert approved["leave_type"] == "ANNUAL"
+
+
+def test_admin_leave_list_paginated_with_search():
+    hr = _login("hr@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        _ensure_therapist_profile(db, user.id)
+        db.commit()
+        therapist_name = user.full_name
+    finally:
+        db.close()
+
+    page1 = client.get("/api/v1/leave?page=1&page_size=5", headers=_headers(hr))
+    assert page1.status_code == 200
+    payload = page1.json()
+    assert isinstance(payload, dict)
+    assert "items" in payload
+    assert "total" in payload
+    assert "counts" in payload
+    assert len(payload["items"]) <= 5
+
+    search = client.get(
+        f"/api/v1/leave?page=1&search={therapist_name.split()[0]}",
+        headers=_headers(hr),
+    )
+    assert search.status_code == 200
+    search_payload = search.json()
+    assert search_payload["total"] >= 0
+    assert all(
+        therapist_name.split()[0].lower() in (item.get("therapist_name") or "").lower()
+        or therapist_name.split()[0].lower() in (item.get("reason") or "").lower()
+        for item in search_payload["items"]
+    )

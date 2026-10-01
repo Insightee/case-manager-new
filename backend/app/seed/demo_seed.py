@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 """Run: python -m app.seed.demo_seed"""
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import Base, SessionLocal, engine, ensure_sqlite_schema_patches
+from app.core.timezone import IST
 from app.core.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS, RoleName
 from app.core.security import hash_password
 from app.models import (
@@ -46,7 +47,8 @@ from app.models.report import ReportStatus
 from app.models.session import SessionMode, SessionStatus
 from app.models.schedule_template import TherapistScheduleTemplate, default_template_config
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
-from app.models.leave import LeaveType, LeaveStatus, TherapistLeave
+from app.models.leave import LeaveBillingCategory, LeaveType, LeaveStatus, TherapistLeave
+from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.core.permissions import get_active_assignment
 from app.services import case_service_service
@@ -179,6 +181,105 @@ def ensure_active_case_assignment(
             )
         )
     db.flush()
+
+
+def _seed_therapist_invoice_from_preview(db, therapist, month_label: str, status: InvoiceStatus, **invoice_kwargs):
+    """Create therapist invoice with persisted case + session lines from live preview."""
+    from app.services import invoice_billing_service as ibs
+
+    preview = ibs.build_month_preview(db, therapist.id, month_label)
+    inv = Invoice(
+        therapist_user_id=therapist.id,
+        month=preview["month_label"],
+        amount_inr=preview["net_amount_inr"],
+        subtotal_inr=preview["subtotal_inr"],
+        leave_deduction_inr=preview.get("leave_deduction_inr") or 0,
+        sessions_count=preview["total_sessions"],
+        status=status,
+        **invoice_kwargs,
+    )
+    db.add(inv)
+    db.flush()
+    ibs._replace_invoice_lines_from_preview(db, inv, preview)
+    return inv
+
+
+def _seed_therapist_invoice_synthetic(
+    db,
+    therapist,
+    case1: Case,
+    case2: Case,
+    *,
+    month: str,
+    subtotal_inr: float,
+    leave_deduction_inr: float,
+    amount_inr: float,
+    sessions_count: int,
+    status: InvoiceStatus,
+    **invoice_kwargs,
+):
+    """Historical paid invoices: header totals plus representative session lines."""
+    from app.core.billing_validation import case_billing_dict
+    from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, SessionLineSource, SessionLineType
+    from app.services import invoice_billing_service as ibs
+
+    inv = Invoice(
+        therapist_user_id=therapist.id,
+        month=month,
+        amount_inr=amount_inr,
+        subtotal_inr=subtotal_inr,
+        leave_deduction_inr=leave_deduction_inr,
+        sessions_count=sessions_count,
+        status=status,
+        **invoice_kwargs,
+    )
+    db.add(inv)
+    db.flush()
+
+    year, month_num, _ = ibs.parse_month(month)
+    first_share = round(subtotal_inr * 0.4, 2)
+    splits = [
+        (case1, first_share, max(int(sessions_count * 0.4), 1)),
+        (case2, round(subtotal_inr - first_share, 2), max(sessions_count - int(sessions_count * 0.4), 1)),
+    ]
+    for case, share, n_sessions in splits:
+        billing = case_billing_dict(case)
+        line_type = (
+            SessionLineType.PER_SESSION
+            if case.billing_type == BillingType.PER_SESSION
+            else SessionLineType.INCLUDED
+        )
+        cl = InvoiceCaseLine(
+            invoice_id=inv.id,
+            case_id=case.id,
+            case_code=case.case_code,
+            billing_type=case.billing_type.value if case.billing_type else BillingType.PER_SESSION.value,
+            included_sessions=n_sessions,
+            additional_sessions=0,
+            therapist_share_inr=share,
+            billing_snapshot=billing,
+        )
+        db.add(cl)
+        db.flush()
+        per_session = round(share / n_sessions, 2)
+        remainder = share
+        for i in range(n_sessions):
+            amt = per_session if i < n_sessions - 1 else round(remainder, 2)
+            remainder = round(remainder - amt, 2)
+            day = min(1 + i, 28)
+            db.add(
+                InvoiceSessionLine(
+                    invoice_case_line_id=cl.id,
+                    session_date=date(year, month_num, day),
+                    duration_minutes=60,
+                    line_type=line_type,
+                    amount_inr=amt,
+                    source=SessionLineSource.LOG,
+                    included=True,
+                )
+            )
+    db.flush()
+    return inv
 
 
 def run():
@@ -372,7 +473,8 @@ def run():
             db.add(case1)
         case1.billing_type = BillingType.PER_SESSION
         case1.client_rate_per_session_inr = 1000
-        case1.compensation_mode = CompensationMode.PERCENTAGE
+        case1.compensation_mode = CompensationMode.FIXED_LUMP
+        case1.therapist_fixed_pay_inr = 600
         case1.pay_share_amount_inr = 600
         case1.case_manager_user_id = shadow_cm.id
 
@@ -391,7 +493,8 @@ def run():
         case2.billing_type = BillingType.PACKAGE
         case2.package_session_count = 20
         case2.package_amount_inr = 25000
-        case2.compensation_mode = CompensationMode.PERCENTAGE
+        case2.compensation_mode = CompensationMode.FIXED_LUMP
+        case2.therapist_fixed_pay_inr = 15000
         case2.pay_share_amount_inr = 15000
         therapist.home_address_line1 = "42 Therapist Colony, 5th Block"
         therapist.home_city = "Bangalore"
@@ -518,6 +621,165 @@ def run():
             seed_session(case1, date(2026, 5, d), parent_visible=(d in (8, 15)))
         for d in [6, 13]:
             seed_session(case2, date(2026, 5, d), hour=10, parent_visible=True)
+
+        # --- Richer prod-like billing fixture (counselling + prepaid package + July sessions) ---
+        vihaan = db.scalars(select(Child).where(Child.first_name == "Vihaan", Child.last_name == "S.")).first()
+        if not vihaan:
+            vihaan = Child(first_name="Vihaan", last_name="S.")
+            db.add(vihaan)
+            db.flush()
+        anaya = db.scalars(select(Child).where(Child.first_name == "Anaya", Child.last_name == "R.")).first()
+        if not anaya:
+            anaya = Child(first_name="Anaya", last_name="R.")
+            db.add(anaya)
+            db.flush()
+        if pg:
+            for child in [vihaan, anaya]:
+                if child not in pg.children:
+                    pg.children.append(child)
+
+        case_counsel = db.scalars(select(Case).where(Case.case_code == "IC-2026-071")).first()
+        if not case_counsel:
+            case_counsel = Case(
+                case_code="IC-2026-071",
+                child_id=vihaan.id,
+                service_type="Counselling",
+                product_module="counselling",
+                status=CaseStatus.ACTIVE,
+                case_manager_user_id=case_mgr.id,
+                region="south",
+            )
+            db.add(case_counsel)
+        case_counsel.billing_type = BillingType.PER_SESSION
+        case_counsel.client_rate_per_session_inr = 1500
+        case_counsel.compensation_mode = CompensationMode.FIXED_LUMP
+        case_counsel.therapist_fixed_pay_inr = 900
+        case_counsel.pay_share_amount_inr = 900
+
+        case_pkg = db.scalars(select(Case).where(Case.case_code == "IC-2026-072")).first()
+        if not case_pkg:
+            case_pkg = Case(
+                case_code="IC-2026-072",
+                child_id=anaya.id,
+                service_type="Homecare",
+                product_module="homecare",
+                status=CaseStatus.ACTIVE,
+                case_manager_user_id=case_mgr.id,
+                region="south",
+            )
+            db.add(case_pkg)
+        case_pkg.billing_type = BillingType.PACKAGE
+        case_pkg.package_session_count = 12
+        case_pkg.package_amount_inr = 18000
+        case_pkg.compensation_mode = CompensationMode.FIXED_LUMP
+        case_pkg.therapist_fixed_pay_inr = 12000
+        case_pkg.pay_share_amount_inr = 12000
+        db.flush()
+
+        ensure_active_case_assignment(
+            db,
+            case_id=case_counsel.id,
+            therapist_user_id=therapist.id,
+            assigned_by_user_id=case_mgr.id,
+            start_date=date(2026, 3, 1),
+        )
+        ensure_active_case_assignment(
+            db,
+            case_id=case_pkg.id,
+            therapist_user_id=therapist.id,
+            assigned_by_user_id=case_mgr.id,
+            start_date=date(2026, 3, 1),
+        )
+
+        for d in [3, 10, 17, 24]:
+            seed_session(case_counsel, date(2026, 7, d), hour=16, parent_visible=True)
+        for d in [2, 4, 9, 11, 16, 18, 23, 25]:
+            seed_session(case_pkg, date(2026, 7, d), hour=11, parent_visible=True)
+        for d in [1, 3, 8, 10, 15]:
+            seed_session(case2, date(2026, 7, d), hour=10, parent_visible=True)
+        for d in [2, 7, 9, 14, 16, 21]:
+            seed_session(case1, date(2026, 7, d), hour=9, parent_visible=True)
+
+        # Child away on package case (cancelled ₹0 on therapist invoice)
+        absence_day = date(2026, 7, 30)
+        abs_sess = db.scalars(
+            select(TherapySession).where(
+                TherapySession.case_id == case_pkg.id,
+                TherapySession.scheduled_date == absence_day,
+            )
+        ).first()
+        if not abs_sess:
+            abs_sess = TherapySession(
+                case_id=case_pkg.id,
+                therapist_user_id=therapist.id,
+                scheduled_date=absence_day,
+                start_time=time(11, 0),
+                end_time=time(12, 0),
+                mode=SessionMode.HOME,
+                status=SessionStatus.CLIENT_ABSENT,
+            )
+            db.add(abs_sess)
+            db.flush()
+        if not db.scalars(
+            select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == abs_sess.id)
+        ).first():
+            db.add(
+                SessionAbsenceRequest(
+                    session_id=abs_sess.id,
+                    case_id=case_pkg.id,
+                    therapist_user_id=therapist.id,
+                    requested_by_user_id=therapist.id,
+                    absence_type=SessionAbsenceType.CLIENT_ABSENT,
+                    status=SessionAbsenceStatus.APPROVED,
+                    reason="Child unwell — family travel",
+                )
+            )
+
+        # Shadow paid leave day + unpaid leave day in July (for invoice leave lines)
+        if not db.scalars(
+            select(TherapistLeave).where(
+                TherapistLeave.therapist_user_id == therapist.id,
+                TherapistLeave.start_date == date(2026, 7, 28),
+            )
+        ).first():
+            db.add(
+                TherapistLeave(
+                    therapist_user_id=therapist.id,
+                    leave_type=LeaveType.ANNUAL,
+                    billing_category=LeaveBillingCategory.PAID,
+                    paid_days=1,
+                    unpaid_days=0,
+                    start_date=date(2026, 7, 28),
+                    end_date=date(2026, 7, 28),
+                    reason="Paid leave — personal",
+                    status=LeaveStatus.APPROVED,
+                    includes_shadow_cases=True,
+                    service_line="shadow_support",
+                    case_ids=[case1.id],
+                )
+            )
+        if not db.scalars(
+            select(TherapistLeave).where(
+                TherapistLeave.therapist_user_id == therapist.id,
+                TherapistLeave.start_date == date(2026, 7, 29),
+            )
+        ).first():
+            db.add(
+                TherapistLeave(
+                    therapist_user_id=therapist.id,
+                    leave_type=LeaveType.UNPAID,
+                    billing_category=LeaveBillingCategory.UNPAID,
+                    paid_days=0,
+                    unpaid_days=1,
+                    start_date=date(2026, 7, 29),
+                    end_date=date(2026, 7, 29),
+                    reason="Unpaid leave — extended",
+                    status=LeaveStatus.APPROVED,
+                    includes_shadow_cases=True,
+                    service_line="shadow_support",
+                    case_ids=[case1.id],
+                )
+            )
 
         def seed_scheduled(case, day, hour=14):
             existing = db.scalars(
@@ -664,52 +926,54 @@ def run():
                 )
             )
 
-        if not db.scalars(select(Invoice).where(Invoice.therapist_user_id == therapist.id)).first():
-            therapist.external_employee_id = therapist.external_employee_id or "1406"
-            therapist.job_title = therapist.job_title or "Senior Therapist"
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="Jul 2026",
-                    amount_inr=42500,
-                    subtotal_inr=45000,
-                    leave_deduction_inr=2500,
-                    sessions_count=32,
-                    status=InvoiceStatus.PAID,
-                    paid_amount_inr=42500,
-                )
-            )
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="Jun 2026",
-                    amount_inr=38000,
-                    subtotal_inr=40000,
-                    leave_deduction_inr=2000,
-                    sessions_count=28,
-                    status=InvoiceStatus.PAID,
-                    paid_amount_inr=38000,
-                )
-            )
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="May 2026",
-                    amount_inr=36000,
-                    subtotal_inr=36000,
-                    sessions_count=26,
-                    status=InvoiceStatus.APPROVED,
-                )
-            )
-            db.add(
-                Invoice(
-                    therapist_user_id=therapist.id,
-                    month="Apr 2026",
-                    amount_inr=42500,
-                    sessions_count=32,
-                    status=InvoiceStatus.IN_REVIEW,
-                )
-            )
+        existing_invoices = list(
+            db.scalars(select(Invoice).where(Invoice.therapist_user_id == therapist.id)).all()
+        )
+        if existing_invoices:
+            for inv in existing_invoices:
+                db.delete(inv)
+            db.flush()
+
+        therapist.external_employee_id = therapist.external_employee_id or "1406"
+        therapist.job_title = therapist.job_title or "Senior Therapist"
+        _seed_therapist_invoice_synthetic(
+            db,
+            therapist,
+            case1,
+            case2,
+            month="Jul 2026",
+            subtotal_inr=45000,
+            leave_deduction_inr=2500,
+            amount_inr=42500,
+            sessions_count=32,
+            status=InvoiceStatus.PAID,
+            paid_amount_inr=42500,
+        )
+        _seed_therapist_invoice_synthetic(
+            db,
+            therapist,
+            case1,
+            case2,
+            month="Jun 2026",
+            subtotal_inr=40000,
+            leave_deduction_inr=2000,
+            amount_inr=38000,
+            sessions_count=28,
+            status=InvoiceStatus.PAID,
+            paid_amount_inr=38000,
+        )
+        _seed_therapist_invoice_from_preview(
+            db,
+            therapist,
+            "May 2026",
+            InvoiceStatus.APPROVED,
+        )
+        _seed_therapist_invoice_from_preview(
+            db,
+            therapist,
+            "Apr 2026",
+            InvoiceStatus.IN_REVIEW,
+        )
 
         if not db.scalars(
             select(Attachment).where(Attachment.case_id == case1.id, Attachment.entity_type == "iep")
@@ -1046,6 +1310,85 @@ def run():
                     subcategory="other",
                     priority="NORMAL",
                     status=IncidentStatus.REPORTED,
+                )
+            )
+
+        spot_teacher = get_or_create_user(
+            db,
+            "spot@demo.com",
+            "demo123",
+            "SPOT Teacher Priya",
+            RoleName.SPOT.value,
+        )
+        from app.models.user import StaffEmploymentType
+        from app.services import staff_employment_service as staff_employment
+
+        staff_employment.apply_staff_employment_fields(
+            spot_teacher,
+            employment_type=StaffEmploymentType.EMPLOYEE,
+            employment_start_date=date.today().replace(day=1),
+            leave_credit_balance=12,
+        )
+
+        from app.models.staff_attendance import (
+            StaffAttendance,
+            StaffAttendanceEntryType,
+            StaffAttendanceSegment,
+            StaffAttendanceSegmentType,
+            StaffAttendanceStatus,
+        )
+        from app.models.staff_leave import StaffLeave
+
+        if not db.scalars(
+            select(StaffAttendance).where(
+                StaffAttendance.user_id == spot_teacher.id,
+                StaffAttendance.work_date == date.today(),
+            )
+        ).first():
+            yesterday = date.today() - timedelta(days=1)
+            for work_date, summary in (
+                (yesterday, "SPOT classroom sessions and student support."),
+                (date.today(), "Morning circle and learning activities."),
+            ):
+                att = StaffAttendance(
+                    user_id=spot_teacher.id,
+                    work_date=work_date,
+                    entry_type=StaffAttendanceEntryType.LIVE,
+                    status=StaffAttendanceStatus.COMPLETED if work_date < date.today() else StaffAttendanceStatus.IN_PROGRESS,
+                    work_summary=summary,
+                    total_work_seconds=6 * 3600 if work_date < date.today() else 2 * 3600,
+                    total_break_seconds=30 * 60,
+                )
+                db.add(att)
+                db.flush()
+                start = datetime.combine(work_date, datetime.min.time()).replace(tzinfo=IST) + timedelta(hours=9)
+                db.add(
+                    StaffAttendanceSegment(
+                        attendance_id=att.id,
+                        segment_type=StaffAttendanceSegmentType.WORK,
+                        started_at=start,
+                        ended_at=start + timedelta(hours=3),
+                    )
+                )
+
+        if not db.scalars(select(StaffLeave).where(StaffLeave.staff_user_id == spot_teacher.id)).first():
+            db.add(
+                StaffLeave(
+                    staff_user_id=spot_teacher.id,
+                    leave_date=date.today() + timedelta(days=14),
+                    reason="Family commitment",
+                    billing_category=LeaveBillingCategory.PAID,
+                    status=LeaveStatus.APPROVED,
+                    reviewed_by_user_id=hr_user.id,
+                )
+            )
+            db.add(
+                StaffLeave(
+                    staff_user_id=spot_teacher.id,
+                    leave_date=date.today() + timedelta(days=21),
+                    reason="Personal day",
+                    billing_category=LeaveBillingCategory.PAID,
+                    status=LeaveStatus.PENDING,
                 )
             )
 

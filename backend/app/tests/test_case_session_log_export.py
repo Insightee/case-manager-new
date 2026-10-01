@@ -96,6 +96,8 @@ def test_staff_case_export_summary_excludes_content_by_default():
     assert "spreadsheetml" in res.headers.get("content-type", "")
     text = _xlsx_text(res.content)
     assert "Session logs export" in text
+    assert "Child:" in text
+    assert "Parent:" in text
     assert "Approval status" in text
     assert "INTERNAL_BULK_EXPORT_SECRET" not in text
     assert "INTERNAL_OBSERVATION" not in text

@@ -32,6 +32,7 @@ class TherapistLeaveBackfillUpdate(BaseModel):
     leave_carry_forward_days_backfill: int = Field(0, ge=0)
     leave_backfill_note: Optional[str] = None
     employment_start_date: Optional[date] = None
+    tds_rate_percent: Optional[float] = Field(None, ge=0, le=100)
 
 
 class MemoCreate(BaseModel):
@@ -69,6 +70,20 @@ def hr_ops_snapshot(
     from app.services.hr_ops_snapshot_service import build_hr_ops_snapshot
 
     return build_hr_ops_snapshot(db, user)
+
+
+@router.get("/caseload")
+def hr_caseload(
+    user: User = Depends(require_permission("case.read.all")),
+    db: Session = Depends(get_db),
+):
+    """Therapist caseload lens for HR: cases, pay (if permitted), slot fill, reassignment flags."""
+    from app.services.hr_caseload_service import build_hr_caseload
+
+    include_pay = user_has_permission(user, "case.billing.update") or user_has_permission(
+        user, "admin.override"
+    )
+    return build_hr_caseload(db, include_pay=include_pay)
 
 
 @router.get("/recipients")
@@ -175,6 +190,17 @@ def update_therapist_leave_backfill(
         employment_start_date=payload.employment_start_date,
         actor_user_id=user.id,
     )
+    if payload.tds_rate_percent is not None:
+        # TDS is finance/HR payroll config — leave.manage alone must not set it to 0%.
+        if not (
+            user_has_permission(user, "user.manage")
+            or user_has_permission(user, "payout.override")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Looks like TDS rate needs finance or HR access — leave credits can still be updated separately.",
+            )
+        profile.tds_rate_percent = float(payload.tds_rate_percent)
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -188,6 +214,7 @@ def update_therapist_leave_backfill(
     return {
         "user_id": user_id,
         "leave_balance": policy.get_leave_balance(db, target, year=payload.year),
+        "tds_rate_percent": float(profile.tds_rate_percent) if profile.tds_rate_percent is not None else None,
     }
 
 
@@ -286,7 +313,7 @@ def update_therapist(
             target.employment_status = EmploymentStatus(payload.employment_status)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid employment_status value")
-        target.is_active = (target.employment_status == EmploymentStatus.ACTIVE)
+        target.is_active = target.employment_status == EmploymentStatus.ACTIVE
     if payload.region is not None:
         target.region = payload.region
     if payload.location is not None:
@@ -299,6 +326,16 @@ def update_therapist(
         )
     if payload.is_active is not None:
         target.is_active = payload.is_active
+        if not payload.is_active and target.employment_status == EmploymentStatus.ACTIVE:
+            target.employment_status = EmploymentStatus.SUSPENDED
+
+    from app.services.therapist_eligibility_service import maybe_apply_exit_after_status_change
+
+    maybe_apply_exit_after_status_change(
+        db,
+        target.id,
+        reason="HR therapist status update",
+    )
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update_therapist", entity_type="user", entity_id=user_id, **meta)

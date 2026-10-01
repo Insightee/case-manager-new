@@ -56,6 +56,8 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   const canPreview = hasReport && (isParent ? summary?.can_preview : summary?.has_active_approved_iep || summary?.can_preview)
   const canShare = isAdmin && summary?.can_share_with_parent
   const canDownload = hasReport && (isParent ? summary?.can_preview : true)
+  const currentPeriod = new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  const iepVersions = summary?.iep_versions || []
 
   async function handleShare() {
     try {
@@ -80,8 +82,8 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
               <h2 className="text-2xl font-bold text-lush-forest m-0">
                 {hasReport
                   ? isParent
-                    ? 'IEP support plan'
-                    : 'IEP in progress'
+                    ? `IEP support plan${summary.period_label ? ` · ${summary.period_label}` : ''}`
+                    : `IEP${summary.period_label ? ` · ${summary.period_label}` : ''}`
                   : isParent
                     ? 'No IEP has been shared yet'
                     : 'No IEP Report active for this case'}
@@ -134,6 +136,21 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
           </div>
         )}
 
+        {iepVersions.length > 0 ? (
+          <div className="mb-6">
+            <p className="text-xs font-bold uppercase text-outline font-mono m-0 mb-2">IEP history</p>
+            <ul className="space-y-2 m-0 p-0 list-none text-sm">
+              {iepVersions.map((ver) => (
+                <li key={ver.report_id} className="flex flex-wrap gap-2 items-center">
+                  <span className="font-semibold">{ver.period_label}</span>
+                  <span className="text-on-surface-variant">{ver.status?.replace(/_/g, ' ')}</span>
+                  {ver.is_active ? <span className="text-xs uppercase text-lush-forest font-bold">Current</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap gap-3">
           {canStart ? (
             <button
@@ -143,7 +160,18 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
               disabled={saving}
               onClick={handleStart}
             >
-              Start Building IEP
+              Start IEP — {currentPeriod}
+            </button>
+          ) : null}
+          {summary?.can_start_new && !canStart ? (
+            <button
+              type="button"
+              className="cr-btn cr-btn--primary inline-flex items-center justify-center font-bold text-sm"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+              disabled={saving}
+              onClick={handleStart}
+            >
+              Start next IEP — {currentPeriod}
             </button>
           ) : null}
           {canImport ? (

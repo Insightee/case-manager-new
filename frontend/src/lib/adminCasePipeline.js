@@ -13,16 +13,17 @@ export const PIPELINE_COLUMN_META = {
   closed: { label: 'Closed', tone: 'muted', priority: 7 },
 }
 
-/** Unified case state filter options (replaces separate case status + pipeline stage). */
+/** Unified case state filter options (status + pipeline stage). */
 export const CASE_STATE_OPTIONS = [
   { value: 'all', label: 'All states' },
+  { value: 'status_active', label: 'Status: Active (in service)' },
   { value: 'pending_allotment', label: 'Pending allotment' },
   { value: 'needs_therapist', label: 'Needs therapist' },
   { value: 'reassignment', label: 'Reassignment' },
   { value: 'reports_logs', label: 'Reports & logs' },
   { value: 'iep', label: 'IEP' },
   { value: 'compliance', label: 'Compliance' },
-  { value: 'active', label: 'Active (in service)' },
+  { value: 'pipeline_active', label: 'Active (no pending work)' },
   { value: 'closed', label: 'Closed' },
   { value: 'suspended', label: 'Suspended' },
 ]
@@ -38,9 +39,14 @@ export const OPENED_DATE_PRESETS = [
 /** Map legacy ?status= query params to unified caseState. */
 const LEGACY_STATUS_TO_CASE_STATE = {
   PENDING_ALLOTMENT: 'pending_allotment',
-  ACTIVE: 'active',
+  ACTIVE: 'status_active',
   SUSPENDED: 'suspended',
   CLOSED: 'closed',
+}
+
+/** Back-compat for saved links / bookmarks that used pipeline column value "active". */
+const LEGACY_CASE_STATE_ALIASES = {
+  active: 'pipeline_active',
 }
 
 const ACTIONABLE_COLUMNS = new Set([
@@ -91,6 +97,14 @@ export function sortPipelineRows(rows, sort = 'priority') {
   })
 }
 
+/** First day of current month through today (ISO dates). */
+export function defaultOpenedRange(referenceDate = new Date()) {
+  const today = new Date(referenceDate)
+  today.setHours(0, 0, 0, 0)
+  const start = new Date(today.getFullYear(), today.getMonth(), 1)
+  return { from: isoDay(start), to: isoDay(today) }
+}
+
 const EMPTY_FILTERS = {
   queue: 'all',
   search: '',
@@ -100,6 +114,8 @@ const EMPTY_FILTERS = {
   therapistId: 'all',
   childId: 'all',
   openedPreset: 'all',
+  openedMonth: 'all',
+  openedYear: 'all',
   dateFrom: '',
   dateTo: '',
   operationalStage: 'all',
@@ -107,13 +123,51 @@ const EMPTY_FILTERS = {
   unassignedTherapistOnly: false,
 }
 
+/** Month options for the opened-date filter (value is a zero-padded month number). */
+export const OPENED_MONTH_OPTIONS = [
+  { value: 'all', label: 'All months' },
+  { value: '01', label: 'January' },
+  { value: '02', label: 'February' },
+  { value: '03', label: 'March' },
+  { value: '04', label: 'April' },
+  { value: '05', label: 'May' },
+  { value: '06', label: 'June' },
+  { value: '07', label: 'July' },
+  { value: '08', label: 'August' },
+  { value: '09', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' },
+]
+
+/** Distinct opened years (from case created_at), newest first, for the year filter. */
+export function deriveOpenedYearOptions(rows = []) {
+  const years = new Set()
+  for (const r of rows) {
+    if (r.created_at) years.add(String(r.created_at).slice(0, 4))
+  }
+  return [
+    { value: 'all', label: 'All years' },
+    ...[...years]
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))
+      .map((y) => ({ value: y, label: y })),
+  ]
+}
+
+export function normalizeCaseState(caseState) {
+  if (!caseState || caseState === 'all') return 'all'
+  return LEGACY_CASE_STATE_ALIASES[caseState] || caseState
+}
+
 export function defaultPipelineFilters(overrides = {}) {
   const merged = { ...EMPTY_FILTERS, ...overrides }
+  merged.caseState = normalizeCaseState(merged.caseState)
   if (merged.caseStatus && merged.caseStatus !== 'all' && merged.caseState === 'all') {
     merged.caseState = LEGACY_STATUS_TO_CASE_STATE[merged.caseStatus] || 'all'
   }
   if (merged.pipelineStage && merged.pipelineStage !== 'all' && merged.caseState === 'all') {
-    merged.caseState = merged.pipelineStage
+    merged.caseState = normalizeCaseState(merged.pipelineStage)
   }
   if (merged.month && merged.month !== 'all' && merged.openedPreset === 'all') {
     merged.openedPreset = 'custom'
@@ -142,6 +196,14 @@ export function isCaseManagerOnlyRole(roles = []) {
   return !roles.some((r) => STAFF_ROLES_BLOCKING_CM_ONLY.has(r))
 }
 
+/** Collapse duplicated import labels like "Acme Acme" for case headers. */
+export function displayCaseClientName(name) {
+  if (!name) return ''
+  const text = String(name).trim().replace(/\s+/g, ' ')
+  const repeated = text.match(/^(.+?)\s+\1$/)
+  return repeated ? repeated[1] : text
+}
+
 export function defaultCaseManagerFilterId(user) {
   if (!isCaseManagerOnlyRole(user?.roles || [])) return null
   return user?.id ? String(user.id) : null
@@ -152,20 +214,26 @@ export function caseStateFromLegacyStatus(status) {
   return LEGACY_STATUS_TO_CASE_STATE[status] || 'all'
 }
 
-function matchesCaseState(row, caseState) {
-  if (caseState === 'all') return true
-  if (caseState === 'suspended') return row.status === 'SUSPENDED'
-  if (caseState === 'closed') {
+export function matchesCaseState(row, caseState) {
+  const state = normalizeCaseState(caseState)
+  if (state === 'all') return true
+  if (state === 'status_active') return row.status === 'ACTIVE'
+  if (state === 'suspended') return row.status === 'SUSPENDED'
+  if (state === 'closed') {
     return row.pipeline_column === 'closed' || row.status === 'CLOSED'
   }
-  if (caseState === 'pending_allotment') {
+  if (state === 'pending_allotment') {
     return row.pipeline_column === 'pending_allotment' || row.status === 'PENDING_ALLOTMENT'
   }
-  return row.pipeline_column === caseState
+  if (state === 'pipeline_active') return row.pipeline_column === 'active'
+  return row.pipeline_column === state
 }
 
 function isoDay(d) {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function openedDateBounds(preset, dateFrom, dateTo) {
@@ -223,7 +291,7 @@ function rowCreatedDay(row) {
   return row.created_at.slice(0, 10)
 }
 
-export function filterPipelineRows(rows, filters = {}) {
+export function filterPipelineRows(rows, filters = {}, { viewerUserId } = {}) {
   const f = defaultPipelineFilters(filters)
   let list = rows
 
@@ -236,7 +304,15 @@ export function filterPipelineRows(rows, filters = {}) {
   if (f.caseManagerId === 'unassigned') {
     list = list.filter((r) => !r.case_manager_user_id)
   } else if (f.caseManagerId !== 'all') {
-    list = list.filter((r) => String(r.case_manager_user_id) === f.caseManagerId)
+    // Mentored cases are tagged is_mentor_case for the current viewer; include them when
+    // filtering to that viewer's own case-manager id.
+    list = list.filter(
+      (r) =>
+        String(r.case_manager_user_id) === f.caseManagerId ||
+        (Boolean(r.is_mentor_case) &&
+          viewerUserId != null &&
+          String(viewerUserId) === f.caseManagerId),
+    )
   }
   if (f.therapistId === 'unassigned') {
     list = list.filter((r) => !r.therapist_user_id)
@@ -261,6 +337,19 @@ export function filterPipelineRows(rows, filters = {}) {
     list = list.filter((r) => {
       const d = rowCreatedDay(r)
       return d && d <= openedTo
+    })
+  }
+
+  if (f.openedYear && f.openedYear !== 'all') {
+    list = list.filter((r) => {
+      const d = rowCreatedDay(r)
+      return d && d.slice(0, 4) === f.openedYear
+    })
+  }
+  if (f.openedMonth && f.openedMonth !== 'all') {
+    list = list.filter((r) => {
+      const d = rowCreatedDay(r)
+      return d && d.slice(5, 7) === f.openedMonth
     })
   }
 
@@ -296,7 +385,7 @@ export function filterPipelineRows(rows, filters = {}) {
   if (f.queue === 'needs_action') {
     list = list.filter((r) => r.pipeline_column !== 'closed' && r.pipeline_column !== 'active')
   } else if (f.queue === 'allotment') {
-    list = list.filter((r) => r.pipeline_column === 'pending_allotment')
+    list = list.filter((r) => ['pending_allotment', 'needs_therapist'].includes(r.pipeline_column))
   } else if (f.queue === 'assignment') {
     list = list.filter((r) => ['needs_therapist', 'reassignment'].includes(r.pipeline_column))
   } else if (f.queue === 'review') {
@@ -320,16 +409,31 @@ export function countActivePipelineFilters(filters = {}) {
   if (f.caseManagerId !== 'all') n += 1
   if (f.therapistId !== 'all') n += 1
   if (f.childId !== 'all') n += 1
-  if (f.openedPreset !== 'all') n += 1
+  if (f.openedPreset === 'custom') {
+    if (f.dateFrom || f.dateTo) n += 1
+  } else if (f.openedPreset !== 'all' && f.openedPreset !== 'this_month') {
+    n += 1
+  }
+  if (f.openedMonth !== 'all') n += 1
+  if (f.openedYear !== 'all') n += 1
   if (f.operationalStage !== 'all') n += 1
   if (f.unassignedCmOnly) n += 1
   if (f.unassignedTherapistOnly) n += 1
   return n
 }
 
-/** Apply every active filter except the queue tab (for tab badge counts). */
-export function filterPipelineRowsForQueueCounts(rows, filters = {}) {
-  return filterPipelineRows(rows, { ...defaultPipelineFilters(filters), queue: 'all' })
+/** Apply filters for queue tab badge counts (excludes queue + case state so tabs stay meaningful). */
+export function filterPipelineRowsForQueueCounts(rows, filters = {}, opts = {}) {
+  return filterPipelineRows(
+    rows,
+    { ...defaultPipelineFilters(filters), queue: 'all', caseState: 'all' },
+    opts,
+  )
+}
+
+/** Rows matching all filters except the queue tab (for "in scope" counts). */
+export function filterPipelineRowsWithoutQueue(rows, filters = {}, opts = {}) {
+  return filterPipelineRows(rows, { ...defaultPipelineFilters(filters), queue: 'all' }, opts)
 }
 
 export function pipelineQueueCounts(rows) {
@@ -344,7 +448,7 @@ export function pipelineQueueCounts(rows) {
   }
   for (const r of rows) {
     if (r.pipeline_column !== 'closed' && r.pipeline_column !== 'active') counts.needs_action += 1
-    if (r.pipeline_column === 'pending_allotment') counts.allotment += 1
+    if (r.pipeline_column === 'pending_allotment' || r.pipeline_column === 'needs_therapist') counts.allotment += 1
     if (['needs_therapist', 'reassignment'].includes(r.pipeline_column)) counts.assignment += 1
     if (['reports_logs', 'iep'].includes(r.pipeline_column)) counts.review += 1
     if (r.pipeline_column === 'compliance') counts.compliance += 1
@@ -364,7 +468,7 @@ export async function activateCaseAllotment(caseId) {
 /**
  * Primary + secondary actions for a pipeline row (no navigation on row click).
  */
-export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false }) {
+export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false, cmFocused = false }) {
   if (detailsOnly) {
     return [{ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` }]
   }
@@ -372,9 +476,9 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
     const actions = [
       {
         id: 'transition',
-        label: 'Manage transition',
+        label: cmFocused ? 'View case' : 'Manage transition',
         variant: 'primary',
-        href: `/admin/cases/${row.id}?tab=scheduling`,
+        href: cmFocused ? `/admin/cases/${row.id}` : `/admin/cases/${row.id}?tab=scheduling`,
       },
       { id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` },
     ]
@@ -390,7 +494,7 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
   const actions = []
   const col = row.pipeline_column
-  const write = canWrite && canAssign
+  const write = canWrite && canAssign && !cmFocused
   const writeCase = canWrite && canUpdate
   const writeCreate = canWrite && canCreate
 
@@ -427,11 +531,12 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
   if (col === 'compliance') {
     if (row.open_tickets > 0) {
+      const caseCode = row.case_code ? `&case_code=${encodeURIComponent(row.case_code)}` : ''
       actions.push({
         id: 'tickets',
         label: `Tickets (${row.open_tickets})`,
         variant: 'primary',
-        href: '/admin/support?tab=tickets',
+        href: `/admin/support?tab=tickets&case_id=${row.id}${caseCode}`,
       })
     }
     if (row.open_incidents > 0) {
@@ -448,10 +553,6 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
   }
 
   actions.push({ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` })
-
-  if (writeCase && col !== 'closed') {
-    actions.push({ id: 'close', label: 'Close', variant: 'danger' })
-  }
 
   return actions
 }

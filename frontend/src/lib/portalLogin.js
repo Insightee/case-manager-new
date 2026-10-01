@@ -16,6 +16,7 @@ export const STAFF_LOGIN_ROLES = [
   'FINANCE',
   'HR',
   'SCHOOL_COORDINATOR',
+  'SPOT',
 ]
 
 export const SIGN_IN_PATH = {

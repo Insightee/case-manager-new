@@ -89,6 +89,7 @@ export function IepBuilderSections({
   goals,
   childName,
   readOnly,
+  variant = 'therapist',
   suggestedGoals = [],
   onPatchSection,
   onEditGoal,
@@ -109,6 +110,13 @@ export function IepBuilderSections({
   const talent = structured(sections, 'talent_development')
   const service = structured(sections, 'review_parent_plan')
   const reviewSec = sectionData(sections, 'review_parent_plan')
+
+  const isParent = variant === 'parent'
+  const isAdmin = variant === 'admin'
+  const canEditTherapistInput = !readOnly && !isParent
+  const canEditCmNotes = !readOnly && isAdmin
+  const reviewDateLocked = Boolean(service.review_date_locked)
+  const sectionReadOnly = readOnly || isParent
 
   const importedStrengths = useMemo(
     () => talent.imported_strengths || (talent.imported_strengths === undefined && talent.strengths ? [] : []),
@@ -340,11 +348,11 @@ export function IepBuilderSections({
             })
           }
         />
-        <label className="block text-xs font-bold uppercase text-outline mb-1">Review date</label>
+        <label className="block text-xs font-bold uppercase text-outline mb-1">Review date for next IEP</label>
         <input
           type="date"
           className="min-h-[44px] rounded-xl border px-3 text-sm mb-4 w-full max-w-xs"
-          disabled={readOnly}
+          disabled={sectionReadOnly || reviewDateLocked}
           defaultValue={service.review_date || ''}
           onBlur={(e) =>
             onPatchSection('review_parent_plan', {
@@ -352,51 +360,55 @@ export function IepBuilderSections({
             })
           }
         />
-        <label className="block text-xs font-bold uppercase text-outline mb-1">Therapist input</label>
-        <textarea
-          className="w-full min-h-[72px] rounded-xl border p-3 text-sm mb-3"
-          disabled={readOnly}
-          placeholder="Clinical notes for the care team…"
-          defaultValue={service.therapist_input || ''}
-          onBlur={(e) =>
-            onPatchSection('review_parent_plan', {
-              structured_data: { ...service, therapist_input: e.target.value },
-            })
-          }
-        />
-        <label className="block text-xs font-bold uppercase text-outline mb-1">Parent / family input</label>
-        <textarea
-          className="w-full min-h-[72px] rounded-xl border p-3 text-sm mb-3"
-          disabled={readOnly}
-          placeholder="Family priorities and observations…"
-          defaultValue={service.parent_input_draft || ''}
-          onBlur={(e) =>
-            onPatchSection('review_parent_plan', {
-              structured_data: { ...service, parent_input_draft: e.target.value },
-            })
-          }
-        />
-        {(service.parent_inputs || []).length > 0 ? (
-          <ul className="space-y-2 m-0 p-0 list-none mb-3">
-            {service.parent_inputs.map((item) => (
-              <li key={item.id} className="text-sm bg-secondary-container/30 rounded-lg p-3 border border-outline-variant/20">
-                <p className="m-0">{item.text}</p>
-              </li>
-            ))}
-          </ul>
+        {reviewDateLocked ? (
+          <p className="text-xs text-on-surface-variant mb-4 m-0">Locked after case manager approval.</p>
         ) : null}
-        <label className="block text-xs font-bold uppercase text-outline mb-1">Case manager notes (internal)</label>
-        <textarea
-          className="w-full min-h-[72px] rounded-xl border p-3 text-sm"
-          disabled={readOnly}
-          placeholder="Internal CM notes — not shown to families…"
-          defaultValue={service.cm_internal_notes || ''}
-          onBlur={(e) =>
-            onPatchSection('review_parent_plan', {
-              structured_data: { ...service, cm_internal_notes: e.target.value },
-            })
-          }
-        />
+        {!isParent ? (
+          <>
+            <label className="block text-xs font-bold uppercase text-outline mb-1">Therapist input (internal)</label>
+            <textarea
+              className="w-full min-h-[72px] rounded-xl border p-3 text-sm mb-3"
+              disabled={!canEditTherapistInput}
+              placeholder="Internal clinical notes — not shared with families…"
+              defaultValue={service.therapist_input || ''}
+              onBlur={(e) =>
+                onPatchSection('review_parent_plan', {
+                  structured_data: { ...service, therapist_input: e.target.value },
+                })
+              }
+            />
+          </>
+        ) : null}
+        {(service.parent_inputs || []).length > 0 ? (
+          <>
+            <label className="block text-xs font-bold uppercase text-outline mb-1">Parent / family input</label>
+            <ul className="space-y-2 m-0 p-0 list-none mb-3">
+              {service.parent_inputs.map((item) => (
+                <li key={item.id} className="text-sm bg-secondary-container/30 rounded-lg p-3 border border-outline-variant/20">
+                  <p className="m-0">{item.text}</p>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : isParent ? (
+          <p className="text-sm text-on-surface-variant mb-3 m-0">Use the family input field on your portal to share priorities.</p>
+        ) : null}
+        {isAdmin ? (
+          <>
+            <label className="block text-xs font-bold uppercase text-outline mb-1">Case manager notes (internal)</label>
+            <textarea
+              className="w-full min-h-[72px] rounded-xl border p-3 text-sm"
+              disabled={!canEditCmNotes}
+              placeholder="Internal CM notes — not shown to families…"
+              defaultValue={service.cm_internal_notes || ''}
+              onBlur={(e) =>
+                onPatchSection('review_parent_plan', {
+                  structured_data: { ...service, cm_internal_notes: e.target.value },
+                })
+              }
+            />
+          </>
+        ) : null}
       </section>
     </>
   )

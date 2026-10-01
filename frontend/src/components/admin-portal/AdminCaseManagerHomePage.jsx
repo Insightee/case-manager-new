@@ -4,6 +4,9 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminCmHome } from '../../hooks/useAdminCmHome.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatApiDateIN } from '../../lib/datetime.js'
+import { isStaffAttendanceUser } from '../../lib/staffAttendanceAccess.js'
+import { UpcomingMeetingsPanel } from '../shared/UpcomingMeetingsPanel.jsx'
+import { StaffTimerPanel } from './StaffTimerPanel.jsx'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminStatCard, StatusBadge } from './ui/index.js'
 import './admin-cm-home.css'
 import './admin-dashboard.css'
@@ -143,6 +146,10 @@ export function AdminCaseManagerHomePage() {
         }
       />
 
+      {isStaffAttendanceUser(user) ? (
+        <StaffTimerPanel title="Start your day" className="admin-dashboard__timer" />
+      ) : null}
+
       {error ? (
         <p className="admin-alert admin-alert--error">
           {error.message || 'Could not load dashboard'}
@@ -162,6 +169,14 @@ export function AdminCaseManagerHomePage() {
             <AdminStatCard title="Pending allotment" value={summary?.pending_allotment ?? 0} tone="slate" />
             <AdminStatCard title="Active" value={summary?.active ?? 0} tone="teal" />
           </section>
+
+          <UpcomingMeetingsPanel
+            title="Upcoming meetings"
+            subtitle="Next 7 days"
+            href="/admin/meetings"
+            variant="admin"
+            className="admin-cm-home__upcoming-meetings"
+          />
 
           <section className="admin-home-queue" aria-labelledby="admin-cm-queue-title">
             <div className="admin-home-queue__header">

@@ -50,6 +50,9 @@ def main() -> int:
             if "external_case_ref" not in cols:
                 conn.execute(text("ALTER TABLE cases ADD COLUMN external_case_ref VARCHAR(128)"))
                 print("Added cases.external_case_ref")
+            if "zoho_id" not in cols:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN zoho_id VARCHAR(64)"))
+                print("Added cases.zoho_id")
 
         conn.execute(
             text(

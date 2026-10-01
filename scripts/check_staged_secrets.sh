@@ -43,10 +43,19 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   fi
 fi
 
-# Pattern scan on staged or CI diff content (skip examples)
+# Pattern scan on staged or CI diff content (skip *.env.example and similar templates)
+# Note: path filters matter — example file *content* rarely contains the string ".example".
+_EXAMPLE_EXCLUDES=(
+  ":(exclude)*.env.example"
+  ":(exclude)*env.railway.example"
+  ":(exclude)*vercel-env.example"
+  ":(exclude)*vercel_env.example.sh"
+  ":(exclude)*railway_smtp_env.example.sh"
+)
+
 scan_content() {
   local diff_cmd=("$@")
-  if "${diff_cmd[@]}" 2>/dev/null | grep -Ei '(JWT_SECRET_KEY=|SMTP_PASSWORD=|RAILWAY_TOKEN=|VERCEL_TOKEN=|BEGIN (RSA |OPENSSH )?PRIVATE KEY)' | grep -v '.example' | grep -qv 'your-'; then
+  if "${diff_cmd[@]}" 2>/dev/null | grep -Ei '(JWT_SECRET_KEY=|SMTP_PASSWORD=|RAILWAY_TOKEN=|VERCEL_TOKEN=|BEGIN (RSA |OPENSSH )?PRIVATE KEY)' | grep -qv 'your-'; then
     echo "BLOCKED: possible secret in diff (JWT/SMTP/token/private key)"
     fail=1
   fi
@@ -54,9 +63,9 @@ scan_content() {
 
 if [[ "${1:-}" == "--ci" ]]; then
   range="${INSIGHTCASE_DIFF_RANGE:-HEAD~1...HEAD}"
-  scan_content git diff "$range"
+  scan_content git diff "$range" -- . "${_EXAMPLE_EXCLUDES[@]}"
 else
-  scan_content git diff --cached
+  scan_content git diff --cached -- . "${_EXAMPLE_EXCLUDES[@]}"
 fi
 
 if [[ "$fail" -ne 0 ]]; then

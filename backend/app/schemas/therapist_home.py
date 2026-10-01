@@ -82,6 +82,17 @@ class TherapistPendingAssignment(BaseModel):
     offer_sent_at: Optional[str] = None
 
 
+class TherapistIepReminder(BaseModel):
+    notification_id: int
+    case_id: int | None = None
+    case_code: str | None = None
+    child_name: str | None = None
+    title: str
+    body: str
+    href: str
+    created_at: str | None = None
+
+
 class TherapistPendingCmMeeting(BaseModel):
     id: int
     case_id: Optional[int] = None
@@ -103,6 +114,7 @@ class TherapistHomeResponse(BaseModel):
     schedule_preview: list[SchedulePreviewItem]
     pending_assignment_acceptance: list[TherapistPendingAssignment] = []
     pending_cm_meetings: list[TherapistPendingCmMeeting] = []
+    iep_reminders: list[TherapistIepReminder] = []
 
 
 class TherapistSessionsWorkspaceResponse(BaseModel):

@@ -8,11 +8,14 @@ from app.models.case_document import (
     CaseDocument,
     CaseDocumentStatus,
     CaseDocumentVisibility,
+    normalize_case_document_visibility,
+    visibility_rank,
     normalize_case_document_status,
     statuses_awaiting_cm_review,
 )
 from app.models.user import User
 from app.services import case_service, parent_service
+from app.services.mentor_scope_service import is_mentor_only_on_case
 
 OPERATIONAL_ROLES = frozenset(
     {
@@ -70,11 +73,12 @@ def can_access_clinical_documents(user: User) -> bool:
 
 
 def parent_can_read_document(doc: CaseDocument) -> bool:
-    if doc.visibility == CaseDocumentVisibility.INTERNAL_ONLY.value:
+    visibility = normalize_case_document_visibility(doc.visibility)
+    if visibility == CaseDocumentVisibility.INTERNAL.value:
         return False
-    if doc.visibility == CaseDocumentVisibility.CLIENT_VISIBLE.value:
+    if visibility == CaseDocumentVisibility.CLIENT.value:
         return doc.status in PARENT_VISIBLE_STATUSES
-    if doc.visibility == CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value:
+    if visibility == CaseDocumentVisibility.CARE_TEAM.value:
         return doc.status in (
             CaseDocumentStatus.APPROVED.value,
             CaseDocumentStatus.CLIENT_REVIEW.value,
@@ -97,13 +101,26 @@ def can_read(db, user: User, doc: CaseDocument, case: Case | None = None) -> boo
         is_finance_only_clinical_denied(user) or is_hr_only_clinical_denied(user)
     ):
         return False
-    return case_scope_check(db, user, case)
+    if not case_scope_check(db, user, case):
+        return False
+
+    roles = _role_names(user)
+    visibility = normalize_case_document_visibility(doc.visibility)
+    if RoleName.THERAPIST.value in roles and RoleName.CASE_MANAGER.value not in roles:
+        if doc.status == CaseDocumentStatus.DRAFT.value:
+            return doc.submitted_by_user_id == user.id
+        if doc.status == CaseDocumentStatus.CHANGES_REQUESTED.value and doc.submitted_by_user_id == user.id:
+            return True
+        return visibility_rank(visibility) >= visibility_rank(CaseDocumentVisibility.CARE_TEAM.value)
+    return True
 
 
 def can_create(db, user: User, case: Case) -> bool:
     if not user_has_permission(user, "case_document.create"):
         return False
     if not can_access_clinical_documents(user):
+        return False
+    if is_mentor_only_on_case(db, user, case):
         return False
     return case_scope_check(db, user, case)
 
@@ -113,6 +130,8 @@ def can_review(db, user: User, doc: CaseDocument, case: Case | None = None) -> b
         return False
     case = case or case_service.get_case(db, doc.case_id)
     if not case:
+        return False
+    if is_mentor_only_on_case(db, user, case):
         return False
     return case_scope_check(db, user, case)
 
@@ -141,9 +160,12 @@ def allowed_actions(db, user: User, doc: CaseDocument, case: Case | None = None)
     ):
         actions.append("submit")
     if can_review(db, user, doc, case):
+        current_version = next((v for v in doc.versions if v.id == doc.current_version_id), None)
         if normalize_case_document_status(doc.status) in statuses_awaiting_cm_review():
             actions.extend(["approve", "request_changes"])
-        if doc.status == CaseDocumentStatus.APPROVED.value:
+        if doc.status == CaseDocumentStatus.APPROVED.value and (
+            not current_version or current_version.source_type != "EXTERNAL_LINK"
+        ):
             actions.append("publish_client")
         if doc.status not in (CaseDocumentStatus.ARCHIVED.value,):
             actions.append("archive")

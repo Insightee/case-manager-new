@@ -225,6 +225,12 @@ def patch_section(
     if internal_notes is not None:
         sec.internal_notes = internal_notes
     if structured_data is not None:
+        if report.report_type == ClinicalReportType.IEP.value and section_key == "review_parent_plan":
+            existing = json.loads(sec.structured_data_json) if sec.structured_data_json else {}
+            if existing.get("review_date_locked") and structured_data.get("review_date") != existing.get("review_date"):
+                raise ValueError("Review date for next IEP is locked after case manager approval.")
+            if existing.get("review_date_locked"):
+                structured_data = {**structured_data, "review_date_locked": True}
         sec.structured_data_json = json.dumps(structured_data)
     parsed_struct = json.loads(sec.structured_data_json) if sec.structured_data_json else {}
     sec.completion_status = section_completion_status(sec.narrative_text, sec.internal_notes, parsed_struct)
@@ -431,11 +437,16 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
     roles = {r.name for r in getattr(user, "roles", []) or []}
     is_cm = bool(roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER", "SUPERVISOR"}) or report.case_manager_id == user.id
     is_parent = user_is_parent(user)
+    from app.services.iep_reminder_service import iep_period_label, list_iep_versions_for_case
+
     payload = {
         "has_report": True,
         "report_id": report.id,
         "status": report.status,
         "status_label": status_labels.get(report.status, report.status),
+        "period_label": iep_period_label(report),
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "iep_versions": list_iep_versions_for_case(db, case.id),
         "can_start_new": report.status in (ClinicalReportStatus.APPROVED.value, ClinicalReportStatus.LOCKED.value),
         "can_edit": editable and (report.assigned_therapist_id == user.id or is_cm),
         "can_submit": editable and (report.assigned_therapist_id == user.id or is_cm),
@@ -591,7 +602,17 @@ def serialize_parent_safe_iep(db: Session, report: ClinicalReport, case: Case) -
                 g.pop("therapist_notes", None)
             structured = {**structured, "goals": goals, "pending_changes": []}
         if sec["key"] == "review_parent_plan":
-            structured = {k: v for k, v in structured.items() if k != "internal_notes"}
+            structured = {
+                k: v
+                for k, v in structured.items()
+                if k
+                not in (
+                    "internal_notes",
+                    "therapist_input",
+                    "cm_internal_notes",
+                    "parent_input_draft",
+                )
+            }
         safe_sections.append({
             "key": sec["key"],
             "label": sec["label"],

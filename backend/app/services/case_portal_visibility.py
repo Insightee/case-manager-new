@@ -8,6 +8,7 @@ PORTAL_HIDDEN_CASE_STATUSES = frozenset(
     {
         CaseStatus.CLOSED,
         CaseStatus.DEACTIVATED,
+        CaseStatus.SUSPENDED,
     }
 )
 

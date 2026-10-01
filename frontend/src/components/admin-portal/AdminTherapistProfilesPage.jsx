@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
 import { TherapistLeaveBalancePanel } from '../hr-portal/TherapistLeaveBalancePanel.jsx'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
+import { qualificationLevelLabel } from '../../lib/therapistQualificationLevels.js'
 import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
 import { AdminStaffSelect } from './ui/AdminStaffSelect.jsx'
 import {
@@ -21,6 +23,7 @@ import {
   AdminTaskCard,
   AdminToolbar,
   FilterSelect,
+  PeopleListPagination,
   StatusBadge,
 } from './ui/index.js'
 import './admin-reports.css'
@@ -38,11 +41,15 @@ const DIFF_FIELDS = [
   { key: 'short_bio', label: 'Short bio', type: 'text' },
   { key: 'academic_qualifications', label: 'Qualifications', type: 'text' },
   { key: 'professional_certificates', label: 'Certificates', type: 'list' },
+  { key: 'professional_qualification_entries', label: 'Qualification cards', type: 'cards' },
   { key: 'services_offered', label: 'Services', type: 'services' },
 ]
 
 function normalizeForDiff(value, type) {
   if (type === 'text') return (value ?? '').toString().trim()
+  if (type === 'cards') {
+    return [...(value || [])].map((row) => `${row.kind || ''}:${row.title || ''}:${row.year || ''}`).filter(Boolean)
+  }
   return [...(value || [])].map((v) => String(v)).filter(Boolean)
 }
 
@@ -76,7 +83,7 @@ function formatDiffValue(value, type, categories) {
     const labels = serviceLabels(value, categories)
     return labels.length ? labels.join(', ') : '—'
   }
-  if (type === 'list') {
+  if (type === 'list' || type === 'cards') {
     return value.length ? value.join(', ') : '—'
   }
   return value || '—'
@@ -85,7 +92,10 @@ function formatDiffValue(value, type, categories) {
 function ProfileChangesSection({ profile, categories }) {
   const needsReview =
     profile &&
-    (profile.status === 'PENDING' || profile.has_pending_changes || profile.status === 'DRAFT')
+    (profile.status === 'PENDING' ||
+      profile.status === 'CHANGES_REQUESTED' ||
+      profile.has_pending_changes ||
+      profile.status === 'DRAFT')
   if (!needsReview) return null
 
   const changes = computeProfileChanges(profile)
@@ -140,13 +150,48 @@ function ProfileChangesSection({ profile, categories }) {
   )
 }
 
-const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
+const PAGE_SIZE = 25
+
+const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT', 'DELETED', 'NEEDS_LISTING']
+
+const ACTIVITY_FILTERS = [
+  { value: '', label: 'All activity' },
+  { value: 'no_sessions_15d', label: 'No session logs (15 days)' },
+]
+
+function statusFilterLabel(value) {
+  if (value === 'ALL') return 'All statuses'
+  if (value === 'NEEDS_LISTING') return 'Needs listing'
+  if (value === 'DELETED') return 'Deleted'
+  return value.charAt(0) + value.slice(1).toLowerCase()
+}
+
+function profileRowKey(profile) {
+  return profile.id != null ? String(profile.id) : `user-${profile.user_id}`
+}
+
+function formatLastSessionLog(profile) {
+  if (profile.last_session_log_at) {
+    const d = new Date(profile.last_session_log_at)
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  if (profile.days_since_last_session_log == null) return 'Never'
+  return 'Never'
+}
+
+/** Badge/filter status: approved listings with unreviewed edits count as Pending. */
+function profileDisplayStatus(profile) {
+  if (profile?.status === 'NEEDS_LISTING' || profile?.status === 'DELETED') return profile.status
+  if (profile?.has_pending_changes || profile?.status === 'CHANGES_REQUESTED') return 'PENDING'
+  return profile?.status || 'DRAFT'
+}
 
 const EMPTY_FORM = {
   user_id: '',
   display_name: '',
   short_bio: '',
   academic_qualifications: '',
+  academic_qualification_level: '',
   professional_certificates: '',
   services_offered: [],
   supervisor_user_id: '',
@@ -159,18 +204,26 @@ export function AdminTherapistProfilesPage() {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const urlStatus = searchParams.get('status') || 'ALL'
+  const urlActivity = searchParams.get('activity') || ''
   const urlUserId = searchParams.get('user_id')
   const canEditProfiles = canManageUsers || (user?.roles || []).includes('SUPER_ADMIN')
 
   const [profiles, setProfiles] = useState([])
+  const [page, setPage] = useState(1)
+  const [listMeta, setListMeta] = useState({ total: 0, pages: 1 })
   const { items: therapistDirectory } = useStaffDirectory({ roles: 'THERAPIST' })
   const { items: staffDirectory } = useStaffDirectory({
     roles: 'CASE_MANAGER,MODULE_ADMIN,SUPERVISOR,SUPER_ADMIN,PROGRAMME_ADMIN',
   })
+  const { items: mentorDirectory } = useStaffDirectory({
+    roles: 'CASE_MANAGER',
+  })
   const [categories, setCategories] = useState([])
   const [summary, setSummary] = useState(null)
   const [statusFilter, setStatusFilter] = useState(urlStatus)
+  const [activityFilter, setActivityFilter] = useState(urlActivity)
   const [search, setSearch] = useState('')
+  const searchDebounced = useDebouncedValue(search)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -184,36 +237,58 @@ export function AdminTherapistProfilesPage() {
   const [success, setSuccess] = useState('')
   const [exporting, setExporting] = useState(false)
 
-  async function load(selectProfileId = null) {
-    setLoading(true)
-    try {
-      const q = statusFilter !== 'ALL' ? `?status=${statusFilter}` : ''
-      const [rows, cats, sum] = await Promise.all([
-        apiFetch(`/api/v1/admin/therapist-profiles${q}`),
-        apiFetch('/api/v1/therapist/service-categories'),
-        apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
-      ])
-      setProfiles(rows)
-      setCategories(cats)
-      setSummary(sum)
-      if (selectProfileId) {
-        const match = rows.find((p) => p.id === selectProfileId)
-        if (match) setSelected(match)
+  const load = useCallback(
+    async (selectProfileId = null) => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          page_size: String(PAGE_SIZE),
+        })
+        if (statusFilter !== 'ALL') params.set('status', statusFilter)
+        if (activityFilter) params.set('activity', activityFilter)
+        if (searchDebounced.trim()) params.set('q', searchDebounced.trim())
+        if (urlUserId) params.set('user_id', urlUserId)
+        const qs = params.toString()
+        const [data, cats, sum] = await Promise.all([
+          apiFetch(`/api/v1/admin/therapist-profiles?${qs}`),
+          apiFetch('/api/v1/therapist/service-categories'),
+          apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
+        ])
+        const rows = data.items || []
+        setProfiles(rows)
+        setListMeta({ total: data.total ?? 0, pages: data.pages ?? 1 })
+        setCategories(cats)
+        setSummary(sum)
+        if (selectProfileId) {
+          const match = rows.find((p) => p.id === selectProfileId)
+          if (match) setSelected(match)
+        }
+      } catch {
+        setProfiles([])
+        setListMeta({ total: 0, pages: 1 })
+      } finally {
+        setLoading(false)
       }
-    } catch {
-      setProfiles([])
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [page, statusFilter, activityFilter, searchDebounced, urlUserId],
+  )
 
   useEffect(() => {
     load()
-  }, [statusFilter])
+  }, [load])
+
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, activityFilter, searchDebounced])
 
   useEffect(() => {
     setStatusFilter(urlStatus)
   }, [urlStatus])
+
+  useEffect(() => {
+    setActivityFilter(urlActivity)
+  }, [urlActivity])
 
   useEffect(() => {
     if (!urlUserId || loading || profiles.length === 0) return
@@ -230,22 +305,27 @@ export function AdminTherapistProfilesPage() {
     setSearchParams(nextParams, { replace: true })
   }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return profiles
-    return profiles.filter(
-      (p) =>
-        p.display_name?.toLowerCase().includes(q) ||
-        p.full_name?.toLowerCase().includes(q) ||
-        p.email?.toLowerCase().includes(q),
-    )
-  }, [profiles, search])
+  function setActivityFilterAndUrl(next) {
+    setActivityFilter(next)
+    const nextParams = { ...Object.fromEntries(searchParams.entries()) }
+    if (!next) delete nextParams.activity
+    else nextParams.activity = next
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  const showLastLogColumn = activityFilter === 'no_sessions_15d'
 
   const profileUserIds = useMemo(() => new Set(profiles.map((p) => p.user_id)), [profiles])
+  const rangeStart = listMeta.total ? (page - 1) * PAGE_SIZE + 1 : 0
+  const rangeEnd = Math.min(page * PAGE_SIZE, listMeta.total)
 
   async function act(path, profileId) {
     setError('')
     setSuccess('')
+    if (path === 'request-changes' && (note || '').trim().length < 8) {
+      setError('Add a short note so they know what to update.')
+      return
+    }
     try {
       await apiFetch(`/api/v1/admin/therapist-profiles/${profileId}/${path}`, {
         method: 'POST',
@@ -253,7 +333,7 @@ export function AdminTherapistProfilesPage() {
       })
       setNote('')
       setSelected(null)
-      setSuccess(`Profile ${path}d.`)
+      setSuccess(path === 'request-changes' ? 'Asked for a few updates.' : `Profile ${path}d.`)
       await load()
     } catch (err) {
       setError(err.message || 'Action failed')
@@ -279,6 +359,7 @@ export function AdminTherapistProfilesPage() {
           display_name: form.display_name.trim(),
           short_bio: form.short_bio.trim() || null,
           academic_qualifications: form.academic_qualifications.trim() || null,
+          academic_qualification_level: form.academic_qualification_level || null,
           professional_certificates: certs,
           services_offered: form.services_offered,
           status: 'APPROVED',
@@ -305,6 +386,29 @@ export function AdminTherapistProfilesPage() {
     } catch (err) {
       setError(err.message || 'Delete failed')
     }
+  }
+
+  async function handleRestore(profileId) {
+    setError('')
+    setSuccess('')
+    try {
+      await apiFetch(`/api/v1/admin/therapist-profiles/${profileId}/restore`, { method: 'POST' })
+      setSelected(null)
+      setSuccess('Profile restored as paused.')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Restore failed')
+    }
+  }
+
+  function openNeedsListingCreate(profile) {
+    setForm({
+      ...EMPTY_FORM,
+      user_id: String(profile.user_id),
+      display_name: profile.full_name || profile.display_name || '',
+    })
+    setShowCreate(true)
+    setSelected(null)
   }
 
   async function saveSupervisorMentor(profileId) {
@@ -412,7 +516,21 @@ export function AdminTherapistProfilesPage() {
           <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
           <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
           <AdminStatCard title="Paused" value={summary.PAUSED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('PAUSED')} />
-          <AdminStatCard title="No profile" value={summary.no_profile ?? 0} tone="indigo" hint="Therapists without listing" />
+          <AdminStatCard title="Deleted" value={summary.DELETED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('DELETED')} />
+          <AdminStatCard
+            title="Needs listing"
+            value={summary.needs_listing ?? summary.no_profile ?? 0}
+            tone="indigo"
+            hint="Therapist accounts without a service profile yet"
+            onClick={() => setStatusFilterAndUrl('NEEDS_LISTING')}
+          />
+          <AdminStatCard
+            title="No logs 15d"
+            value={summary.no_sessions_15d ?? 0}
+            tone="amber"
+            hint="Listed therapists with no submitted session logs in 15 days"
+            onClick={() => setActivityFilterAndUrl('no_sessions_15d')}
+          />
         </div>
       ) : null}
 
@@ -423,8 +541,14 @@ export function AdminTherapistProfilesPage() {
           onChange={(e) => setStatusFilterAndUrl(e.target.value)}
           options={STATUS_FILTERS.map((s) => ({
             value: s,
-            label: s === 'ALL' ? 'All statuses' : s.charAt(0) + s.slice(1).toLowerCase(),
+            label: statusFilterLabel(s),
           }))}
+        />
+        <FilterSelect
+          label="Activity"
+          value={activityFilter}
+          onChange={(e) => setActivityFilterAndUrl(e.target.value)}
+          options={ACTIVITY_FILTERS}
         />
         <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
       </AdminStickyFilterRow>
@@ -435,7 +559,19 @@ export function AdminTherapistProfilesPage() {
           <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
           <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
           <AdminStatCard title="Paused" value={summary.PAUSED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('PAUSED')} />
-          <AdminStatCard title="No profile" value={summary.no_profile ?? 0} tone="indigo" />
+          <AdminStatCard title="Deleted" value={summary.DELETED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('DELETED')} />
+          <AdminStatCard
+            title="Needs listing"
+            value={summary.needs_listing ?? summary.no_profile ?? 0}
+            tone="indigo"
+            onClick={() => setStatusFilterAndUrl('NEEDS_LISTING')}
+          />
+          <AdminStatCard
+            title="No logs 15d"
+            value={summary.no_sessions_15d ?? 0}
+            tone="amber"
+            onClick={() => setActivityFilterAndUrl('no_sessions_15d')}
+          />
         </div>
       ) : null}
 
@@ -471,7 +607,7 @@ export function AdminTherapistProfilesPage() {
               label="Mentor (optional)"
               value={form.mentor_user_id}
               onChange={(e) => setForm((f) => ({ ...f, mentor_user_id: e.target.value }))}
-              staff={staffDirectory}
+              staff={mentorDirectory}
               allowEmpty
               emptyLabel="No mentor"
             />
@@ -500,8 +636,8 @@ export function AdminTherapistProfilesPage() {
           <div className="admin-desktop-only">
             <AdminCollapsibleFilters
               quickSearch={<AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />}
-              activeChips={[statusFilter !== 'ALL' ? statusFilter : null, search.trim()].filter(Boolean)}
-              activeCount={[statusFilter !== 'ALL', search.trim()].filter(Boolean).length}
+              activeChips={[statusFilter !== 'ALL' ? statusFilterLabel(statusFilter) : null, activityFilter ? ACTIVITY_FILTERS.find((f) => f.value === activityFilter)?.label : null, search.trim()].filter(Boolean)}
+              activeCount={[statusFilter !== 'ALL', activityFilter, search.trim()].filter(Boolean).length}
             >
               <AdminToolbar className="admin-toolbar--mobile-compact">
                 <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
@@ -511,8 +647,14 @@ export function AdminTherapistProfilesPage() {
                   onChange={(e) => setStatusFilterAndUrl(e.target.value)}
                   options={STATUS_FILTERS.map((s) => ({
                     value: s,
-                    label: s === 'ALL' ? 'All statuses' : s.charAt(0) + s.slice(1).toLowerCase(),
+                    label: statusFilterLabel(s),
                   }))}
+                />
+                <FilterSelect
+                  label="Activity"
+                  value={activityFilter}
+                  onChange={(e) => setActivityFilterAndUrl(e.target.value)}
+                  options={ACTIVITY_FILTERS}
                 />
               </AdminToolbar>
             </AdminCollapsibleFilters>
@@ -520,9 +662,10 @@ export function AdminTherapistProfilesPage() {
 
           {loading ? (
             <div className="admin-skeleton" style={{ margin: '0 18px 16px' }} />
-          ) : filtered.length === 0 ? (
+          ) : profiles.length === 0 ? (
             <AdminEmptyState title="No profiles" description="Try another filter or add a profile." />
           ) : (
+            <>
             <AdminDataList
               desktop={
                 <div className="admin-table-wrap">
@@ -532,13 +675,14 @@ export function AdminTherapistProfilesPage() {
                         <th>Therapist</th>
                         <th>Services</th>
                         <th>Primary CM</th>
+                        {showLastLogColumn ? <th>Last session log</th> : null}
                         <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((p) => (
-                        <tr key={p.id}>
+                      {profiles.map((p) => (
+                        <tr key={profileRowKey(p)}>
                           <td>
                             <span className="admin-table__primary">{p.display_name || p.full_name}</span>
                             <span className="admin-table__meta">{p.email}</span>
@@ -558,7 +702,10 @@ export function AdminTherapistProfilesPage() {
                               <span className="admin-table__meta">Mentor: {p.mentor_name}</span>
                             ) : null}
                           </td>
-                          <td><StatusBadge status={p.status} /></td>
+                          {showLastLogColumn ? (
+                            <td>{formatLastSessionLog(p)}</td>
+                          ) : null}
+                          <td><StatusBadge status={profileDisplayStatus(p)} /></td>
                           <td>
                             <button
                               type="button"
@@ -569,7 +716,7 @@ export function AdminTherapistProfilesPage() {
                                 setEditingServices(false)
                               }}
                             >
-                              Review
+                              {p.status === 'NEEDS_LISTING' ? 'Create' : 'Review'}
                             </button>
                           </td>
                         </tr>
@@ -580,12 +727,12 @@ export function AdminTherapistProfilesPage() {
               }
               mobile={
                 <ul className="admin-data-list__cards">
-                  {filtered.map((p) => (
-                    <li key={p.id}>
+                  {profiles.map((p) => (
+                    <li key={profileRowKey(p)}>
                       <AdminTaskCard
                         title={p.display_name || p.full_name}
-                        meta={p.email}
-                        badges={<StatusBadge status={p.status} />}
+                        meta={[p.email, showLastLogColumn ? `Last log: ${formatLastSessionLog(p)}` : null].filter(Boolean).join(' · ')}
+                        badges={<StatusBadge status={profileDisplayStatus(p)} />}
                         actions={
                           <button
                             type="button"
@@ -596,7 +743,7 @@ export function AdminTherapistProfilesPage() {
                               setEditingServices(false)
                             }}
                           >
-                            Review
+                            {p.status === 'NEEDS_LISTING' ? 'Create' : 'Review'}
                           </button>
                         }
                       >
@@ -612,6 +759,15 @@ export function AdminTherapistProfilesPage() {
                 </ul>
               }
             />
+            <PeopleListPagination
+              page={page}
+              totalPages={listMeta.pages}
+              total={listMeta.total}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              onPageChange={setPage}
+            />
+            </>
           )}
         </div>
       </AdminPanel>
@@ -632,7 +788,7 @@ export function AdminTherapistProfilesPage() {
                   </h2>
                   <p className="therapist-profile-drawer__subtitle">{selected.email}</p>
                   <div style={{ marginTop: 8 }}>
-                    <StatusBadge status={selected.status} />
+                    <StatusBadge status={profileDisplayStatus(selected)} />
                   </div>
                 </div>
                 <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={closeDrawer}>
@@ -642,15 +798,36 @@ export function AdminTherapistProfilesPage() {
             </header>
 
             <div className="therapist-profile-drawer__body">
+              {selected.status === 'NEEDS_LISTING' ? (
+                <section className="therapist-profile-drawer__section">
+                  <p className="therapist-profile-drawer__text">
+                    This therapist account does not have a service listing yet. Pending and deleted listings are tracked separately.
+                  </p>
+                  {canEditProfiles ? (
+                    <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => openNeedsListingCreate(selected)}>
+                      Create service profile
+                    </button>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {selected.status !== 'NEEDS_LISTING' ? (
+                <>
               <ProfileChangesSection profile={selected} categories={categories} />
 
-              {(selected.short_bio || selected.academic_qualifications || (selected.professional_certificates || []).length) ? (
+              {(selected.short_bio || selected.academic_qualification_level || selected.academic_qualifications || (selected.professional_certificates || []).length) ? (
                 <section className="therapist-profile-drawer__section">
                   <h3 className="therapist-profile-drawer__section-title">Profile</h3>
                   {selected.short_bio ? <p className="therapist-profile-drawer__text">{selected.short_bio}</p> : null}
+                  {selected.academic_qualification_level ? (
+                    <p className="therapist-profile-drawer__text" style={{ marginTop: 8, color: '#64748b' }}>
+                      <strong>Highest qualification:</strong>{' '}
+                      {qualificationLevelLabel(selected.academic_qualification_level)}
+                    </p>
+                  ) : null}
                   {selected.academic_qualifications ? (
                     <p className="therapist-profile-drawer__text" style={{ marginTop: 8, color: '#64748b' }}>
-                      <strong>Qualifications:</strong> {selected.academic_qualifications}
+                      <strong>Additional details:</strong> {selected.academic_qualifications}
                     </p>
                   ) : null}
                   {(selected.professional_certificates || []).length ? (
@@ -741,7 +918,7 @@ export function AdminTherapistProfilesPage() {
                       label="Mentor"
                       value={editSupervisor.mentorId}
                       onChange={(e) => setEditSupervisor((s) => ({ ...s, mentorId: e.target.value }))}
-                      staff={staffDirectory}
+                      staff={mentorDirectory}
                       allowEmpty
                       emptyLabel="No mentor"
                     />
@@ -789,6 +966,24 @@ export function AdminTherapistProfilesPage() {
                 )}
               </section>
 
+              {selected.quality ? (
+                <section className="therapist-profile-drawer__section">
+                  <h3 className="therapist-profile-drawer__section-title">
+                    Quality score · {selected.quality.percent}%
+                    {selected.quality.auto_pass ? ' · would auto-publish' : ''}
+                  </h3>
+                  {selected.quality.reminders?.length ? (
+                    <ul className="therapist-profile-drawer__text">
+                      {selected.quality.reminders.map((row) => (
+                        <li key={row.key}>{row.message}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="therapist-profile-drawer__text">All quality checks passed.</p>
+                  )}
+                </section>
+              ) : null}
+
               <TherapistLeaveBalancePanel therapistUserId={selected.user_id} canEdit={canManageUsers} />
 
               <section className="therapist-profile-drawer__section">
@@ -809,10 +1004,27 @@ export function AdminTherapistProfilesPage() {
               </label>
 
               <div className="therapist-profile-drawer__footer">
-                {canEditProfiles && (selected.status === 'PENDING' || selected.has_pending_changes) ? (
-                  <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
-                    Approve
+                {canEditProfiles && selected.status === 'DELETED' ? (
+                  <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => handleRestore(selected.id)}>
+                    Restore as paused
                   </button>
+                ) : null}
+                {canEditProfiles &&
+                (selected.status === 'PENDING' ||
+                  selected.status === 'CHANGES_REQUESTED' ||
+                  selected.has_pending_changes) ? (
+                  <>
+                    <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--secondary admin-btn--sm"
+                      onClick={() => act('request-changes', selected.id)}
+                    >
+                      Request changes
+                    </button>
+                  </>
                 ) : null}
                 {canEditProfiles && selected.status === 'APPROVED' ? (
                   <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => act('pause', selected.id)}>
@@ -824,12 +1036,14 @@ export function AdminTherapistProfilesPage() {
                     Resume
                   </button>
                 ) : null}
-                {canEditProfiles ? (
+                {canEditProfiles && selected.id && selected.status !== 'DELETED' && selected.status !== 'NEEDS_LISTING' ? (
                   <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => handleDelete(selected.id)}>
                     Delete
                   </button>
                 ) : null}
               </div>
+                </>
+              ) : null}
             </div>
           </div>
         </div>

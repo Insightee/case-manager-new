@@ -11,6 +11,7 @@ import {
 } from '@dnd-kit/core'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { isCaseManagerOnlyRole } from '../../lib/adminCasePipeline.js'
 import { AdminEmptyState, AdminSearchInput, AdminToolbar } from './ui/index.js'
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
 import { AdminBulkAssignModal } from './AdminBulkAssignModal.jsx'
@@ -123,7 +124,8 @@ function DroppableColumn({ col, children, isDropTarget }) {
 }
 
 export function AdminCasesKanban({ productFilter = 'all' }) {
-  const { can, canWriteProduct, isViewOnly } = useAuth()
+  const { can, canWriteProduct, isViewOnly, user } = useAuth()
+  const cmFocused = isCaseManagerOnlyRole(user?.roles || [])
   const navigate = useNavigate()
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -137,7 +139,7 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState('')
 
-  const canAssignGlobal = can('case.assign') && !isViewOnly
+  const canAssignGlobal = can('case.assign') && !isViewOnly && !cmFocused
   const canDnD = canAssignGlobal
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))

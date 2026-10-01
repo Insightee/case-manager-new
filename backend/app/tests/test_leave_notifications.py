@@ -381,21 +381,27 @@ def test_leave_summary_and_report():
     assert "entries" in body
 
     report = client.get(
-        f"/api/v1/leave/report?year={year}&granularity=monthly",
+        f"/api/v1/leave/period-export?year={year}&granularity=monthly",
         headers=_headers(hr),
     )
     assert report.status_code == 200
     assert "rows" in report.json()
 
     csv_res = client.get(
-        f"/api/v1/leave/report?year={year}&granularity=yearly&format=csv",
+        f"/api/v1/leave/period-export?year={year}&granularity=yearly&format=csv",
         headers=_headers(hr),
     )
     assert csv_res.status_code == 200
     assert "therapist_name" in csv_res.text
 
+    legacy = client.get(
+        f"/api/v1/leave/report?year={year}&granularity=monthly",
+        headers=_headers(hr),
+    )
+    assert legacy.status_code == 200
+
     denied = client.get(
-        f"/api/v1/leave/report?year={year}",
+        f"/api/v1/leave/period-export?year={year}",
         headers=_headers(therapist),
     )
     assert denied.status_code == 403

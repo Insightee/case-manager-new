@@ -18,6 +18,9 @@ class CaseBillingFields(BaseModel):
     pay_share_amount_inr: Optional[float] = None
     therapist_fixed_pay_inr: Optional[float] = None
     billing_notes: Optional[str] = None
+    # Effective dates for rate history / payout as-of (not persisted on cases columns).
+    client_billing_effective_from: Optional[date] = None
+    therapist_remuneration_effective_from: Optional[date] = None
 
 
 class LateSessionCreate(BaseModel):
@@ -34,6 +37,7 @@ class LateSessionCreate(BaseModel):
 
 class InvoicePreviewEdit(BaseModel):
     exclude_session_ids: list[int] = []
+    next_month_plans: Optional[dict[str, dict]] = None
 
 
 class InvoiceSubmitRequest(BaseModel):

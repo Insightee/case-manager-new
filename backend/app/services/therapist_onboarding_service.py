@@ -71,6 +71,9 @@ def _create_therapist_profile(
     if primary_case_manager_user_id:
         profile.supervisor_user_id = primary_case_manager_user_id
     if mentor_user_id is not None:
+        from app.services.mentor_scope_service import validate_mentor_is_case_manager
+
+        validate_mentor_is_case_manager(db, mentor_user_id)
         profile.mentor_user_id = mentor_user_id
     db.flush()
     return profile

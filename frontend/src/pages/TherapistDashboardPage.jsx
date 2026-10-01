@@ -6,9 +6,11 @@ import { useTherapistFrequentActions } from '../hooks/useTherapistFrequentAction
 import { useTherapistHome } from '../hooks/useTherapistHome.js'
 import { QueryState } from '../components/shared/QueryState.jsx'
 import { TherapistTodaySchedule } from '../components/therapist/TherapistTodaySchedule.jsx'
+import { UpcomingMeetingsPanel } from '../components/shared/UpcomingMeetingsPanel.jsx'
 import { formatDisplayDate, formatDisplayDateTime } from '../lib/datetime.js'
 import { THERAPIST_ACTIONS } from '../lib/therapistActions.js'
 import { TherapistTicketsPage } from '../components/therapist/TherapistTicketsPage.jsx'
+import { TherapistIepReminderBanner } from '../components/therapist/TherapistIepReminderBanner.jsx'
 
 export function TherapistDashboardPage() {
   const { user } = useAuth()
@@ -31,6 +33,7 @@ export function TherapistDashboardPage() {
   const criticalCases = (home?.cases_board?.allCases || []).filter((c) => c.critical).slice(0, 5)
   const pendingAssignments = home?.pending_assignment_acceptance || []
   const pendingCmMeetings = home?.pending_cm_meetings || []
+  const iepReminders = home?.iep_reminders || []
   const pendingActions = [
     ...needsLog.map((s) => ({
       key: `log-${s.id}`,
@@ -102,6 +105,10 @@ export function TherapistDashboardPage() {
           error={error}
           onRetry={() => refetch()}
         >
+          {iepReminders.length > 0 ? (
+            <TherapistIepReminderBanner reminders={iepReminders} onDismiss={() => refetch()} />
+          ) : null}
+
           {pendingAssignments.length > 0 ? (
             <section className="card" style={{ marginBottom: 16, padding: 16, borderColor: '#c7d2fe' }}>
               <h3 style={{ margin: '0 0 8px', fontSize: '1rem' }}>New case assignment</h3>
@@ -206,6 +213,14 @@ export function TherapistDashboardPage() {
               </ul>
             </section>
           ) : null}
+
+          <UpcomingMeetingsPanel
+            title="Upcoming meetings"
+            subtitle="Next 7 days"
+            href="/therapist/meetings"
+            variant="therapist"
+            className="therapist-home-panel"
+          />
 
           {schedule.length > 0 ? (
             <section className="therapist-home-panel therapist-home-panel--schedule" aria-labelledby="today-schedule-title">

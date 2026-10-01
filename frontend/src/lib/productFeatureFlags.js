@@ -88,8 +88,27 @@ export const ENABLE_BILLING = readClientBillingVisibilityFlag()
 /** Parent + therapist billing surfaces (visibility only; liveness from runtime-config). */
 export const ENABLE_CLIENT_BILLING = ENABLE_BILLING
 
-/** Stage 1 read-only Finance Control Tower (admin overview). Off on canonical production. */
-export const ENABLE_FINANCE_DASHBOARD_V1 = readClientModuleFlag('VITE_ENABLE_FINANCE_DASHBOARD_V1')
+/**
+ * Stage 1 read-only Finance Control Tower (admin overview / snapshot).
+ * Non-production: on by default when unset (rolloutDefault), or when
+ * VITE_ENABLE_FINANCE_DASHBOARD_V1=true. Explicit false always wins.
+ * Canonical production: stays off unless both
+ * VITE_ENABLE_FINANCE_DASHBOARD_V1=true and VITE_FINANCE_DASHBOARD_ALLOW_PROD=true.
+ */
+function readFinanceDashboardV1Flag() {
+  const enableRaw = import.meta.env.VITE_ENABLE_FINANCE_DASHBOARD_V1
+  if (enableRaw === 'false') return false
+
+  if (isCanonicalProductionFrontend()) {
+    const allowProd = import.meta.env.VITE_FINANCE_DASHBOARD_ALLOW_PROD === 'true'
+    return allowProd && enableRaw === 'true'
+  }
+
+  return readEnvFlag('VITE_ENABLE_FINANCE_DASHBOARD_V1', { rolloutDefault: true })
+}
+
+/** Stage 1 read-only Finance Control Tower (admin overview). */
+export const ENABLE_FINANCE_DASHBOARD_V1 = readFinanceDashboardV1Flag()
 
 /** Goal bank, strategy pool, review queue, clinical AI assist */
 export const ENABLE_CLINICAL_BRAIN = readEnvFlag('VITE_ENABLE_CLINICAL_BRAIN')
@@ -110,7 +129,7 @@ export function isReportsModuleEnabled() {
   return ENABLE_REPORTS
 }
 
-/** Visibility for parent/therapist billing UI (coming-soon when false). */
+/** Visibility for parent billing UI (coming-soon when false). Therapist invoices are always shown. */
 export function isBillingModuleEnabled() {
   return ENABLE_CLIENT_BILLING
 }
@@ -139,11 +158,16 @@ export function isStructuredEvidenceEnabled() {
   return ENABLE_STRUCTURED_EVIDENCE
 }
 
-/** Banner copy when therapist/parent reports or billing are deferred. */
-export function clientPortalModuleRolloutMessage() {
+/**
+ * Banner copy when therapist/parent reports or billing are deferred.
+ * Therapist billing is live; only parents still gate Billing via isBillingModuleEnabled().
+ * @param {'therapist' | 'parent' | string} [portal]
+ */
+export function clientPortalModuleRolloutMessage(portal) {
   const deferred = []
   if (!isReportsModuleEnabled()) deferred.push('Reports')
-  if (!isBillingModuleEnabled()) deferred.push('Billing')
+  // Therapist invoices are live; keep Billing deferred only on the parent portal.
+  if (portal !== 'therapist' && !isBillingModuleEnabled()) deferred.push('Billing')
   if (deferred.length === 0) return null
   if (deferred.length === 2) {
     return 'Reports and Billing are being refreshed — coming soon on this portal. Session logs and case updates continue as usual.'
@@ -151,6 +175,6 @@ export function clientPortalModuleRolloutMessage() {
   return `${deferred[0]} is being refreshed — coming soon on this portal. Session logs and case updates continue as usual.`
 }
 
-export function shouldShowClientPortalRolloutNotice() {
-  return Boolean(clientPortalModuleRolloutMessage())
+export function shouldShowClientPortalRolloutNotice(portal) {
+  return Boolean(clientPortalModuleRolloutMessage(portal))
 }

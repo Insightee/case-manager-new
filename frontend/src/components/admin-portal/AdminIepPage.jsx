@@ -119,7 +119,7 @@ function AdminIepUploadPanel({ onUploaded }) {
   }
 
   return (
-    <div className="admin-layout admin-layout--stack" style={{ gridTemplateColumns: '1fr 1fr' }}>
+    <div className="admin-layout admin-layout--stack admin-iep-upload-grid">
       <AdminPanel title="Select case">
         <div className="admin-form-grid">
           <label>

@@ -191,7 +191,9 @@ def test_inactive_user_cannot_login():
     client.delete(f"/api/v1/admin/users/{user_id}", headers=headers)
 
     login = client.post("/api/v1/auth/login", json={"email": email, "password": "demo123"})
-    assert login.status_code == 401
+    # Valid credentials but deactivated account — blocked after auth (403), not unknown user (401).
+    assert login.status_code == 403
+    assert login.json()["detail"]["code"] == "ACCOUNT_INACTIVE"
 
 
 def test_random_email_cannot_login():

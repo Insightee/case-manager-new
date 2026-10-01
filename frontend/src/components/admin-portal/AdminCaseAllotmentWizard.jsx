@@ -12,7 +12,6 @@ import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { filterServiceCategoriesForModule } from '../../lib/accountStatus.js'
 import { productRequiresDayType } from '../../lib/dayTypeLabels.js'
 import { billingSummary } from '../invoices/invoiceUtils.js'
-import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 import './admin-allotment-wizard.css'
 
 const TOTAL_STEPS = 5
@@ -25,8 +24,8 @@ const EMPTY_BILLING = {
   pay_share_amount_inr: '600',
   package_session_count: '12',
   package_amount_inr: '12000',
-  compensation_mode: 'PERCENTAGE',
-  therapist_fixed_pay_inr: '',
+  compensation_mode: 'FIXED_LUMP',
+  therapist_fixed_pay_inr: '600',
   product_billing_rule_id: '',
 }
 
@@ -59,6 +58,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   const canSubmitAllot = canCreateProductCase(productModule)
   const [caseCode, setCaseCode] = useState('')
   const [caseCodeLoading, setCaseCodeLoading] = useState(false)
+  const [zohoId, setZohoId] = useState('')
   const [serviceType, setServiceType] = useState('')
   const [serviceCategories, setServiceCategories] = useState([])
   const [clinicalCatalog, setClinicalCatalog] = useState([])
@@ -223,6 +223,12 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       const next = { ...b, [key]: value }
       if (key === 'billing_type') {
         next.client_billing_mode = value === 'PACKAGE' ? 'PREPAID' : 'POSTPAID'
+        next.compensation_mode = 'FIXED_LUMP'
+      }
+      if (key === 'therapist_fixed_pay_inr' || key === 'pay_share_amount_inr') {
+        next.therapist_fixed_pay_inr = value
+        next.pay_share_amount_inr = value
+        next.compensation_mode = 'FIXED_LUMP'
       }
       return next
     })
@@ -277,15 +283,18 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         throw new Error('Select half day or full day for this case')
       }
       const cid = await ensureChildId()
+      const lump = Number(billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr || 0)
       const payload = {
         child_id: cid,
         service_type: serviceType.trim(),
         product_module: productModule,
         billing_type: billing.billing_type,
         client_billing_mode: billing.client_billing_mode,
-        compensation_mode: billing.compensation_mode,
-        pay_share_amount_inr: Number(billing.pay_share_amount_inr),
+        compensation_mode: 'FIXED_LUMP',
+        therapist_fixed_pay_inr: lump,
+        pay_share_amount_inr: lump,
         therapist_user_id: Number(therapistId),
+        service_location_type: serviceLocationType,
       }
       if (productRequiresDayType(productModule)) {
         payload.day_type = dayType
@@ -315,6 +324,9 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         })
       } else if (serviceLocationType === 'online') {
         Object.assign(payload, { service_landmark: 'online' })
+      }
+      if (zohoId.trim()) {
+        payload.zoho_id = zohoId.trim()
       }
       const result = await apiFetch('/api/v1/admin/cases/allot', {
         method: 'POST',
@@ -493,8 +505,12 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               className="admin-input"
               value={productModule}
               onChange={(e) => {
-                setProductModule(e.target.value)
+                const next = e.target.value
+                setProductModule(next)
                 setDayType('')
+                const isSchool =
+                  next === 'shadow_support' || next === 'b2b' || (next || '').includes('shadow')
+                setServiceLocationType(isSchool ? 'school' : 'home')
               }}
             >
               {moduleOptions.map((m) => (
@@ -516,6 +532,21 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             />
             <span id="allot-case-ref-hint" className="admin-muted" style={{ fontSize: '0.75rem' }}>
               Auto-generated; cannot be edited.
+            </span>
+          </label>
+          <label htmlFor="allot-zoho-id">
+            Zoho ID
+            <input
+              id="allot-zoho-id"
+              className="admin-input"
+              value={zohoId}
+              onChange={(e) => setZohoId(e.target.value)}
+              placeholder="INS-697"
+              maxLength={64}
+              aria-describedby="allot-zoho-id-hint"
+            />
+            <span id="allot-zoho-id-hint" className="admin-muted" style={{ fontSize: '0.75rem' }}>
+              Optional client billing ID. You can add this later.
             </span>
           </label>
           <label htmlFor="allot-service-type">
@@ -686,11 +717,11 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             <h3 className="admin-allotment-wizard__section-title">Client &amp; therapist billing</h3>
             {!therapistId ? (
               <p className="admin-allotment-wizard__section-lead admin-allotment-wizard__section-lead--warn">
-                Select a therapist above to set invoice type, package or per-session rates, and pay share.
+                Select a therapist above to set invoice type, package or per-session rates, and therapist lumpsum pay.
               </p>
             ) : (
               <p className="admin-allotment-wizard__section-lead">
-                Set what the family is charged and this therapist&apos;s pay share on the case.
+                Set what the family is charged and this therapist&apos;s lumpsum pay on the case.
               </p>
             )}
             <div className="admin-form-grid admin-allotment-wizard__billing-grid">
@@ -732,19 +763,19 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     />
                   </label>
                   <label>
-                    Therapist pay share (INR)
+                    Therapist pay (lumpsum, INR)
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       inputMode="decimal"
                       className="admin-input"
-                      value={billing.pay_share_amount_inr}
-                      onChange={(e) => setBill('pay_share_amount_inr', e.target.value)}
+                      value={billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr}
+                      onChange={(e) => setBill('therapist_fixed_pay_inr', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Share of client session fee paid to the assigned therapist in INR.
+                      Flat amount paid to the assigned therapist in INR (must not exceed client rate).
                     </span>
                   </label>
                 </>
@@ -761,19 +792,19 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     />
                   </label>
                   <label>
-                    Therapist pay share (INR)
+                    Therapist pay (lumpsum, INR)
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       inputMode="decimal"
                       className="admin-input"
-                      value={billing.pay_share_amount_inr}
-                      onChange={(e) => setBill('pay_share_amount_inr', e.target.value)}
+                      value={billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr}
+                      onChange={(e) => setBill('therapist_fixed_pay_inr', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Share of the monthly client fee paid to the assigned therapist in INR.
+                      Flat monthly amount paid to the assigned therapist in INR.
                     </span>
                   </label>
                 </>
@@ -800,19 +831,19 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     />
                   </label>
                   <label>
-                    Therapist pay share (INR)
+                    Therapist pay (lumpsum, INR)
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       inputMode="decimal"
                       className="admin-input"
-                      value={billing.pay_share_amount_inr}
-                      onChange={(e) => setBill('pay_share_amount_inr', e.target.value)}
+                      value={billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr}
+                      onChange={(e) => setBill('therapist_fixed_pay_inr', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Share of client package value paid to the assigned therapist in INR.
+                      Flat package amount paid to the assigned therapist in INR.
                     </span>
                   </label>
                 </>
@@ -838,6 +869,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               <dd>{caseCode || '—'}</dd>
             </div>
             <div>
+              <dt>Zoho ID</dt>
+              <dd>{zohoId.trim() || '—'}</dd>
+            </div>
+            <div>
               <dt>Therapist</dt>
               <dd>{therapistLabel || (therapistId ? `Therapist #${therapistId}` : 'Not selected')}</dd>
             </div>
@@ -849,10 +884,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               <dt>Therapist billing</dt>
               <dd>
                 {billing.billing_type === 'PER_SESSION'
-                  ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ₹${billing.pay_share_amount_inr || 0} therapist share`
+                  ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ₹${billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr || 0} therapist pay`
                   : billing.billing_type === 'MONTHLY_FIXED'
-                    ? `Monthly fixed · ₹${billing.client_monthly_rate_inr}/month · ₹${billing.pay_share_amount_inr || 0} therapist share`
-                  : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ₹${billing.pay_share_amount_inr || 0} therapist share`}
+                    ? `Monthly fixed · ₹${billing.client_monthly_rate_inr}/month · ₹${billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr || 0} therapist pay`
+                  : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ₹${billing.therapist_fixed_pay_inr || billing.pay_share_amount_inr || 0} therapist pay`}
               </dd>
             </div>
           </dl>
@@ -904,10 +939,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                 <dt>Billing</dt>
                 <dd>
                   {previewData.billing_summary.billing_type === 'PER_SESSION'
-                    ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`
+                    ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ₹${previewData.billing_summary.therapist_pay_inr || previewData.billing_summary.therapist_fixed_pay_inr || previewData.billing_summary.pay_share_amount_inr || 0} therapist pay`
                     : previewData.billing_summary.billing_type === 'MONTHLY_FIXED'
-                      ? `Monthly fixed · ₹${previewData.billing_summary.client_monthly_rate_inr}/month · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`
-                    : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr} · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`}
+                      ? `Monthly fixed · ₹${previewData.billing_summary.client_monthly_rate_inr}/month · ₹${previewData.billing_summary.therapist_pay_inr || previewData.billing_summary.therapist_fixed_pay_inr || previewData.billing_summary.pay_share_amount_inr || 0} therapist pay`
+                    : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr} · ₹${previewData.billing_summary.therapist_pay_inr || previewData.billing_summary.therapist_fixed_pay_inr || previewData.billing_summary.pay_share_amount_inr || 0} therapist pay`}
                 </dd>
               </div>
             ) : null}

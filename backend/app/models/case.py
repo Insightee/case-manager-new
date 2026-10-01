@@ -50,6 +50,9 @@ class Case(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     external_case_ref: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True, index=True)
+    # Client billing identifier in Zoho (Books/Pay). Stored only; payment API comes later.
+    # Not unique: one parent/customer can have several cases.
+    zoho_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), nullable=False, index=True)
     service_type: Mapped[str] = mapped_column(String(128), nullable=False)
     product_module: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

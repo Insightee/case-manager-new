@@ -415,9 +415,10 @@ def _prefill_sections(db: Session, case: Case, user: User) -> IepPlanSections:
     sections.verification.case_manager_name = ctx["case_manager_name"]
     sections.verification.case_manager_date = date.today().isoformat()
     if not sections.learning_environments:
+        from app.core.iep_observation_align import IEP_LEARNING_ENVIRONMENTS
+
         sections.learning_environments = [
-            LearningEnvironmentRow(environment="Home"),
-            LearningEnvironmentRow(environment="School"),
+            LearningEnvironmentRow(environment=row["label"]) for row in IEP_LEARNING_ENVIRONMENTS
         ]
     sections.current_performance = [IepPerformanceDomain(domain=d) for d in PERFORMANCE_DOMAINS]
     return sections
@@ -622,6 +623,10 @@ def approve_plan(db: Session, plan: IepPlan) -> IepPlan:
     plan.status = IepPlanStatus.APPROVED.value
     if not plan.published_at:
         plan.published_at = datetime.now(timezone.utc)
+    sections = _parse_sections(plan.sections_json)
+    if (sections.header.review_date or "").strip():
+        sections.header.review_date_locked = True
+        plan.sections_json = _dump_sections(sections)
     db.flush()
     purge_superseded_iep_plans(db, plan.case_id)
     return plan

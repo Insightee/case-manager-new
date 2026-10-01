@@ -139,3 +139,22 @@ def test_billing_snapshot_report_columns():
     assert cols["Previous Billing Type"] == "PER SESSION"
     assert "1000" in cols["Previous Client Rate"]
     assert "500" in cols["Previous Therapist Pay"]
+    assert "lumpsum" in cols["Previous Therapist Pay"]
+    assert "share" not in cols["Previous Therapist Pay"].lower()
+    assert cols["Previous Compensation Mode"] == "FIXED LUMP"
+    assert "PERCENTAGE" not in cols["Previous Compensation Mode"]
+
+
+def test_billing_snapshot_report_columns_prefers_fixed_lump():
+    cols = billing_snapshot_report_columns(
+        {
+            "billing_type": "MONTHLY_FIXED",
+            "client_monthly_rate_inr": 20000,
+            "compensation_mode": "FIXED_LUMP",
+            "therapist_fixed_pay_inr": 8000,
+            "pay_share_amount_inr": 999,  # legacy leftover — ignored when fixed is set
+        }
+    )
+    assert "8000" in cols["Previous Therapist Pay"]
+    assert "999" not in cols["Previous Therapist Pay"]
+    assert cols["Previous Compensation Mode"] == "FIXED LUMP"

@@ -8,8 +8,6 @@ import { InvoicePreviewDrawer } from './InvoicePreviewDrawer.jsx'
 import { SectionHeader } from './SectionHeader.jsx'
 import { SummaryCard } from './SummaryCard.jsx'
 import { computeSummaryFromInvoices, formatInr, mapInvoiceForCard } from './invoiceUtils.js'
-import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
-import { isBillingModuleEnabled } from '../../lib/productFeatureFlags.js'
 import { StatementLedger } from './StatementLedger.jsx'
 import { earningsTrendFromLedger } from '../../lib/ledgerUtils.js'
 
@@ -55,13 +53,6 @@ function SectionBlock({ id, title, subtitle, dotClass, children }) {
 }
 
 export function InvoicesPage() {
-  if (!isBillingModuleEnabled()) {
-    return <PortalComingSoon variant="therapistBilling" />
-  }
-  return <InvoicesPageContent />
-}
-
-function InvoicesPageContent() {
   const [modalOpen, setModalOpen] = useState(false)
   const [previewMonth, setPreviewMonth] = useState(null)
   const [previewData, setPreviewData] = useState(null)

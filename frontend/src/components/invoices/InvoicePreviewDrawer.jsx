@@ -3,12 +3,13 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
 import { StatementSummary } from './StatementSummary.jsx'
 import { StatementDisputePanel } from './StatementDisputePanel.jsx'
-import { applyLocalExcludes, formatInr } from './invoiceUtils.js'
+import { applyLocalExcludes, formatInr, formatModalHeaderSummary } from './invoiceUtils.js'
 
 export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onClose, onSubmitted }) {
   const [serverPreview, setServerPreview] = useState(initialPreview)
   const [preview, setPreview] = useState(initialPreview)
   const [excludeIds, setExcludeIds] = useState([])
+  const [nextMonthPlans, setNextMonthPlans] = useState({})
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -32,20 +33,28 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
     if (initialPreview) {
       setServerPreview(initialPreview)
       setExcludeIds([])
+      setNextMonthPlans({})
       setNotes('')
       setError('')
     }
   }, [initialPreview, open])
 
   useEffect(() => {
-    if (serverPreview) {
-      setPreview(applyLocalExcludes(serverPreview, excludeIds))
+    if (!serverPreview) return
+    const next = applyLocalExcludes(serverPreview, excludeIds)
+    if (Object.keys(nextMonthPlans).length) {
+      next.cases = (next.cases || []).map((cg) => {
+        const plan = nextMonthPlans[cg.case_id] ?? nextMonthPlans[String(cg.case_id)]
+        return plan ? { ...cg, next_month_session_plan: plan } : cg
+      })
     }
-  }, [serverPreview, excludeIds])
+    setPreview(next)
+  }, [serverPreview, excludeIds, nextMonthPlans])
 
   if (!open || !preview) return null
 
-  const pendingCount = preview.pending_late_count ?? 0
+  const attendanceGist = formatModalHeaderSummary(preview.attendance_summary)
+  const pendingCount = preview.pending_approval_count ?? preview.pending_late_count ?? 0
 
   function handleToggle(_caseId, line) {
     if (!line.session_id) return
@@ -67,12 +76,19 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
     setSubmitting(true)
     setError('')
     try {
+      const plansPayload = {}
+      for (const [k, v] of Object.entries(nextMonthPlans)) {
+        plansPayload[String(k)] = v
+      }
       const inv = await apiFetch('/api/v1/invoices/submit', {
         method: 'POST',
         body: JSON.stringify({
           month,
           notes: notes.trim() || null,
-          edits: excludeIds.length ? { exclude_session_ids: excludeIds } : null,
+          edits: {
+            ...(excludeIds.length ? { exclude_session_ids: excludeIds } : {}),
+            ...(Object.keys(plansPayload).length ? { next_month_plans: plansPayload } : {}),
+          },
         }),
       })
       onSubmitted?.(inv)
@@ -84,38 +100,45 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
     }
   }
 
+  function handleNextMonthPlanChange(caseId, plan) {
+    setNextMonthPlans((prev) => ({ ...prev, [caseId]: plan }))
+  }
+
   return (
     <div
-      className="fixed inset-0 z-[95] flex justify-end bg-slate-900/40 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[95] flex items-end justify-center bg-slate-900/40 backdrop-blur-[2px] sm:justify-end"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full max-w-2xl flex-col border-l border-[#E2E8F0] bg-white shadow-2xl"
+        className="flex h-[96dvh] w-full max-w-none flex-col overflow-hidden rounded-t-2xl border border-[#E2E8F0] bg-white shadow-2xl sm:h-full sm:max-w-2xl sm:rounded-none sm:border-l"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#E2E8F0] px-4 py-4 sm:px-5">
+          <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-slate-900">Invoice preview — {preview.month_label || month}</h2>
-            <p className="text-sm text-slate-500">
-              {preview.total_sessions} approved sessions · {formatInr(preview.net_amount_inr)}
+            <p className="mt-1 text-sm leading-snug text-slate-500">
+              {formatInr(preview.net_amount_inr)}
+              {attendanceGist ? ` · ${attendanceGist}` : ` · ${preview.total_sessions ?? 0} approved`}
+              {pendingCount > 0
+                ? ` · ${pendingCount} pending (${formatInr(preview.pending_approval_inr ?? preview.pending_late_inr)})`
+                : null}
               {refreshing ? ' · Updating…' : null}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
-          {pendingCount > 0 ? (
-            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              {pendingCount} late-added session{pendingCount === 1 ? '' : 's'} ({formatInr(preview.pending_late_inr)}) are
-              excluded from payout until an admin approves the daily logs.
-            </p>
-          ) : null}
           <StatementSummary data={preview} cutover={false} />
           <div className="mt-6">
             <InvoiceBreakdownView
@@ -126,6 +149,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
               onToggleSession={handleToggle}
               onRefresh={refetchPreview}
               onRemoveLateSession={handleRemoveLate}
+              onNextMonthPlanChange={handleNextMonthPlanChange}
             />
           </div>
           <div className="mt-6">
@@ -143,7 +167,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
           </label>
         </div>
 
-        <footer className="flex gap-2 border-t border-[#E2E8F0] px-5 py-4">
+        <footer className="flex shrink-0 gap-2 border-t border-[#E2E8F0] px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
           <button
             type="button"
             onClick={onClose}

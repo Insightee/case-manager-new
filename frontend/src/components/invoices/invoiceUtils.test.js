@@ -16,7 +16,7 @@ test('billingSummary shows client rate for admin per-session payload', () => {
     pay_share_amount_inr: 600,
   })
   assert.match(out, /₹1000\/session/)
-  assert.match(out, /₹600 therapist share/)
+  assert.match(out, /₹600 therapist pay/)
 })
 
 test('billingSummary shows client package amount for admin package payload', () => {
@@ -24,11 +24,11 @@ test('billingSummary shows client package amount for admin package payload', () 
     billing_type: 'PACKAGE',
     package_session_count: 20,
     package_amount_inr: 25000,
-    compensation_mode: 'PERCENTAGE',
+    compensation_mode: 'FIXED_LUMP',
     pay_share_amount_inr: 15000,
   })
   assert.match(out, /₹25000/)
-  assert.match(out, /₹15000 therapist share/)
+  assert.match(out, /₹15000 therapist pay/)
 })
 
 // Therapist payloads are redacted at the API boundary: no client fields.
@@ -39,19 +39,19 @@ test('billingSummary hides client rate for redacted therapist per-session payloa
   })
   assert.doesNotMatch(out, /\/session/)
   assert.doesNotMatch(out, /undefined/)
-  assert.equal(out, '₹600 therapist share')
+  assert.equal(out, '₹600 therapist pay')
 })
 
 test('billingSummary hides package price for redacted therapist package payload', () => {
   const out = billingSummary({
     billing_type: 'PACKAGE',
     package_session_count: 20,
-    compensation_mode: 'PERCENTAGE',
+    compensation_mode: 'FIXED_LUMP',
     pay_share_amount_inr: 15000,
   })
   assert.doesNotMatch(out, /25000/)
   assert.doesNotMatch(out, /undefined/)
-  assert.equal(out, 'Package 20 sessions · ₹15000 therapist share')
+  assert.equal(out, 'Package 20 sessions · ₹15000 therapist pay')
 })
 
 test('billingSummary fixed-lump package shows therapist fixed pay only', () => {
@@ -61,7 +61,17 @@ test('billingSummary fixed-lump package shows therapist fixed pay only', () => {
     compensation_mode: 'FIXED_LUMP',
     therapist_fixed_pay_inr: 25000,
   })
-  assert.equal(out, 'Package 20 sessions · ₹25000 fixed pay')
+  assert.equal(out, 'Package 20 sessions · ₹25000 therapist pay')
+})
+
+test('billingSummary shows client monthly rate for admin monthly payload', () => {
+  const out = billingSummary({
+    billing_type: 'MONTHLY_FIXED',
+    client_monthly_rate_inr: 29000,
+    pay_share_amount_inr: 18000,
+  })
+  assert.match(out, /₹29000\/month/)
+  assert.match(out, /₹18000 therapist pay/)
 })
 
 test('billingSummary handles unconfigured billing', () => {

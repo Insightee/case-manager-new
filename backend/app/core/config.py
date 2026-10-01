@@ -38,8 +38,7 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     jwt_refresh_remember_days: int = 90
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-    # Optional regex for extra browser origins (Vercel preview URLs). In production, a safe
-    # default for insightes-projects frontend previews is applied when this is unset.
+    # Optional regex for extra browser origins (official frontend project only).
     cors_origin_regex: str = ""
     frontend_url: str = "http://localhost:5173"
     support_contact_email: str = "support@insighte.com"
@@ -125,6 +124,24 @@ class Settings(BaseSettings):
     zeptomail_mailagent_key: str = ""
     # IANA timezone for Google Calendar links in CM meeting invite emails (ctz=).
     meeting_invite_calendar_timezone: str = "Asia/Kolkata"
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    # When false, booking slots use Insighte availability + meetings only (Google free/busy optional).
+    google_calendar_freebusy_enabled: bool = False
+    # When true, default staff availability and session templates include Saturday/Sunday.
+    scheduling_weekends_enabled: bool = False
+
+    # External integration API + remote MCP (read-only). Off by default in production-like envs
+    # until explicitly enabled; tests/dev set INTEGRATION_API_ENABLED=true.
+    integration_api_enabled: bool = False
+    mcp_enabled: bool = False
+    # Dedicated HS256 secret for integration access tokens (distinct from user JWT).
+    integration_jwt_secret_key: str = "dev-integration-secret-change-in-production"
+    integration_access_token_minutes: int = 15
+    integration_default_rate_limit_per_minute: int = 60
+    integration_max_page_size: int = 50
+    integration_credential_default_ttl_days: int = 365
+
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -151,10 +168,10 @@ class Settings(BaseSettings):
             return explicit
         if self.is_development:
             return None
-        # Vercel production aliases (frontend-omega-eight-92.vercel.app) and git previews
-        # (frontend-git-<branch>-insightes-projects.vercel.app). Explicit production URL
-        # should still be listed in CORS_ORIGINS for invite/email link consistency.
-        return r"https://((frontend-[a-zA-Z0-9-]+\.vercel\.app)|(www\.)?insighte\.org)"
+        # Official UI is Vercel team insightes-projects / project frontend only
+        # (frontend*.vercel.app + insighte.org). insightecasestaging / insightecasetesting
+        # are not origins — those Vercel projects are not used.
+        return r"https://((frontend[-a-zA-Z0-9]*\.vercel\.app)|((www\.)?insighte\.org))"
 
     @property
     def is_development(self) -> bool:

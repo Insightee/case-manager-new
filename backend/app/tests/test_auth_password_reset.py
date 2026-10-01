@@ -36,6 +36,7 @@ def test_password_reset_flow(mock_enqueue_email, _mock_rate_limited):
     r = client.post("/api/v1/auth/forgot-password", json={"email": email})
     assert r.status_code == 200
     assert mock_enqueue_email.called
+    assert mock_enqueue_email.call_args.kwargs.get("force_resend") is True
     reset_url = mock_enqueue_email.call_args.kwargs["reset_url"]
     plain_token = reset_url.rstrip("/").split("/")[-1]
 
@@ -69,6 +70,27 @@ def test_password_reset_flow(mock_enqueue_email, _mock_rate_limited):
         db.commit()
     finally:
         db.close()
+
+
+@patch("app.services.password_reset_service.is_rate_limited", return_value=False)
+@patch("app.services.password_reset_service.record_rate_limit_hit")
+@patch("app.services.password_reset_service.enqueue_password_reset_email", return_value=None)
+def test_forgot_password_skips_rate_limit_when_enqueue_skipped(mock_enqueue, mock_record_hit, _rate):
+    r = client.post("/api/v1/auth/forgot-password", json={"email": "therapist@demo.com"})
+    assert r.status_code == 200
+    mock_enqueue.assert_called_once()
+    mock_record_hit.assert_not_called()
+
+
+@patch("app.services.password_reset_service.is_rate_limited", return_value=False)
+@patch("app.services.password_reset_service.get_or_create_reset_token", return_value=("tok123", 99))
+@patch("app.services.password_reset_service.enqueue_password_reset_email", return_value=7)
+def test_forgot_password_mints_fresh_token_and_force_resends(mock_enqueue, mock_get_token, _rate):
+    r = client.post("/api/v1/auth/forgot-password", json={"email": "therapist@demo.com"})
+    assert r.status_code == 200
+    mock_get_token.assert_called_once()
+    assert mock_get_token.call_args.kwargs.get("force_new") is True
+    assert mock_enqueue.call_args.kwargs.get("force_resend") is True
 
 
 def test_reset_token_rejected_when_used():

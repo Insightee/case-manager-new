@@ -102,6 +102,7 @@ def send_email(
     body_html: Optional[str] = None,
     event: EmailEvent | None = None,
     from_email: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
     db: Session | None = None,
 ) -> bool:
     """Send one email. Returns True if sent or skipped (no config), False on hard failure."""
@@ -134,6 +135,7 @@ def send_email(
         body_html=body_html,
         from_header=from_header,
         envelope_from=envelope,
+        attachments=attachments,
     )
     return result.ok
 
@@ -177,7 +179,7 @@ def enqueue_email_event(
                 prep.status,
                 prep.reason,
             )
-            return prep.email_log_id
+            return None
         background_tasks.add_task(_deliver_email_log, prep.email_log_id)
         return prep.email_log_id
 
@@ -426,6 +428,7 @@ def cm_meeting_invite_email(
     child_name: str | None = None,
     case_code: str | None = None,
     is_update: bool = False,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> None:
     payload = {
         "full_name": full_name,
@@ -448,6 +451,37 @@ def cm_meeting_invite_email(
         body_text=body_text,
         body_html=body_html,
         event=EmailEvent.CM_MEETING_INVITE,
+        attachments=attachments,
+    )
+
+
+def cm_meeting_reminder_email(
+    *,
+    to: str,
+    full_name: str,
+    meeting_title: str,
+    when: str,
+    meeting_url: str | None = None,
+    portal_url: str | None = None,
+    child_name: str | None = None,
+    case_code: str | None = None,
+) -> None:
+    payload = {
+        "full_name": full_name,
+        "meeting_title": meeting_title,
+        "when": when,
+        "meeting_url": meeting_url or "",
+        "portal_url": portal_url or "",
+        "child_name": child_name,
+        "case_code": case_code,
+    }
+    subject, body_text, body_html = render_template("cm_meeting_reminder", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.CM_MEETING_REMINDER,
     )
 
 

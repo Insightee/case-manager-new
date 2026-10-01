@@ -13,8 +13,10 @@ from app.core.database import Base
 class TherapistProfileStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     PENDING = "PENDING"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"
     APPROVED = "APPROVED"
     PAUSED = "PAUSED"
+    DELETED = "DELETED"
 
 
 class TherapistProfile(Base):
@@ -25,7 +27,9 @@ class TherapistProfile(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(255))
     short_bio: Mapped[Optional[str]] = mapped_column(Text)
     academic_qualifications: Mapped[Optional[str]] = mapped_column(Text)
+    academic_qualification_level: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     professional_certificates: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    professional_qualification_entries: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     services_offered: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     status: Mapped[TherapistProfileStatus] = mapped_column(
         Enum(TherapistProfileStatus), default=TherapistProfileStatus.DRAFT, nullable=False
@@ -55,6 +59,7 @@ class TherapistProfile(Base):
     leave_backfill_updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     leave_year_snapshots: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     tds_rate_percent: Mapped[Optional[float]] = mapped_column(Numeric(6, 2), nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

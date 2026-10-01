@@ -1,3 +1,4 @@
+import { QualificationLevelPicker } from '../shared/QualificationLevelPicker.jsx'
 import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
 
 /**
@@ -31,8 +32,15 @@ export function TherapistServiceProfileForm({ form, setForm, categories, showThe
         Short bio
         <textarea value={form.short_bio} onChange={(e) => setForm({ ...form, short_bio: e.target.value })} rows={2} />
       </label>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <p className="admin-drawer__subtitle">Highest qualification</p>
+        <QualificationLevelPicker
+          value={form.academic_qualification_level || ''}
+          onChange={(academic_qualification_level) => setForm({ ...form, academic_qualification_level })}
+        />
+      </div>
       <label style={{ gridColumn: '1 / -1' }}>
-        Qualifications
+        Additional qualification details (optional)
         <textarea
           value={form.academic_qualifications}
           onChange={(e) => setForm({ ...form, academic_qualifications: e.target.value })}

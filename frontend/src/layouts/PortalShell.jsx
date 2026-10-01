@@ -8,6 +8,8 @@ import { usePageMeta } from '../hooks/usePageMeta.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
+import { STAFF_LOGIN_ROLES } from '../lib/portalLogin.js'
+import { isSpotOnlyUser, spotNav } from '../lib/spotPortal.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
@@ -15,6 +17,9 @@ import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.js
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
+import { TherapistProfileCompletionBanner } from '../components/therapist/TherapistProfileCompletionBanner.jsx'
+import { TherapistProfileCompletionModal } from '../components/therapist/TherapistProfileCompletionModal.jsx'
+import { isProfileCompletionIncomplete } from '../lib/therapistQualificationLevels.js'
 import '../components/shared/notification-bell.css'
 
 const THERAPIST_NAV = [
@@ -71,6 +76,7 @@ function caseManagerNav(clinicalModuleIds) {
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
+    { to: '/admin/attendance', label: 'Attendance', perm: null, feature: null, icon: 'grid' },
   ]
 }
 
@@ -91,11 +97,14 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/finance-reports', label: 'Reports', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'reports', section: 'Finance' },
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
+    { to: '/admin/attendance', label: 'Attendance', perm: null, feature: null, icon: 'grid', section: 'People & HR' },
     { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },
     { to: '/admin/memos', label: 'Memos', perm: 'memo.send', feature: null, icon: 'mail', section: 'People & HR' },
     { to: '/admin/hr-reports', label: 'Reports', perm: null, feature: 'hr_reports', icon: 'reports', section: 'People & HR' },
     { to: '/admin/hr-cases', label: 'HR case view', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'People & HR' },
     { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings', section: 'Settings' },
+    { to: '/admin/integrations', label: 'Integrations', perm: null, feature: null, icon: 'plug', section: 'Settings' },
+    { to: '/admin/platform-stats', label: 'Platform stats', perm: null, feature: null, icon: 'grid', section: 'Settings' },
   ]
 }
 
@@ -194,7 +203,14 @@ function buildMobileTabs(fullNav, portal, { cmFocused = false } = {}) {
   }
 }
 
-function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
+function staffAttendanceNavEligible({ roles, isViewOnly }) {
+  if (isViewOnly) return false
+  const upper = roles.map((r) => String(r).toUpperCase())
+  if (upper.includes('THERAPIST') && !upper.some((r) => STAFF_LOGIN_ROLES.includes(r))) return false
+  return upper.some((r) => STAFF_LOGIN_ROLES.includes(r))
+}
+
+function filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOnly }) {
   if (item.desk === 'finance') {
     return roles.includes('FINANCE') && !roles.includes('SUPER_ADMIN') && can(item.perm || 'invoice.approve')
   }
@@ -223,6 +239,12 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
   if (item.to === '/admin/hr-reports') {
     return hasFeature('hr_reports') || can('hr_report.export') || can('user.manage')
   }
+  if (item.to === '/admin/platform-stats' || item.to === '/admin/integrations') {
+    return can('admin.override')
+  }
+  if (item.to === '/admin/attendance') {
+    return staffAttendanceNavEligible({ roles, isViewOnly })
+  }
   if (item.perm || item.feature || item.moduleIds?.length) {
     return navVisible(item)
   }
@@ -234,6 +256,30 @@ export function PortalShell({ portal }) {
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const profileIncomplete = portal === 'therapist' && isProfileCompletionIncomplete(user?.profile_completion)
+  const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false)
+  const [profileLogoutOpen, setProfileLogoutOpen] = useState(false)
+
+  useEffect(() => {
+    if (!profileIncomplete) {
+      setProfileWelcomeOpen(false)
+      setProfileLogoutOpen(false)
+      return
+    }
+    if (location.pathname.startsWith('/therapist/profile')) return
+    setProfileWelcomeOpen(true)
+    // One reminder per login, not on every route change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileIncomplete, user?.id])
+
+  function requestLogout() {
+    if (profileIncomplete) {
+      setProfileLogoutOpen(true)
+      setProfileWelcomeOpen(false)
+      return
+    }
+    logout()
+  }
   const financeRoute =
     portal === 'admin'
       && (location.pathname.startsWith('/admin/invoices')
@@ -254,9 +300,9 @@ export function PortalShell({ portal }) {
     window.localStorage.setItem('insightecase.financeSidebarCollapsed', sidebarCollapsed ? '1' : '0')
   }, [financeRoute, sidebarCollapsed])
   const { activeElapsedSeconds, syncState } = useAppUsageTracker({
-    enabled: portal === 'admin' && !!user?.id,
+    enabled: !!user?.id && (portal === 'admin' || portal === 'therapist' || portal === 'parent'),
     userId: user?.id,
-    portal: 'admin',
+    portal,
     routePath: location.pathname,
   })
 
@@ -296,12 +342,16 @@ export function PortalShell({ portal }) {
   if (portal === 'parent') nav = PARENT_NAV
   if (portal === 'admin') {
     const roles = user?.roles || []
-    const cmFocused = isCaseManagerOnlyRole(roles)
-    const clinicalIds = clinicalProductModuleIds(user)
-    const baseNav = cmFocused ? caseManagerNav(clinicalIds) : adminNav(clinicalIds)
-    nav = baseNav.filter((item) =>
-      filterAdminNavItem(item, { roles, navVisible, can, hasFeature }),
-    )
+    if (isSpotOnlyUser(user)) {
+      nav = spotNav()
+    } else {
+      const cmFocused = isCaseManagerOnlyRole(roles)
+      const clinicalIds = clinicalProductModuleIds(user)
+      const baseNav = cmFocused ? caseManagerNav(clinicalIds) : adminNav(clinicalIds)
+      nav = baseNav.filter((item) =>
+        filterAdminNavItem(item, { roles, navVisible, can, hasFeature, isViewOnly }),
+      )
+    }
   }
 
   const portalTitle = PORTAL_LABELS[portal] || 'Portal'
@@ -422,7 +472,7 @@ export function PortalShell({ portal }) {
                     type="button"
                     className="app-mobile-account-menu__logout"
                     role="menuitem"
-                    onClick={logout}
+                    onClick={requestLogout}
                   >
                     Logout
                   </button>
@@ -518,7 +568,7 @@ export function PortalShell({ portal }) {
                 className="app-sidebar__drawer-action app-sidebar__drawer-action--logout"
                 onClick={() => {
                   setMobileNavOpen(false)
-                  logout()
+                  requestLogout()
                 }}
               >
                 Sign out
@@ -588,7 +638,7 @@ export function PortalShell({ portal }) {
             </div>
           )}
 
-          <button type="button" className="app-sidebar__logout" onClick={logout}>
+          <button type="button" className="app-sidebar__logout" onClick={requestLogout}>
             <svg
               className="app-sidebar__logout-icon"
               viewBox="0 0 20 20"
@@ -653,9 +703,28 @@ export function PortalShell({ portal }) {
             . Edit actions are disabled for those programmes.
           </div>
         ) : null}
-        {isClientPortalDashboard ? <PortalModuleRolloutNotice /> : null}
+        {isClientPortalDashboard ? <PortalModuleRolloutNotice portal={portal} /> : null}
+        {portal === 'therapist' ? (
+          <TherapistProfileCompletionBanner completion={user?.profile_completion} />
+        ) : null}
         <Outlet />
       </main>
+      <TherapistProfileCompletionModal
+        open={profileWelcomeOpen}
+        completion={user?.profile_completion}
+        mode="welcome"
+        onContinue={() => setProfileWelcomeOpen(false)}
+      />
+      <TherapistProfileCompletionModal
+        open={profileLogoutOpen}
+        completion={user?.profile_completion}
+        mode="logout"
+        onContinue={() => setProfileLogoutOpen(false)}
+        onSignOut={() => {
+          setProfileLogoutOpen(false)
+          logout()
+        }}
+      />
       <PortalInstallBanner />
     </div>
     </PortalInstallProvider>

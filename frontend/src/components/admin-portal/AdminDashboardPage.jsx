@@ -11,8 +11,16 @@ import {
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
+import { isStaffAttendanceUser } from '../../lib/staffAttendanceAccess.js'
+import { UpcomingMeetingsPanel } from '../shared/UpcomingMeetingsPanel.jsx'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
+import { StaffTimerPanel } from './StaffTimerPanel.jsx'
 import './admin-dashboard.css'
+
+const ALLOTMENT_KIND_LABELS = {
+  pending_allotment: 'New case',
+  needs_therapist: 'Needs therapist',
+}
 
 const DASHBOARD_COPY = {
   module_admin: {
@@ -70,7 +78,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
 
   const widgetFooter = (w) => {
     const map = {
-      billing: '/admin/invoices',
+      billing: '/admin/therapist-payouts?sub=queue',
       reschedules: '/admin/workbench?section=reschedules',
       reports: '/admin/reports?tab=queue',
       logs: '/admin/workbench?section=logs',
@@ -115,6 +123,10 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
         }
       />
 
+      {isStaffAttendanceUser(user) ? (
+        <StaffTimerPanel title="Start your day" className="admin-dashboard__timer" />
+      ) : null}
+
       {roleHome?.alerts?.length ? (
         <section className="admin-home-alerts" aria-label="Alerts">
           {roleHome.alerts.map((alert) => (
@@ -129,6 +141,14 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
           ))}
         </section>
       ) : null}
+
+      <UpcomingMeetingsPanel
+        title="Upcoming meetings"
+        subtitle="Next 7 days"
+        href="/admin/meetings"
+        variant="admin"
+        className="admin-dashboard__upcoming-meetings"
+      />
 
       <AdminRoleQueueSection
         roleHome={roleHome}
@@ -147,7 +167,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
             subtitle="Cases waiting for therapist assignment"
             actions={
               canNavigate ? (
-                <Link to="/admin/cases?status=PENDING_ALLOTMENT" className="admin-btn admin-btn--ghost admin-btn--sm">
+                <Link to="/admin/cases?queue=allotment" className="admin-btn admin-btn--ghost admin-btn--sm">
                   View all
                 </Link>
               ) : null
@@ -163,6 +183,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
                       <p className="admin-queue__title">{c.child_name}</p>
                       <p className="admin-queue__meta">
                         {c.case_code} · {c.service_type}
+                        {c.allotment_kind ? ` · ${ALLOTMENT_KIND_LABELS[c.allotment_kind] || c.allotment_kind}` : ''}
                       </p>
                     </div>
                     <div className="admin-btn-group">

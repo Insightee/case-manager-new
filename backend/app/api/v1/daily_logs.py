@@ -16,7 +16,6 @@ from app.core.db_errors import commit_or_http
 from app.core.module_access import user_has_feature
 from app.core.module_write import ensure_log_review_write_access
 from app.core.permissions import RoleName, case_scope_check, is_finance_desk_user, require_permission, user_has_permission
-from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
 from app.schemas.daily_log import (
@@ -196,6 +195,7 @@ def list_daily_logs(
         ]
         log_service.attach_comment_counts(db, log_dicts + virtual_dicts_for_counts, parent_visible_only=False)
         log_service.attach_structured_evidence(db, log_dicts)
+        log_service.attach_mentor_review_meta(db, log_dicts, viewer=user)
         res = [DailyLogRead(**d) for d in log_dicts]
         combined = res + [DailyLogRead(**v) for v in virtual_dicts_for_counts]
     combined.sort(key=lambda x: x.scheduled_date or datetime.min.date(), reverse=True)
@@ -279,6 +279,7 @@ def get_daily_log(
     read = _log_to_read_for_db(db, log)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
     log_service.attach_structured_evidence(db, [read])
+    log_service.attach_mentor_review_meta(db, [read], viewer=user)
     return DailyLogRead(**read)
 
 
@@ -312,6 +313,7 @@ def download_daily_log_pdf(
         audience="staff",
         generated_by=meta["generated_by"],
         generated_at=meta["generated_at"],
+        db=db,
     )
     filename = session_log_pdf_service.session_log_pdf_filename(
         case_code=case.case_code if case else None,
@@ -339,6 +341,13 @@ def create_daily_log(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if created:
+        try:
+            case = case_service.get_case(db, log.session.case_id) if log.session else None
+            from app.services.package_effect_service import maybe_consume_for_submitted_log
+
+            maybe_consume_for_submitted_log(db, case=case, session=log.session)
+        except Exception:
+            logger.exception("Package consume failed while submitting daily log for session %s", payload.session_id)
         commit_or_http(db)
         db.refresh(log)
         try:
@@ -421,6 +430,13 @@ def resubmit_daily_log(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     from app.services import session_log_service
+    from app.services.package_effect_service import maybe_consume_for_submitted_log
+
+    case = case_service.get_case(db, log.session.case_id) if log.session else None
+    try:
+        maybe_consume_for_submitted_log(db, case=case, session=log.session)
+    except Exception:
+        logger.exception("Package consume failed on resubmit for daily log %s", log_id)
 
     session_log_service.notify_case_managers_log_submitted(db, log, therapist=user, resubmitted=True)
     meta = get_request_meta(request)
@@ -456,8 +472,11 @@ def approve_log(
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="daily_log", entity_id=log.id, **meta)
     try:
         billing_ledger_service.upsert_from_daily_log_approved(db, log)
-        if case and case.client_billing_mode == ClientBillingMode.PREPAID:
-            billing_ledger_service.consume_package_session(db, case_id=case.id, session=log.session)
+        if case and log.session:
+            from app.services.package_effect_service import maybe_consume_for_submitted_log
+
+            # Idempotent if already consumed on submit.
+            maybe_consume_for_submitted_log(db, case=case, session=log.session)
         if case and log.session and log.session.scheduled_date:
             billing_ledger_service.ensure_period_charges(
                 db,
@@ -495,13 +514,60 @@ def reject_log(
     session_log_service.notify_therapist_log_rejected(db, log, comment=comment)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="daily_log", entity_id=log.id, **meta)
+    from app.services.package_effect_service import PackageEffectError, maybe_reverse_for_rejected_log
+
     try:
         if log.session:
             billing_ledger_service.sync_session_status(db, log.session)
+        if case and log.session:
+            maybe_reverse_for_rejected_log(db, case=case, session=log.session)
+    except PackageEffectError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
     except Exception:
         pass
     db.commit()
     return {"status": "rejected"}
+
+
+@router.post("/{log_id}/mentor-review", response_model=DailyLogRead)
+def mentor_review_log(
+    log_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """One-way mentor mark-as-reviewed. Does not approve or change approval_status."""
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    if log.mentor_reviewed_at:
+        raise HTTPException(status_code=400, detail="This log is already marked as reviewed by a mentor.")
+    therapist_user_id = log.session.therapist_user_id if log.session else None
+    from app.services.mentor_scope_service import is_mentor_of_therapist
+
+    if not is_mentor_of_therapist(db, user.id, therapist_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the assigned mentor for this therapist can mark the log as reviewed.",
+        )
+    log.mentor_reviewed_at = datetime.now(timezone.utc)
+    log.mentor_reviewed_by_user_id = user.id
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="mentor_review",
+        entity_type="daily_log",
+        entity_id=log.id,
+        **meta,
+    )
+    db.commit()
+    read = _log_to_read_for_db(db, log)
+    log_service.attach_comment_counts(db, [read], parent_visible_only=False)
+    log_service.attach_structured_evidence(db, [read])
+    log_service.attach_mentor_review_meta(db, [read], viewer=user)
+    return DailyLogRead(**read)
 
 
 @router.get("/{log_id}/comments", response_model=list[LogCommentRead])

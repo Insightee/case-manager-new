@@ -15,7 +15,7 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
     {
         "key": "bulk-attendance",
         "label": "Bulk attendance",
-        "description": "Monthly case-level attendance, leave balance, and report submission for HR pay review.",
+        "description": "Monthly attendance by case×therapist assignment window (mid-month replacements produce separate rows with start/end dates).",
         "category": "hr_attendance",
         "filters": ["month", "product_module", "case_manager_user_id"],
         "formats": ["csv", "xlsx", "pdf"],
@@ -39,7 +39,7 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
     {
         "key": "session-monthly-summary",
         "label": "Monthly session summary",
-        "description": "Client-wise and therapist-wise session aggregates for the selected month.",
+        "description": "Client-wise (split by assignment window on reassignment) and therapist-wise session aggregates for the selected month.",
         "category": "session_ops",
         "filters": ["month", "product_module", "case_manager_user_id"],
         "formats": ["csv", "xlsx", "pdf"],
@@ -89,7 +89,7 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
     {
         "key": "parent-portal-usage",
         "label": "Parent portal usage",
-        "description": "Parent portal login status (Active/Inactive) and last login by active case.",
+        "description": "Parent portal login status (Active/Inactive) and last login by case (excludes CLOSED and DEACTIVATED).",
         "category": "crm_lifecycle",
         "filters": ["product_module", "case_manager_user_id"],
         "formats": ["csv", "xlsx", "pdf"],

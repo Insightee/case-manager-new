@@ -81,6 +81,7 @@ def _fresh_scheduled_session(headers: dict) -> int:
     from app.core.database import SessionLocal
     from app.models.session import Session as TherapySession
     from app.models.session import SessionMode, SessionStatus
+    from app.services.leave_dates_service import active_absence_on_case_day, active_leave_for_case_day
 
     me = client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200, me.text
@@ -97,6 +98,38 @@ def _fresh_scheduled_session(headers: dict) -> int:
         for _attempt in range(24):
             _fresh_session_counter += 1
             case_id = int(case_items[_fresh_session_counter % len(case_items)]["id"])
+            if active_absence_on_case_day(db, case_id, day) or active_leave_for_case_day(
+                db, therapist_id, case_id, day
+            ):
+                from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+                from app.models.case import BillingType, Case, CaseDayType, CaseStatus, CompensationMode
+                from app.models.child import Child
+
+                child = db.scalars(select(Child).limit(1)).first()
+                if not child:
+                    continue
+                fresh_case = Case(
+                    case_code=f"ABSENCE-ISO-{_fresh_session_counter}",
+                    child_id=child.id,
+                    service_type="Homecare",
+                    product_module="homecare",
+                    status=CaseStatus.ACTIVE,
+                    billing_type=BillingType.PER_SESSION,
+                    compensation_mode=CompensationMode.FIXED_LUMP,
+                    day_type=CaseDayType.FULL_DAY,
+                )
+                db.add(fresh_case)
+                db.flush()
+                db.add(
+                    CaseAssignment(
+                        case_id=fresh_case.id,
+                        therapist_user_id=therapist_id,
+                        status=CaseAssignmentStatus.ACTIVE,
+                        start_date=day,
+                    )
+                )
+                db.flush()
+                case_id = fresh_case.id
             hour = 6 + (_fresh_session_counter % 14)
             minute = (_fresh_session_counter * 7) % 50
             end_minute = minute + 25
@@ -458,3 +491,102 @@ def test_child_absence_backfill_creates_session_without_prior_booking():
     assert body["is_migration_reentry"] is True
     assert body["scheduled_date"] == backfill_day
     assert body["session_id"] > 0
+
+
+def test_today_for_absence_lists_scheduled_visit():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    sess = client.get(f"/api/v1/sessions/{session_id}", headers=therapist_headers)
+    assert sess.status_code == 200
+    case_id = int(sess.json()["case_id"])
+
+    listed = client.get(
+        f"/api/v1/sessions/absence/today-sessions?case_id={case_id}",
+        headers=therapist_headers,
+    )
+    assert listed.status_code == 200, listed.text
+    ids = {int(item["id"]) for item in listed.json().get("items", [])}
+    assert session_id in ids
+
+
+def test_child_absence_blocked_while_session_in_progress():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    start = client.post(f"/api/v1/sessions/{session_id}/start", headers=therapist_headers, json={})
+    assert start.status_code == 200, start.text
+    try:
+        blocked = client.post(
+            f"/api/v1/sessions/{session_id}/absence",
+            headers=therapist_headers,
+            json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
+        )
+        assert blocked.status_code == 409, blocked.text
+        detail = blocked.json()["detail"]
+        assert detail["code"] == "SESSION_IN_PROGRESS"
+    finally:
+        cancel = client.post(f"/api/v1/sessions/{session_id}/cancel", headers=therapist_headers, json={})
+        if cancel.status_code != 200:
+            client.post(f"/api/v1/sessions/{session_id}/end", headers=therapist_headers, json={})
+
+
+def test_child_absence_replace_pending_log():
+    from datetime import datetime, timezone
+
+    from app.core.database import SessionLocal
+    from app.models.daily_log import AttendanceStatus, DailyLog, LogApprovalStatus
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionStatus
+
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+
+    db = SessionLocal()
+    try:
+        session = db.get(TherapySession, session_id)
+        assert session is not None
+        session.status = SessionStatus.COMPLETED
+        session.actual_start_at = datetime.now(timezone.utc)
+        session.actual_end_at = datetime.now(timezone.utc)
+        log = DailyLog(
+            session_id=session_id,
+            attendance_status=AttendanceStatus.PRESENT.value,
+            activities_done="Therapist worked on goals during visit today.",
+            approval_status=LogApprovalStatus.PENDING.value,
+            submitted_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        db.commit()
+    finally:
+        db.close()
+
+    blocked = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Actually absent"},
+    )
+    assert blocked.status_code == 409, blocked.text
+    detail = blocked.json()["detail"]
+    assert detail["code"] == "LOG_EXISTS_FOR_DAY"
+    assert detail["can_replace_log"] is True
+
+    replaced = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={
+            "absence_type": "CLIENT_ABSENT",
+            "reason": "Actually absent",
+            "confirm_replace_log": True,
+        },
+    )
+    assert replaced.status_code == 201, replaced.text
+    assert replaced.json()["absence_type"] == "CLIENT_ABSENT"
+
+    db = SessionLocal()
+    try:
+        session = db.get(TherapySession, session_id)
+        assert session is not None
+        assert session.status in (SessionStatus.SCHEDULED, SessionStatus.CANCELLED)
+        assert session.daily_log is None
+    finally:
+        db.close()
+

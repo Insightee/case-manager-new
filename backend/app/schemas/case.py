@@ -13,6 +13,7 @@ from app.schemas.billing import CaseBillingFields
 
 
 class CaseServiceAddressFields(BaseModel):
+    service_location_type: Optional[str] = None
     service_address_line1: Optional[str] = None
     service_address_line2: Optional[str] = None
     service_city: Optional[str] = None
@@ -21,6 +22,12 @@ class CaseServiceAddressFields(BaseModel):
     service_landmark: Optional[str] = None
     service_latitude: Optional[float] = None
     service_longitude: Optional[float] = None
+
+
+class CaseContactRead(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
@@ -34,6 +41,7 @@ class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
     region: Optional[str] = None
     operational_stage: Optional[str] = None
     notes: Optional[str] = None
+    zoho_id: Optional[str] = Field(None, max_length=64)
 
 
 class CaseUpdate(CaseBillingFields, CaseServiceAddressFields):
@@ -46,12 +54,14 @@ class CaseUpdate(CaseBillingFields, CaseServiceAddressFields):
     region: Optional[str] = None
     operational_stage: Optional[str] = None
     notes: Optional[str] = None
+    zoho_id: Optional[str] = Field(None, max_length=64)
 
 
 class CaseRead(CaseBillingFields):
     id: int
     case_code: str
     external_case_ref: Optional[str] = None
+    zoho_id: Optional[str] = None
     child_id: int
     child_name: Optional[str] = None
     therapist_name: Optional[str] = None
@@ -63,6 +73,10 @@ class CaseRead(CaseBillingFields):
     case_manager_user_id: Optional[int]
     case_manager_name: Optional[str] = None
     case_manager_email: Optional[str] = None
+    access_as_mentor: bool = False
+    primary_parent_user_id: Optional[int] = None
+    parent_contact: Optional[CaseContactRead] = None
+    therapist_contact: Optional[CaseContactRead] = None
     notes: Optional[str] = None
     region: Optional[str]
     operational_stage: Optional[str]

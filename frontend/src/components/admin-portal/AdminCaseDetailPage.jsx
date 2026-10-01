@@ -24,10 +24,13 @@ import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { isFinanceDeskUser } from '../../lib/financeDesk.js'
+import { isCaseManagerOnlyRole, displayCaseClientName } from '../../lib/adminCasePipeline.js'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
-import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
 import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
+import { CaseOverviewPanel } from './CaseOverviewPanel.jsx'
 import './admin-case-detail-mobile.css'
+
+const BILLING_TAB_PERMS = ['case.update', 'case.billing.update', 'invoice.approve', 'admin.override']
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -39,7 +42,7 @@ const TABS = [
   { id: 'observation', label: 'Observation' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'Meetings' },
-  { id: 'billing', label: 'Billing', perms: ['case.update', 'case.billing.update', 'invoice.approve'] },
+  { id: 'billing', label: 'Billing', perms: BILLING_TAB_PERMS },
   { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
 
@@ -55,20 +58,28 @@ export function AdminCaseDetailPage() {
   const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { canReviewLogs } = useModuleWrite()
   const financeDesk = isFinanceDeskUser(user)
+  const cmFocused = isCaseManagerOnlyRole(user?.roles || [])
   const clinicalRevamp = isReportsRevampActive('admin')
+  const [caseRow, setCaseRow] = useState(null)
+  const [assignments, setAssignments] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const accessAsMentor = Boolean(caseRow?.access_as_mentor)
+  const canSeeBilling =
+    !accessAsMentor &&
+    !cmFocused &&
+    (can('case.update') || can('case.billing.update') || can('invoice.approve') || can('admin.override'))
   const visibleTabs = TABS.filter(
     (t) =>
       (!financeDesk || FINANCE_TAB_IDS.has(t.id)) &&
+      !(accessAsMentor && (t.id === 'billing' || t.id === 'scheduling')) &&
+      !(cmFocused && (t.id === 'billing' || t.id === 'cm-meetings' || t.id === 'scheduling')) &&
+      (t.id !== 'billing' || canSeeBilling) &&
       (!t.perm || can(t.perm)) &&
       (!t.perms || t.perms.some((permission) => can(permission))) &&
       (t.id !== 'observation' || clinicalRevamp),
   )
   const visibleTabIds = visibleTabs.map((t) => t.id)
-  const [caseRow, setCaseRow] = useState(null)
-  const [assignments, setAssignments] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [parentContact, setParentContact] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -91,31 +102,6 @@ export function AdminCaseDetailPage() {
   useEffect(() => {
     load()
   }, [load])
-
-  useEffect(() => {
-    if (!caseRow?.child_id) {
-      setParentContact(null)
-      return
-    }
-    let cancelled = false
-    apiFetch(`/api/v1/admin/families?search=${encodeURIComponent(caseRow.case_code || '')}`)
-      .then((rows) => {
-        if (cancelled) return
-        const match = (rows || []).find((f) => f.childId === caseRow.child_id)
-        const parent = match?.parents?.[0]
-        if (parent?.parentPhone || parent?.parentEmail) {
-          setParentContact({ phone: parent.parentPhone, email: parent.parentEmail })
-        } else {
-          setParentContact(null)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setParentContact(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [caseRow?.child_id, caseRow?.case_code])
 
   useEffect(() => {
     if (highlightSessionId && tab !== 'logs') {
@@ -172,6 +158,7 @@ export function AdminCaseDetailPage() {
   const canEditCase = Boolean(
     caseRow &&
       !caseRow.in_transition &&
+      !caseRow.access_as_mentor &&
       can('case.update') &&
       !isViewOnly &&
       !financeDesk &&
@@ -180,25 +167,22 @@ export function AdminCaseDetailPage() {
   const canEditBilling = Boolean(
     caseRow &&
       !caseRow.in_transition &&
+      !caseRow.access_as_mentor &&
       !isViewOnly &&
       !financeDesk &&
-      (can('case.billing.update') || canEditCase),
-  )
-  const canManageStatus = Boolean(
-    caseRow &&
-      !caseRow.in_transition &&
-      !isViewOnly &&
-      !financeDesk &&
-      (can('admin.override') ||
-        can('case.status_manage') ||
-        (can('case.update') && canWriteProduct(caseRow.product_module))),
+      (can('case.billing.update') || can('invoice.approve') || can('admin.override')),
   )
   const canReopenCase = Boolean(
     can('admin.override') ||
       (user?.roles || []).some((r) => ['SUPER_ADMIN', 'MODULE_ADMIN', 'ADMIN', 'HR'].includes(r)),
   )
   const canAssignCase = Boolean(
-    caseRow && can('case.assign') && !financeDesk && canWriteProduct(caseRow.product_module),
+    caseRow &&
+      !caseRow.access_as_mentor &&
+      !cmFocused &&
+      can('case.assign') &&
+      !financeDesk &&
+      canWriteProduct(caseRow.product_module),
   )
   const isAssignedCaseManager = Boolean(
     caseRow && user?.id && caseRow.case_manager_user_id === user.id,
@@ -208,6 +192,7 @@ export function AdminCaseDetailPage() {
       can('daily_log.review') &&
       !isViewOnly &&
       !financeDesk &&
+      !accessAsMentor &&
       (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
   )
 
@@ -226,8 +211,6 @@ export function AdminCaseDetailPage() {
     )
   }
 
-  const addr = caseRow.service_address
-
   return (
     <div className="admin-page admin-case-detail-page">
       {caseRow.in_transition ? (
@@ -244,13 +227,12 @@ export function AdminCaseDetailPage() {
       <AdminCaseDetailMobileHeader
         caseRow={caseRow}
         activeAssignment={activeAssignment}
-        parentContact={parentContact}
         onQuickAction={(id) => (id === 'scheduling' ? openScheduleTab() : setTab(id))}
       />
 
       <header className="admin-case-detail__header-compact admin-case-detail__header--desktop" style={{ marginBottom: 12 }}>
         <p className="admin-page__eyebrow">{caseRow.case_code}</p>
-        <h1 className="admin-page__title">{caseRow.child_name}</h1>
+        <h1 className="admin-page__title">{displayCaseClientName(caseRow.child_name)}</h1>
         <p className="admin-page__subtitle admin-portal-lead">
           Therapist:{' '}
           <strong>{activeAssignment?.therapist_name || 'Unassigned'}</strong>
@@ -258,9 +240,20 @@ export function AdminCaseDetailPage() {
           {caseRow.service_type} · <span className="admin-chip">{caseRow.product_module}</span>{' '}
           {caseRow.day_type ? <CaseDayTypeBadge dayType={caseRow.day_type} /> : null}
           <StatusBadge status={caseRow.status} />
+          {caseRow.access_as_mentor ? (
+            <span className="admin-badge admin-badge--info" style={{ marginLeft: 8 }}>
+              Mentor view
+            </span>
+          ) : null}
         </p>
       </header>
 
+      {caseRow.access_as_mentor ? (
+        <p className="admin-alert admin-alert--info" role="status">
+          You are viewing this case as a mentor. You can open cases, logs, and reports, and mark logs as
+          reviewed — other changes stay with the assigned case manager.
+        </p>
+      ) : null}
       <AdminCaseDetailQuickStats
         caseId={caseId}
         caseRow={caseRow}
@@ -281,43 +274,12 @@ export function AdminCaseDetailPage() {
       {tab === 'activity' && <CaseActivityPanel caseId={caseId} />}
 
       {tab === 'overview' && (
-        <section className="admin-layout admin-layout--stack">
-          {caseRow ? (
-            <CaseClientStatusCard
-              caseId={caseRow.id}
-              caseRow={caseRow}
-              canEdit={canManageStatus}
-              canReopen={canReopenCase}
-              onStatusChanged={(updatedCase) => setCaseRow(updatedCase)}
-            />
-          ) : null}
-          {addr ? (
-            <div className="admin-panel" style={{ padding: 16 }}>
-              <h3 style={{ marginTop: 0 }}>Service address</h3>
-              <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                {[addr.address_line1, addr.address_line2, addr.city, addr.pincode].filter(Boolean).join(', ')}
-              </p>
-              {caseRow.maps_url ? (
-                <a href={caseRow.maps_url} target="_blank" rel="noreferrer" className="admin-btn admin-btn--ghost admin-btn--sm" style={{ marginTop: 8 }}>
-                  Open in Maps
-                </a>
-              ) : null}
-            </div>
-          ) : null}
-          <CaseBillingForm caseItem={caseRow} readOnly />
-          {canEditCase ? (
-            <>
-              <p style={{ fontSize: '0.85rem', margin: '8px 0 0' }}>
-                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setTab('billing')}>
-                  Edit billing & address →
-                </button>
-              </p>
-            </>
-          ) : null}
-          {canEditCase ? (
-            <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />
-          ) : null}
-        </section>
+        <CaseOverviewPanel
+          caseRow={caseRow}
+          canEditCase={canEditCase}
+          canReopenCase={canReopenCase}
+          onCaseChanged={(updatedCase) => setCaseRow(updatedCase)}
+        />
       )}
 
 
@@ -374,10 +336,9 @@ export function AdminCaseDetailPage() {
         <CaseDocumentsPanel caseId={Number(caseRow?.id || caseId)} variant="admin" />
       )}
 
-      {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
+      {tab === 'cm-meetings' && !cmFocused && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' &&
-        (can('case.update') || can('case.billing.update') || (financeDesk && can('invoice.approve'))) && (
+      {tab === 'billing' && canSeeBilling && !cmFocused && (
         <section className="admin-layout admin-layout--stack">
           {billingApprovalRequestId && !financeDesk ? (
             <BillingApprovalPanel requestId={billingApprovalRequestId} onApplied={load} />
@@ -404,7 +365,7 @@ export function AdminCaseDetailPage() {
         </section>
       )}
 
-      {tab === 'scheduling' && can('slot.book_any') && (
+      {tab === 'scheduling' && can('slot.book_any') && !cmFocused && (
         <AdminCaseSchedulingPanel
           caseItem={caseRow}
           assignments={assignments}

@@ -26,6 +26,7 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
     stakeholderRequestReview,
     sendForStakeholderApproval,
     cmResendForApproval,
+    renewIep,
     error,
   } = useIepReport(caseId)
 
@@ -177,7 +178,7 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
 
         {plan.review_date ? (
           <p className="text-sm mb-4">
-            <strong>Review date:</strong> {formatDisplayDate(plan.review_date)}
+            <strong>Review date for next IEP:</strong> {formatDisplayDate(plan.review_date)}
           </p>
         ) : null}
 
@@ -217,6 +218,8 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
           approval={approval}
           reviewThread={reviewThread}
           variant={variant === 'admin' ? 'admin' : isParent ? 'parent' : 'therapist'}
+          canRenewIep={variant === 'admin' && summary?.has_active_approved_iep}
+          onRenewIep={() => renewIep()}
           onSendForStakeholderApproval={sendForStakeholderApproval}
           onStakeholderApprove={stakeholderApprove}
           onStakeholderRequestReview={stakeholderRequestReview}

@@ -10,6 +10,8 @@ from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
 from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionDay
 from app.models.case_client_status_audit import CaseClientStatusAudit
+from app.models.case_operational_note import CaseOperationalNote
+from app.models.case_billing_rate_change import CaseBillingRateChange
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.clinical_evidence import GoalEvidenceEvent, IepGoalCard, IepSupportPriority
 from app.models.clinical_report import (
@@ -25,6 +27,14 @@ from app.models.iep_identity import IepGoalItem, IepStrategyItem
 from app.models.iep_plan_suggestion import IepPlanSuggestion
 from app.models.session_evidence import SessionGoalEntry, StrategyUseEvent
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
+from app.models.calendar_availability import (
+    AvailabilityExceptionType,
+    CalendarProvider,
+    StaffAvailabilityException,
+    StaffAvailabilityRule,
+    StaffBookingPolicy,
+    UserCalendarConnection,
+)
 from app.models.meeting_action import MeetingAction
 from app.models.client_billing import (
     BillingDispute,
@@ -76,6 +86,8 @@ from app.models.session import Session as TherapySession
 from app.models.session_absence import SessionAbsenceRequest
 from app.models.session_start_idempotency import SessionStartIdempotency
 from app.models.leave import TherapistLeave
+from app.models.staff_attendance import StaffAttendance, StaffAttendanceSegment
+from app.models.staff_leave import StaffLeave
 from app.models.memo import Memo, MemoMessage, MemoAttachment, MemoAuditLog
 from app.models.schedule_template import TherapistScheduleTemplate
 from app.models.appointment_reschedule import AppointmentReschedule
@@ -96,6 +108,16 @@ from app.models.email_suppression import EmailSuppression
 from app.models.password_reset import PasswordResetToken
 from app.models.service_category import ServiceCategory
 from app.models.service_product import ServiceProduct
+from app.models.integration import (
+    INTEGRATION_SCOPES,
+    IntegrationCaseGrant,
+    IntegrationClient,
+    IntegrationClientStatus,
+    IntegrationCredential,
+    IntegrationSignal,
+    IntegrationWebhook,
+    IntegrationWebhookStatus,
+)
 from app.models.user import EmploymentStatus, InviteToken, User
 
 __all__ = [
@@ -127,6 +149,7 @@ __all__ = [
     "BillingApprovalStatus",
     "Organisation",
     "Case",
+    "CaseBillingRateChange",
     "CaseClientStatusAudit",
     "CaseService",
     "CaseServiceStatus",
@@ -138,6 +161,12 @@ __all__ = [
     "MeetingAction",
     "MeetingType",
     "MeetingStatus",
+    "AvailabilityExceptionType",
+    "CalendarProvider",
+    "StaffAvailabilityRule",
+    "StaffAvailabilityException",
+    "StaffBookingPolicy",
+    "UserCalendarConnection",
     "CaseAssignment",
     "BookingMode",
     "CaseAppointmentUsage",
@@ -193,6 +222,9 @@ __all__ = [
     "TicketCategory",
     "TicketAttachment",
     "TherapistLeave",
+    "StaffAttendance",
+    "StaffAttendanceSegment",
+    "StaffLeave",
     "TherapistScheduleTemplate",
     "TherapistSlot",
     "SlotStatus",
@@ -207,4 +239,12 @@ __all__ = [
     "TherapistProfile",
     "TherapistProfileStatus",
     "TherapistPayoutFlag",
+    "IntegrationClient",
+    "IntegrationClientStatus",
+    "IntegrationCredential",
+    "IntegrationCaseGrant",
+    "IntegrationWebhook",
+    "IntegrationWebhookStatus",
+    "IntegrationSignal",
+    "INTEGRATION_SCOPES",
 ]

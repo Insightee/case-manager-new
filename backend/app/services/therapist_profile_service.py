@@ -1,16 +1,32 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, joinedload
 
+from app.core.pagination import normalize_pagination, paginate_query
 from app.core.permissions import RoleName
+from app.core.therapist_qualification_levels import normalize_qualification_level
 from app.core.therapist_services import get_service_categories, validate_service_ids
+from app.core.timezone import today_ist
+from app.models.daily_log import DailyLog
+from app.models.role import Role
+from app.models.session import Session as TherapySession
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
+from app.services.reports_export_helpers import days_since
+from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
+from app.services.therapist_profile_quality import (
+    evaluate_profile_quality,
+    flatten_qualification_entries,
+    normalize_qualification_entries,
+)
+
+NO_SESSIONS_INACTIVITY_DAYS = 15
+NEEDS_LISTING_STATUS = "NEEDS_LISTING"
 
 
 def _normalize_certs(certs: list[str] | None) -> list[str]:
@@ -24,34 +40,84 @@ SNAPSHOT_FIELDS = (
     "display_name",
     "short_bio",
     "academic_qualifications",
+    "academic_qualification_level",
     "professional_certificates",
+    "professional_qualification_entries",
+    "services_offered",
+)
+
+_LIST_SNAPSHOT_FIELDS = (
+    "professional_certificates",
+    "professional_qualification_entries",
     "services_offered",
 )
 
 
+def _entries_from_payload(data: dict, profile: TherapistProfile | None = None) -> list[dict]:
+    if "professional_qualification_entries" in data:
+        return normalize_qualification_entries(data.get("professional_qualification_entries"))
+    if profile is not None and profile.professional_qualification_entries:
+        return normalize_qualification_entries(profile.professional_qualification_entries)
+    if "professional_certificates" in data:
+        return normalize_qualification_entries(data.get("professional_certificates"))
+    if profile is not None and profile.professional_certificates:
+        return normalize_qualification_entries(profile.professional_certificates)
+    return []
+
+
+def apply_qualification_entries(profile: TherapistProfile, entries: list[dict] | None) -> None:
+    normalized = normalize_qualification_entries(entries)
+    profile.professional_qualification_entries = normalized
+    academic, certs = flatten_qualification_entries(normalized)
+    profile.academic_qualifications = academic
+    profile.professional_certificates = certs
+
+
+def resolved_qualification_entries(profile: TherapistProfile, extra: dict | None = None) -> list[dict]:
+    pending = extra or profile.pending_submission or {}
+    if pending.get("professional_qualification_entries"):
+        return normalize_qualification_entries(pending["professional_qualification_entries"])
+    if profile.professional_qualification_entries:
+        return normalize_qualification_entries(profile.professional_qualification_entries)
+    if pending.get("professional_certificates"):
+        return normalize_qualification_entries(pending["professional_certificates"])
+    return normalize_qualification_entries(profile.professional_certificates)
+
+
 def build_profile_snapshot(profile: TherapistProfile) -> dict:
     """Capture the therapist-editable fields that were just approved."""
+    entries = resolved_qualification_entries(profile)
     return {
         "display_name": profile.display_name,
         "short_bio": profile.short_bio,
         "academic_qualifications": profile.academic_qualifications,
+        "academic_qualification_level": profile.academic_qualification_level,
         "professional_certificates": list(profile.professional_certificates or []),
+        "professional_qualification_entries": entries,
         "services_offered": list(profile.services_offered or []),
     }
 
 
-def build_submission_snapshot(data: dict, db: Session | None = None) -> dict:
+def build_submission_snapshot(data: dict, db: Session | None = None, profile: TherapistProfile | None = None) -> dict:
     services = data.get("services_offered") or []
     if db is not None and services:
         try:
             services = validate_service_ids(services, db)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+    entries = _entries_from_payload(data, profile)
+    academic, certs = flatten_qualification_entries(entries)
+    if not academic:
+        academic = (data.get("academic_qualifications") or "").strip() or None
+    if not certs:
+        certs = _normalize_certs(data.get("professional_certificates"))
     return {
         "display_name": (data.get("display_name") or "").strip() or None,
         "short_bio": (data.get("short_bio") or "").strip() or None,
-        "academic_qualifications": (data.get("academic_qualifications") or "").strip() or None,
-        "professional_certificates": _normalize_certs(data.get("professional_certificates")),
+        "academic_qualifications": academic,
+        "academic_qualification_level": normalize_qualification_level(data.get("academic_qualification_level")),
+        "professional_certificates": certs,
+        "professional_qualification_entries": entries,
         "services_offered": list(services),
     }
 
@@ -70,7 +136,9 @@ def apply_snapshot_to_profile(profile: TherapistProfile, snapshot: dict) -> None
         if key not in snapshot:
             continue
         value = snapshot[key]
-        if key in ("professional_certificates", "services_offered"):
+        if key == "professional_qualification_entries":
+            apply_qualification_entries(profile, value)
+        elif key in _LIST_SNAPSHOT_FIELDS:
             profile.__setattr__(key, list(value or []))
         else:
             profile.__setattr__(key, value)
@@ -84,7 +152,53 @@ def apply_pending_submission(profile: TherapistProfile) -> None:
     profile.pending_submission = None
 
 
-def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict:
+def last_session_log_dates(db: Session, user_ids: list[int]) -> dict[int, datetime]:
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(TherapySession.therapist_user_id, func.max(DailyLog.submitted_at))
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.therapist_user_id.in_(user_ids),
+            DailyLog.submitted_at.is_not(None),
+        )
+        .group_by(TherapySession.therapist_user_id)
+    ).all()
+    return {int(uid): ts for uid, ts in rows if uid is not None and ts is not None}
+
+
+def inactive_therapist_user_ids(db: Session, *, days: int = NO_SESSIONS_INACTIVITY_DAYS) -> set[int]:
+    cutoff = today_ist() - timedelta(days=days)
+    listed_user_ids = {
+        int(uid)
+        for uid in db.scalars(
+            select(TherapistProfile.user_id).where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+        ).all()
+        if uid is not None
+    }
+    if not listed_user_ids:
+        return set()
+
+    last_logs = last_session_log_dates(db, list(listed_user_ids))
+    inactive: set[int] = set()
+    for uid in listed_user_ids:
+        last_at = last_logs.get(uid)
+        if last_at is None:
+            inactive.add(uid)
+            continue
+        last_day = last_at.date() if hasattr(last_at, "date") else last_at
+        if last_day < cutoff:
+            inactive.add(uid)
+    return inactive
+
+
+def profile_to_dict(
+    profile: TherapistProfile,
+    user: User | None = None,
+    *,
+    last_session_log_at: datetime | None = None,
+    days_since_last_session_log: int | None = None,
+) -> dict:
     u = user or profile.user
     supervisor_name = None
     mentor_name = None
@@ -96,18 +210,23 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         men = getattr(profile, "mentor", None)
         if men:
             mentor_name = men.full_name
+    status_value = profile.status.value if profile.status else TherapistProfileStatus.DRAFT.value
     return {
         "id": profile.id,
         "user_id": profile.user_id,
         "display_name": profile.display_name,
         "short_bio": profile.short_bio,
         "academic_qualifications": profile.academic_qualifications,
+        "academic_qualification_level": profile.academic_qualification_level,
         "professional_certificates": profile.professional_certificates or [],
+        "professional_qualification_entries": resolved_qualification_entries(profile),
         "services_offered": profile.services_offered or [],
-        "status": profile.status.value,
+        "quality": evaluate_profile_quality(u, profile) if u else None,
+        "status": status_value,
         "admin_note": profile.admin_note,
         "submitted_at": profile.submitted_at,
         "reviewed_at": profile.reviewed_at,
+        "deleted_at": profile.deleted_at,
         "email": u.email if u else None,
         "full_name": u.full_name if u else None,
         "supervisor_user_id": getattr(profile, "supervisor_user_id", None),
@@ -122,7 +241,64 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "approved_snapshot": profile.approved_snapshot,
         "pending_submission": profile.pending_submission,
         "has_pending_changes": has_pending_submission(profile),
+        "last_session_log_at": last_session_log_at,
+        "days_since_last_session_log": days_since_last_session_log,
+        "tds_rate_percent": float(profile.tds_rate_percent)
+        if profile.tds_rate_percent is not None
+        else None,
     }
+
+
+def needs_listing_to_dict(user: User) -> dict:
+    return {
+        "id": None,
+        "user_id": user.id,
+        "display_name": user.full_name,
+        "short_bio": None,
+        "academic_qualifications": None,
+        "academic_qualification_level": None,
+        "professional_certificates": [],
+        "professional_qualification_entries": [],
+        "services_offered": [],
+        "quality": evaluate_profile_quality(user, None),
+        "status": NEEDS_LISTING_STATUS,
+        "admin_note": None,
+        "submitted_at": None,
+        "reviewed_at": None,
+        "deleted_at": None,
+        "email": user.email,
+        "full_name": user.full_name,
+        "supervisor_user_id": None,
+        "mentor_user_id": None,
+        "supervisor_name": None,
+        "mentor_name": None,
+        "employment_start_date": None,
+        "leave_balance_year": None,
+        "leave_paid_days_backfill": 0,
+        "leave_carry_forward_days_backfill": 0,
+        "leave_backfill_note": None,
+        "approved_snapshot": None,
+        "pending_submission": None,
+        "has_pending_changes": False,
+        "last_session_log_at": None,
+        "days_since_last_session_log": None,
+    }
+
+
+def enrich_profile_dicts(db: Session, items: list[dict]) -> list[dict]:
+    user_ids = [int(item["user_id"]) for item in items if item.get("user_id")]
+    last_logs = last_session_log_dates(db, user_ids)
+    today = today_ist()
+    for item in items:
+        uid = item.get("user_id")
+        last_at = last_logs.get(int(uid)) if uid is not None else None
+        item["last_session_log_at"] = last_at
+        if last_at is None:
+            item["days_since_last_session_log"] = None
+        else:
+            last_day = last_at.date() if hasattr(last_at, "date") else last_at
+            item["days_since_last_session_log"] = days_since(last_day, as_of=today)
+    return items
 
 
 def get_or_create_profile(db: Session, user_id: int) -> TherapistProfile:
@@ -150,8 +326,15 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         profile.short_bio = data["short_bio"]
     if "academic_qualifications" in data:
         profile.academic_qualifications = data["academic_qualifications"]
-    if "professional_certificates" in data:
-        profile.professional_certificates = _normalize_certs(data["professional_certificates"])
+    if "academic_qualification_level" in data:
+        level = data["academic_qualification_level"]
+        if level is not None and normalize_qualification_level(level) is None:
+            raise HTTPException(status_code=400, detail="Select a valid qualification level")
+        profile.academic_qualification_level = normalize_qualification_level(level)
+    if "professional_qualification_entries" in data:
+        apply_qualification_entries(profile, data.get("professional_qualification_entries"))
+    elif "professional_certificates" in data:
+        apply_qualification_entries(profile, data.get("professional_certificates"))
     if "services_offered" in data:
         try:
             profile.services_offered = validate_service_ids(data["services_offered"] or [], db)
@@ -168,7 +351,9 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
             sync_case_managers_for_therapist(db, profile.user_id, new_cm)
     if "mentor_user_id" in data:
         if db is not None:
-            _validate_staff_user_id(db, data["mentor_user_id"], field_label="mentor")
+            from app.services.mentor_scope_service import validate_mentor_is_case_manager
+
+            validate_mentor_is_case_manager(db, data["mentor_user_id"])
         profile.mentor_user_id = data["mentor_user_id"]
     if "employment_start_date" in data:
         profile.employment_start_date = data["employment_start_date"]
@@ -180,6 +365,9 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         profile.leave_carry_forward_days_backfill = int(data["leave_carry_forward_days_backfill"] or 0)
     if "leave_backfill_note" in data:
         profile.leave_backfill_note = (data["leave_backfill_note"] or "").strip() or None
+    if "tds_rate_percent" in data:
+        rate = data["tds_rate_percent"]
+        profile.tds_rate_percent = None if rate is None else float(rate)
 
 
 def apply_leave_backfill(
@@ -206,12 +394,23 @@ def apply_leave_backfill(
     profile.leave_backfill_updated_by_user_id = actor_user_id
 
 
-def _validate_submission_payload(data: dict, user: User, db: Session) -> dict:
-    submission = build_submission_snapshot(data, db)
+def _validate_submission_payload(data: dict, user: User, db: Session, profile: TherapistProfile) -> dict:
+    submission = build_submission_snapshot(data, db, profile)
     if not submission["services_offered"]:
         raise HTTPException(status_code=400, detail="Select at least one service you offer")
     if not (submission["display_name"] or user.full_name):
         raise HTTPException(status_code=400, detail="Display name is required")
+    quality = evaluate_profile_quality(user, profile, listing=submission)
+    if not quality["can_submit"]:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Looks like we still need a few details before we can send this for review.",
+                "reminders": [row["message"] for row in quality["reminders"]],
+                "quality": quality,
+            },
+        )
+    submission["_quality"] = quality
     return submission
 
 
@@ -221,30 +420,58 @@ def therapist_submit_profile(db: Session, user: User, data: dict) -> TherapistPr
     profile = get_or_create_profile(db, user.id)
     if profile.status == TherapistProfileStatus.PAUSED:
         raise HTTPException(status_code=400, detail="Profile is paused")
+    if profile.status == TherapistProfileStatus.DELETED:
+        raise HTTPException(
+            status_code=400,
+            detail="This service listing was removed. Contact your case manager to restore it.",
+        )
 
-    submission = _validate_submission_payload(data, user, db)
+    submission = _validate_submission_payload(data, user, db, profile)
     if not submission["display_name"]:
         submission["display_name"] = user.full_name
+    quality = submission.pop("_quality")
 
     operational = {}
     if "employment_start_date" in data:
         operational["employment_start_date"] = data["employment_start_date"] or None
 
-    if profile.approved_snapshot:
+    if quality["auto_pass"]:
+        apply_profile_fields(profile, {**submission, **operational}, db)
+        profile.pending_submission = None
+        profile.status = TherapistProfileStatus.APPROVED
+        capture_approved_snapshot(profile)
+        profile.admin_note = f"Auto-approved: quality {quality['percent']}%"
+        profile.reviewed_at = datetime.now(timezone.utc)
+        profile.reviewed_by_user_id = None
+    elif profile.approved_snapshot:
         profile.pending_submission = submission
         apply_snapshot_to_profile(profile, profile.approved_snapshot)
         if operational:
             apply_profile_fields(profile, operational, db)
         profile.status = TherapistProfileStatus.APPROVED
+        profile.admin_note = None
     else:
         apply_profile_fields(profile, {**submission, **operational}, db)
         profile.status = TherapistProfileStatus.PENDING
         profile.pending_submission = None
+        profile.admin_note = None
 
     profile.submitted_at = datetime.now(timezone.utc)
-    profile.admin_note = None
     db.flush()
     return profile
+
+
+def admin_request_changes(profile: TherapistProfile, admin_note: str) -> None:
+    note = (admin_note or "").strip()
+    if len(note) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Add a short note so they know what to update.",
+        )
+    profile.admin_note = note
+    if profile.approved_snapshot:
+        return
+    profile.status = TherapistProfileStatus.CHANGES_REQUESTED
 
 
 def admin_approve_profile(profile: TherapistProfile, admin_note: str | None = None) -> None:
@@ -256,29 +483,215 @@ def admin_approve_profile(profile: TherapistProfile, admin_note: str | None = No
     capture_approved_snapshot(profile)
 
 
-def list_profiles(db: Session, status: TherapistProfileStatus | None = None) -> list[TherapistProfile]:
-    stmt = select(TherapistProfile).order_by(TherapistProfile.updated_at.desc())
+def soft_delete_profile(profile: TherapistProfile) -> None:
+    profile.status = TherapistProfileStatus.DELETED
+    profile.deleted_at = datetime.now(timezone.utc)
+
+
+def restore_profile(profile: TherapistProfile) -> None:
+    profile.status = TherapistProfileStatus.PAUSED
+    profile.deleted_at = None
+
+
+def list_active_profiles(db: Session) -> list[TherapistProfile]:
+    return list(
+        db.scalars(
+            select(TherapistProfile)
+            .where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+            .order_by(TherapistProfile.updated_at.desc())
+        ).all()
+    )
+
+
+def _apply_profile_status_filter(stmt, status: TherapistProfileStatus | str | None):
     if status == TherapistProfileStatus.PENDING:
-        stmt = stmt.where(
+        return stmt.where(
+            TherapistProfile.status != TherapistProfileStatus.DELETED,
             or_(
                 TherapistProfile.status == TherapistProfileStatus.PENDING,
+                TherapistProfile.status == TherapistProfileStatus.CHANGES_REQUESTED,
                 TherapistProfile.pending_submission.isnot(None),
+            ),
+        )
+    if status == TherapistProfileStatus.APPROVED:
+        return stmt.where(
+            TherapistProfile.status == TherapistProfileStatus.APPROVED,
+            TherapistProfile.pending_submission.is_(None),
+        )
+    if status == TherapistProfileStatus.DELETED:
+        return stmt.where(TherapistProfile.status == TherapistProfileStatus.DELETED)
+    if status and status != TherapistProfileStatus.DELETED:
+        return stmt.where(TherapistProfile.status == status)
+    return stmt.where(TherapistProfile.status != TherapistProfileStatus.DELETED)
+
+
+def _profiles_list_stmt(
+    db: Session,
+    status: TherapistProfileStatus | str | None = None,
+    *,
+    activity: str | None = None,
+    search: str | None = None,
+    user_id: int | None = None,
+    user_ids: list[int] | None = None,
+):
+    if status == NEEDS_LISTING_STATUS:
+        return None
+
+    if status == TherapistProfileStatus.DELETED:
+        backfill_deleted_profiles_from_audit(db)
+
+    stmt = (
+        select(TherapistProfile)
+        .options(
+            joinedload(TherapistProfile.user),
+            joinedload(TherapistProfile.supervisor),
+            joinedload(TherapistProfile.mentor),
+        )
+        .order_by(TherapistProfile.updated_at.desc())
+    )
+    stmt = _apply_profile_status_filter(stmt, status)
+
+    if activity == "no_sessions_15d":
+        inactive_ids = inactive_therapist_user_ids(db)
+        if not inactive_ids:
+            stmt = stmt.where(TherapistProfile.id == -1)
+        else:
+            stmt = stmt.where(TherapistProfile.user_id.in_(inactive_ids))
+
+    if user_id is not None:
+        stmt = stmt.where(TherapistProfile.user_id == user_id)
+    if user_ids:
+        stmt = stmt.where(TherapistProfile.user_id.in_(user_ids))
+
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        user_match = select(User.id).where(
+            or_(
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
             )
         )
-    elif status:
-        stmt = stmt.where(TherapistProfile.status == status)
+        stmt = stmt.where(
+            or_(
+                TherapistProfile.user_id.in_(user_match),
+                func.lower(TherapistProfile.display_name).like(pattern),
+            )
+        )
+    return stmt
+
+
+def _needs_listing_stmt(
+    db: Session,
+    *,
+    search: str | None = None,
+    user_id: int | None = None,
+    user_ids: list[int] | None = None,
+):
+    therapist_role_ids = select(User.id).join(User.roles).where(
+        Role.name == RoleName.THERAPIST.value,
+        User.is_active.is_(True),
+    )
+    profile_user_ids = select(TherapistProfile.user_id)
+    stmt = (
+        select(User)
+        .where(User.id.in_(therapist_role_ids))
+        .where(User.id.not_in(profile_user_ids))
+        .order_by(User.full_name.asc(), User.email.asc())
+    )
+    if user_id is not None:
+        stmt = stmt.where(User.id == user_id)
+    if user_ids:
+        stmt = stmt.where(User.id.in_(user_ids))
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
+            )
+        )
+    return stmt
+
+
+def paginate_profile_listings(
+    db: Session,
+    *,
+    status: TherapistProfileStatus | str | None = None,
+    activity: str | None = None,
+    search: str | None = None,
+    user_id: int | None = None,
+    user_ids: list[int] | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[dict], int]:
+    page, page_size = normalize_pagination(page, page_size)
+
+    if status == NEEDS_LISTING_STATUS:
+        stmt = _needs_listing_stmt(db, search=search, user_id=user_id, user_ids=user_ids)
+        users, total = paginate_query(db, stmt, page=page, page_size=page_size)
+        items = [needs_listing_to_dict(u) for u in users]
+        return enrich_profile_dicts(db, items), total
+
+    stmt = _profiles_list_stmt(
+        db,
+        status,
+        activity=activity,
+        search=search,
+        user_id=user_id,
+        user_ids=user_ids,
+    )
+    profiles, total = paginate_query(db, stmt, page=page, page_size=page_size)
+    items = [profile_to_dict(p, p.user) for p in profiles]
+    return enrich_profile_dicts(db, items), total
+
+
+def list_profiles(
+    db: Session,
+    status: TherapistProfileStatus | str | None = None,
+    *,
+    activity: str | None = None,
+) -> list[TherapistProfile]:
+    stmt = _profiles_list_stmt(db, status, activity=activity)
+    if stmt is None:
+        return []
     return list(db.scalars(stmt).all())
 
 
-def profile_summary_counts(profiles: list[TherapistProfile]) -> dict[str, int]:
-    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0}
+def list_needs_listing_users(db: Session) -> list[User]:
+    stmt = _needs_listing_stmt(db)
+    return list(db.scalars(stmt).all())
+
+
+def profile_summary_counts(db: Session, profiles: list[TherapistProfile] | None = None) -> dict[str, int]:
+    if profiles is None:
+        profiles = list_active_profiles(db)
+    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0, "DELETED": 0, "CHANGES_REQUESTED": 0}
     for profile in profiles:
         if has_pending_submission(profile):
             counts["PENDING"] += 1
             continue
         key = profile.status.value if hasattr(profile.status, "value") else str(profile.status)
+        if key == "CHANGES_REQUESTED":
+            counts["PENDING"] += 1
+            counts["CHANGES_REQUESTED"] += 1
+            continue
         if key in counts:
             counts[key] += 1
+
+    deleted_extra = db.scalar(
+        select(func.count())
+        .select_from(TherapistProfile)
+        .where(TherapistProfile.status == TherapistProfileStatus.DELETED)
+    )
+    counts["DELETED"] = int(deleted_extra or 0)
+
+    therapists = db.scalars(select(User.id).join(User.roles).where(Role.name == RoleName.THERAPIST.value)).all()
+    profile_user_ids = set(db.scalars(select(TherapistProfile.user_id)).all())
+    counts["needs_listing"] = len(set(therapists) - profile_user_ids)
+    counts["no_sessions_15d"] = len(inactive_therapist_user_ids(db))
+    counts["total"] = len(profiles)
     return counts
 
 

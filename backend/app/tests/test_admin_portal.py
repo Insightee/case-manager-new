@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 
+import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_first_case_id, api_items, login_headers
+from app.tests.conftest import api_first_case_id, api_items, future_meeting_date, login_headers
 
 client = TestClient(app)
 
@@ -280,15 +282,15 @@ def test_allotment_next_code_increments_without_client_code():
     assert preview.status_code == 200
     expected_code = preview.json()["case_code"]
 
+    admin_token = _login("superadmin@demo.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     therapists = client.get(
         "/api/v1/admin/allotment/therapists?product_module=homecare&approved_only=false",
-        headers=headers,
+        headers=admin_headers,
     )
     assert therapists.status_code == 200
     therapist_id = therapists.json()[0]["therapist_user_id"]
 
-    admin_token = _login("superadmin@demo.com")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     suffix = uuid.uuid4().hex[:8]
     fam = client.post(
         "/api/v1/admin/families",
@@ -365,16 +367,15 @@ def test_allotment_therapists_and_allot_case():
 
     token = _login("casemanager@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
+    admin_headers = login_headers(client, "superadmin@demo.com")
     therapists = client.get(
         "/api/v1/admin/allotment/therapists?product_module=homecare&approved_only=false",
-        headers=headers,
+        headers=admin_headers,
     )
     assert therapists.status_code == 200
     assert therapists.json()
     therapist_id = therapists.json()[0]["therapist_user_id"]
 
-    admin_token = _login("superadmin@demo.com")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     suffix = uuid.uuid4().hex[:8]
     fam = client.post(
         "/api/v1/admin/families",
@@ -526,9 +527,9 @@ def test_therapist_onboard_invite_and_accept():
         json={"token": token_str, "password": "demo12345", "full_name": "Onboard Test"},
     )
     assert accept.status_code == 200, accept.text
-    profiles = client.get("/api/v1/admin/therapist-profiles", headers=headers)
+    profiles = client.get("/api/v1/admin/therapist-profiles?page_size=100", headers=headers)
     assert profiles.status_code == 200
-    match = [p for p in profiles.json() if p.get("email") == email]
+    match = [p for p in profiles.json().get("items", []) if p.get("email") == email]
     assert match, "Therapist profile should exist after invite accept"
     assert match[0]["status"] == "APPROVED"
     offered = match[0].get("services_offered") or []
@@ -568,6 +569,16 @@ def test_admin_reports_case_filter_and_exports():
     xlsx = client.get("/api/v1/admin/reports/export/xlsx?queue_only=true", headers=headers)
     assert xlsx.status_code == 200
     assert "spreadsheetml" in xlsx.headers.get("content-type", "")
+    wb = openpyxl.load_workbook(BytesIO(xlsx.content), read_only=True, data_only=True)
+    header = None
+    for row in wb.active.iter_rows(values_only=True):
+        values = [str(c) if c is not None else "" for c in row]
+        if "Child" in values and "Case" in values:
+            header = values
+            break
+    assert header is not None
+    assert "Parent" in header
+    assert header.index("Parent") == header.index("Child") + 1
 
     pdf = client.get("/api/v1/admin/reports/export/pdf", headers=headers)
     assert pdf.status_code == 200
@@ -901,7 +912,7 @@ def test_cm_meeting_booking_sends_invite_emails(monkeypatch):
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-01",
+            "scheduled_date": future_meeting_date(14),
             "scheduled_time": "14:00:00",
             "duration_minutes": 45,
             "meeting_type": "PARENT_MEETING",
@@ -937,11 +948,12 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-01",
+            "scheduled_date": future_meeting_date(14),
             "scheduled_time": "10:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "title": "Therapist-requested CM sync",
+            "meeting_url": "https://meet.google.com/therapist-cm-sync",
         },
     )
     assert created.status_code == 201, created.text
@@ -952,24 +964,43 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
 
 def test_cm_meeting_observation_checklist_review_type():
     """Regression: Postgres meetingtype enum must accept product meeting types."""
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+    from app.models.user import User
+    from app.tests.conftest import first_meeting_slot
+
     th_token = _login("therapist@demo.com")
     th_headers = {"Authorization": f"Bearer {th_token}"}
     cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
     assert cases.status_code == 200, cases.text
     case_id = cases.json()[0]["id"]
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None
+        therapist_id = db.scalars(select(User.id).where(User.email == "therapist@demo.com")).first()
+        attendee_ids = [case.case_manager_user_id, therapist_id]
+    slot_date, slot_time = first_meeting_slot(
+        client,
+        th_headers,
+        attendee_ids,
+        days_ahead=14,
+    )
     created = client.post(
         "/api/v1/cm-meetings",
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2027-03-15",
-            "scheduled_time": "14:30:00",
+            "scheduled_date": slot_date,
+            "scheduled_time": slot_time,
             "duration_minutes": 30,
             "meeting_type": "OBSERVATION_CHECKLIST_REVIEW",
             "title": "Observation checklist review",
             "meeting_url": "https://meet.google.com/test-checklist-review",
             "invite_therapist": True,
             "invite_case_manager": True,
+            "invite_client": False,
         },
     )
     assert created.status_code == 201, created.text
@@ -983,7 +1014,7 @@ def test_therapist_cm_meeting_without_case_returns_400_not_module_error():
         "/api/v1/cm-meetings",
         headers=th_headers,
         json={
-            "scheduled_date": "2026-06-02",
+            "scheduled_date": future_meeting_date(15),
             "scheduled_time": "11:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -1006,7 +1037,7 @@ def test_therapist_can_update_cm_meeting_notes():
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-03",
+            "scheduled_date": future_meeting_date(16),
             "scheduled_time": "15:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -1040,7 +1071,7 @@ def test_therapist_cannot_complete_cm_meeting():
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-04",
+            "scheduled_date": future_meeting_date(17),
             "scheduled_time": "16:00:00",
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
@@ -1080,7 +1111,7 @@ def test_cm_meeting_invites_respect_attendee_selection(monkeypatch):
         headers=cm_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-06-05",
+            "scheduled_date": future_meeting_date(18),
             "scheduled_time": "11:00:00",
             "duration_minutes": 30,
             "meeting_type": "THERAPIST_SUPPORT",
@@ -1231,6 +1262,7 @@ def test_therapist_profiles_summary():
     assert summary.status_code == 200
     body = summary.json()
     assert "PENDING" in body
+    assert "needs_listing" in body
     assert "no_profile" in body
 
 
@@ -1310,3 +1342,184 @@ def test_admin_missing_monthly_reports():
     res = client.get("/api/v1/admin/reports/missing-monthly?month=January%209900", headers=headers)
     assert res.status_code == 200, res.text
     assert isinstance(res.json(), list)
+
+
+def test_dashboard_pending_allotment_includes_active_without_therapist():
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case, CaseStatus
+
+    admin_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    pipeline = client.get("/api/v1/admin/cases/pipeline", headers=admin_headers)
+    assert pipeline.status_code == 200
+    needs_col = next((c for c in pipeline.json()["columns"] if c["id"] == "needs_therapist"), None)
+    case_id = needs_col["cases"][0]["id"] if needs_col and needs_col["cases"] else None
+    restore_assignment_ids: list[int] = []
+
+    if case_id is None:
+        with SessionLocal() as db:
+            case = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE)).first()
+            assert case is not None
+            case_id = case.id
+            for assignment in db.scalars(
+                select(CaseAssignment).where(
+                    CaseAssignment.case_id == case.id,
+                    CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                )
+            ).all():
+                restore_assignment_ids.append(assignment.id)
+                assignment.status = CaseAssignmentStatus.ENDED
+            db.commit()
+
+    try:
+        dash = client.get("/api/v1/admin/dashboard/summary", headers=admin_headers)
+        assert dash.status_code == 200, dash.text
+        body = dash.json()
+        queue_ids = {row["id"] for row in body["pending_allotment_queue"]}
+        assert case_id in queue_ids
+        matched = next(row for row in body["pending_allotment_queue"] if row["id"] == case_id)
+        assert matched["allotment_kind"] == "needs_therapist"
+        assert matched["status"] == "ACTIVE"
+        assert body["pending_allotment"] >= body["status_breakdown"]["PENDING_ALLOTMENT"] + 1
+    finally:
+        if restore_assignment_ids:
+            with SessionLocal() as db:
+                for assignment_id in restore_assignment_ids:
+                    assignment = db.get(CaseAssignment, assignment_id)
+                    if assignment:
+                        assignment.status = CaseAssignmentStatus.ACTIVE
+                db.commit()
+
+
+def test_admin_duration_outlier_export_xlsx():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.get(
+        "/api/v1/admin/session-logs/duration-outliers/export/xlsx",
+        params={"month": "2026-08"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert "spreadsheetml" in res.headers.get("content-type", "")
+    wb = openpyxl.load_workbook(BytesIO(res.content))
+    assert wb.active.title == "Duration outliers"
+
+
+def test_meeting_create_rejects_time_outside_cm_availability():
+    from datetime import date
+
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+
+    cm_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert cases.status_code == 200, cases.text
+    case_id = cases.json()[0]["id"]
+
+    with SessionLocal() as db:
+        case = db.get(Case, case_id)
+        assert case is not None
+        cm_user_id = case.case_manager_user_id
+
+    target = future_meeting_date(21)
+    weekday = date.fromisoformat(target).weekday()
+    save_res = client.put(
+        f"/api/v1/users/{cm_user_id}/availability",
+        headers=cm_headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday,
+                    "start_time": "14:00",
+                    "end_time": "16:00",
+                    "slot_granularity_minutes": 30,
+                },
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert save_res.status_code == 200, save_res.text
+
+    rejected = client.post(
+        "/api/v1/meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": target,
+            "scheduled_time": "10:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "title": "Outside availability",
+            "meeting_url": "https://meet.google.com/test-outside-slot",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+            "invite_client": False,
+        },
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert "available slots" in rejected.json()["detail"].lower()
+
+    allowed = client.post(
+        "/api/v1/meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": target,
+            "scheduled_time": "14:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "title": "Inside availability",
+            "meeting_url": "https://meet.google.com/test-inside-slot",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+            "invite_client": False,
+        },
+    )
+    assert allowed.status_code == 201, allowed.text
+
+    restore_res = client.put(
+        f"/api/v1/users/{cm_user_id}/availability",
+        headers=cm_headers,
+        json={
+            "rules": [
+                {
+                    "weekday": weekday_index,
+                    "start_time": "10:00",
+                    "end_time": "19:00",
+                    "slot_granularity_minutes": 30,
+                }
+                for weekday_index in range(5)
+            ],
+            "exceptions": [],
+            "booking_policy": {
+                "min_notice_minutes": 120,
+                "max_days_ahead": 60,
+                "buffer_minutes": 0,
+                "allowed_durations": [30, 45, 60, 90],
+            },
+        },
+    )
+    assert restore_res.status_code == 200, restore_res.text
+
+
+def test_therapist_meetings_export_matches_scoped_list():
+    th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
+    listed = client.get("/api/v1/meetings", headers=th_headers)
+    assert listed.status_code == 200, listed.text
+    meetings = listed.json()
+
+    export = client.get("/api/v1/meetings/export?format=csv", headers=th_headers)
+    assert export.status_code == 200, export.text
+    lines = [line for line in export.text.strip().splitlines() if line.strip()]
+    assert len(lines) == len(meetings) + 1
+    for meeting in meetings:
+        assert str(meeting["id"]) in export.text

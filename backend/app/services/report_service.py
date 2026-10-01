@@ -92,15 +92,24 @@ def user_can_admin_override_publish(user: User) -> bool:
 def publish_workflow_flags(db: Session, user: User, report: MonthlyReport, case: Case | None) -> dict:
     now = _utc_now()
     scoped = case is not None and case_scope_check(db, user, case)
+    mentor_only = False
+    if case is not None:
+        from app.services.mentor_scope_service import is_mentor_only_on_case
+
+        mentor_only = is_mentor_only_on_case(db, user, case)
     return {
         "submitted_for_review_at": report.submitted_for_review_at,
         "cm_published_at": report.cm_published_at,
         "admin_published_at": report.admin_published_at,
-        "can_cm_publish": scoped and user_can_cm_publish(user) and can_cm_publish(report),
+        "can_cm_publish": scoped
+        and not mentor_only
+        and user_can_cm_publish(user)
+        and can_cm_publish(report),
         "can_admin_override_publish": scoped
         and user_can_admin_override_publish(user)
         and can_admin_override_publish(report, now),
         "days_until_admin_override": days_until_admin_override(report, now),
+        "access_as_mentor": mentor_only,
     }
 
 
@@ -127,6 +136,12 @@ def publish_monthly_to_parent(
     else:
         if not user_can_cm_publish(user):
             raise PermissionError("Case manager publish permission required")
+        case = db.get(Case, report.case_id) if report.case_id else None
+        if case is not None:
+            from app.services.mentor_scope_service import is_mentor_only_on_case
+
+            if is_mentor_only_on_case(db, user, case):
+                raise PermissionError("Mentor access is view-only — publishing is not allowed")
         if not can_cm_publish(report):
             raise ValueError("Report is not ready for case manager publish")
         report.cm_published_at = now
@@ -161,20 +176,25 @@ def notify_parents_monthly_report_published(
     from app.models.user import User
     from app.services.email.service import enqueue_report_published_email
 
-    rows = db.execute(
-        select(User.email, User.full_name)
-        .select_from(parent_child_link)
-        .join(ParentGuardian, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
-        .join(User, ParentGuardian.user_id == User.id)
+    rows = db.scalars(
+        select(User)
+        .join(ParentGuardian, ParentGuardian.user_id == User.id)
+        .join(parent_child_link, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
         .where(parent_child_link.c.child_id == case.child_id)
     ).all()
     child_name = case.child.full_name if case.child else "your child"
     report_label = report.month or f"Report #{report.id}"
     portal_url = f"{settings.frontend_url.rstrip('/')}/parent/reports"
     log_ids: list[int] = []
-    for email, full_name in rows:
-        if not email:
+    from app.services.parent_notification_preferences import parent_wants_email
+
+    for parent_user in rows:
+        if not parent_user.email:
             continue
+        if not parent_wants_email(parent_user, "reports"):
+            continue
+        email = parent_user.email
+        full_name = parent_user.full_name
         payload = {
             "parent_name": full_name or "there",
             "child_name": child_name,

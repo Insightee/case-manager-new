@@ -124,7 +124,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
 
         frozen = billing_period_snapshot_service.get_closed_payout_preview_rows(db, ym)
         if frozen is not None:
-            return frozen
+            return finance_payout_preview_service.apply_therapist_total_column(frozen)
         return finance_payout_preview_service.payout_preview_rows(db, ym)
 
     if report_key == "pending-payout-approvals":
@@ -225,13 +225,15 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         for cid in case_ids:
             rec = billing_ledger_service.reconcile_month(db, case_id=cid, billing_month=ym)
             out.append(
-                {
-                    "caseId": rec["caseId"],
-                    "clientTotalInr": rec["ledgerBillableTotalInr"],
-                    "therapistTotalInr": rec["therapistPayoutTotalInr"],
-                    "marginInr": rec["marginInr"],
-                    "sessionCount": rec["sessionCount"],
-                }
+                billing_period_snapshot_service.enrich_margin_row(
+                    {
+                        "caseId": rec["caseId"],
+                        "clientTotalInr": rec["ledgerBillableTotalInr"],
+                        "therapistTotalInr": rec["therapistPayoutTotalInr"],
+                        "marginInr": rec["marginInr"],
+                        "sessionCount": rec["sessionCount"],
+                    }
+                )
             )
         return out
 

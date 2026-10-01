@@ -55,6 +55,8 @@ class DailyLog(Base):
     late_addition: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     late_reason: Mapped[Optional[str]] = mapped_column(Text)
     review_note: Mapped[Optional[str]] = mapped_column(Text)
+    mentor_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    mentor_reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     resubmitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     visibility_status: Mapped[str] = mapped_column(
         String(32), default=VisibilityStatus.INTERNAL_ONLY.value, index=True

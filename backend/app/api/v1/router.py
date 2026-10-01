@@ -8,6 +8,8 @@ from app.api.v1 import (
     finance_writable,
     hr_ops,
     admin,
+    admin_integration_clients,
+    admin_integration_webhooks,
     admin_support,
     assignment_acceptance,
     assignments,
@@ -15,6 +17,7 @@ from app.api.v1 import (
     therapist_transitions,
     attachments,
     auth,
+    integrations,
     notifications,
     cases,
     meetings,
@@ -23,6 +26,7 @@ from app.api.v1 import (
     incidents,
     invoices,
     leave,
+    staff_attendance,
     parent,
     reports,
     sessions,
@@ -42,11 +46,16 @@ from app.api.v1 import (
     session_absence,
     memos,
     clinical_reports,
+    calendar,
+    users,
 )
 from app.core.feature_flags import require_billing, require_clinical_reports_engine
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
+api_router.include_router(integrations.router)
+api_router.include_router(admin_integration_clients.router)
+api_router.include_router(admin_integration_webhooks.router)
 api_router.include_router(notifications.router)
 api_router.include_router(meetings.router)
 api_router.include_router(meetings.compat_router)
@@ -94,6 +103,7 @@ api_router.include_router(support.router)
 api_router.include_router(attachments.router)
 api_router.include_router(incidents.router)
 api_router.include_router(leave.router)
+api_router.include_router(staff_attendance.router)
 api_router.include_router(slots.router)
 api_router.include_router(scheduling.router)
 api_router.include_router(booking.router)
@@ -105,6 +115,8 @@ api_router.include_router(files.router)
 api_router.include_router(case_documents.router)
 api_router.include_router(case_documents.documents_router)
 api_router.include_router(memos.router)
+api_router.include_router(calendar.router)
+api_router.include_router(users.router)
 api_router.include_router(
     clinical_reports.router,
     dependencies=[Depends(require_clinical_reports_engine)],

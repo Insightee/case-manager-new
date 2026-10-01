@@ -6,7 +6,6 @@ import { caseLabel, caseServiceLine, formatLeaveRecordSplit } from '../../lib/le
 import { TherapistLeaveRequestFields } from '../therapist/TherapistLeaveRequestFields.jsx'
 import { StatusBadge } from '../admin-portal/ui/index.js'
 import { TherapistLeaveBalancePanel } from './TherapistLeaveBalancePanel.jsx'
-import { BulkLeaveUpload } from './BulkLeaveUpload.jsx'
 
 const EMPTY_FORM = {
   case_ids: [],
@@ -17,34 +16,61 @@ const EMPTY_FORM = {
   billing_category: 'PAID',
 }
 
-export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
+const MIN_SEARCH_LEN = 2
+
+export function ManualLeaveTab({ year: yearProp, onYearChange, onLeaveRecorded }) {
   const year = yearProp || new Date().getFullYear()
-  const [therapists, setTherapists] = useState([])
   const [therapistSearch, setTherapistSearch] = useState('')
   const [therapistId, setTherapistId] = useState('')
+  const [selectedTherapistSnapshot, setSelectedTherapistSnapshot] = useState(null)
   const [cases, setCases] = useState([])
   const [leaves, setLeaves] = useState([])
   const [balance, setBalance] = useState(null)
-  const [loadingTherapists, setLoadingTherapists] = useState(true)
+  const [loadingTherapists, setLoadingTherapists] = useState(false)
   const [loadingContext, setLoadingContext] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [therapistResults, setTherapistResults] = useState([])
+
+  const searchReady = therapistSearch.trim().length >= MIN_SEARCH_LEN
 
   useEffect(() => {
-    setLoadingTherapists(true)
-    const q = therapistSearch.trim() ? `?search=${encodeURIComponent(therapistSearch.trim())}` : ''
-    apiFetch(`/api/v1/hr/therapists${q}`)
-      .then((rows) => setTherapists(Array.isArray(rows) ? rows : []))
-      .catch(() => setTherapists([]))
-      .finally(() => setLoadingTherapists(false))
-  }, [therapistSearch])
+    if (!searchReady) {
+      setTherapistResults([])
+      setLoadingTherapists(false)
+      return undefined
+    }
 
-  const selectedTherapist = useMemo(
-    () => therapists.find((t) => String(t.id) === String(therapistId)) || null,
-    [therapists, therapistId],
-  )
+    const q = encodeURIComponent(therapistSearch.trim())
+    let cancelled = false
+    setLoadingTherapists(true)
+    apiFetch(`/api/v1/hr/therapists?search=${q}`)
+      .then((rows) => {
+        if (!cancelled) {
+          const list = Array.isArray(rows) ? rows : []
+          setTherapistResults(list)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTherapistResults([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTherapists(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [therapistSearch, searchReady])
+
+  const selectedTherapist = useMemo(() => {
+    if (selectedTherapistSnapshot && String(selectedTherapistSnapshot.id) === String(therapistId)) {
+      return selectedTherapistSnapshot
+    }
+    return therapistResults.find((t) => String(t.id) === String(therapistId)) || selectedTherapistSnapshot
+  }, [therapistResults, therapistId, selectedTherapistSnapshot])
 
   const loadContext = useCallback(async () => {
     if (!therapistId) {
@@ -91,6 +117,23 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
       })),
     [cases],
   )
+
+  function selectTherapist(therapist) {
+    setTherapistId(String(therapist.id))
+    setSelectedTherapistSnapshot(therapist)
+    setSuccess('')
+    setError('')
+  }
+
+  function clearTherapist() {
+    setTherapistId('')
+    setSelectedTherapistSnapshot(null)
+    setTherapistSearch('')
+    setTherapistResults([])
+    setForm(EMPTY_FORM)
+    setSuccess('')
+    setError('')
+  }
 
   async function submitManualLeave(e) {
     e.preventDefault()
@@ -152,61 +195,95 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
     }
   }
 
+  const yearOptions = [year - 1, year, year + 1]
+
   return (
     <div className="leave-mgmt-manual">
-      <BulkLeaveUpload
-        onApplied={() => {
-          if (therapistId) loadContext()
-          onLeaveRecorded?.()
-        }}
-      />
+      <section className="leave-mgmt-manual__search-panel">
+        <div className="leave-mgmt-manual__search-head">
+          <label className="leave-mgmt-manual__year-field">
+            <span>Balance year</span>
+            <select
+              className="admin-select"
+              value={year}
+              onChange={(e) => onYearChange?.(Number(e.target.value))}
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-      <div className="leave-mgmt-manual__picker">
-        <label className="leave-mgmt-manual__field">
-          <span>Therapist</span>
+        <label className="leave-mgmt-manual__search-field">
+          <span>Find therapist</span>
           <input
             type="search"
-            className="admin-input"
+            className="admin-input leave-mgmt-manual__search-input"
             placeholder="Search by name or email…"
             value={therapistSearch}
             onChange={(e) => setTherapistSearch(e.target.value)}
-            aria-label="Search therapists"
+            aria-label="Search therapists by name or email"
+            autoComplete="off"
           />
         </label>
-        <label className="leave-mgmt-manual__field">
-          <span>Select therapist</span>
-          <select
-            className="admin-select"
-            value={therapistId}
-            onChange={(e) => setTherapistId(e.target.value)}
-            disabled={loadingTherapists}
-          >
-            <option value="">{loadingTherapists ? 'Loading…' : 'Choose therapist…'}</option>
-            {therapists.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.full_name} · {t.email}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+
+        {!searchReady ? (
+          <p className="leave-mgmt-manual__results-empty">
+            Type at least {MIN_SEARCH_LEN} characters to search by name or email.
+          </p>
+        ) : loadingTherapists ? (
+          <p className="leave-mgmt-manual__results-empty">Searching…</p>
+        ) : therapistResults.length === 0 ? (
+          <p className="leave-mgmt-manual__results-empty">No therapists match that search.</p>
+        ) : (
+          <ul className="leave-mgmt-manual__results" role="listbox" aria-label="Therapist search results">
+            {therapistResults.map((t) => {
+              const isSelected = String(t.id) === String(therapistId)
+              return (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    className={`leave-mgmt-manual__result${isSelected ? ' is-selected' : ''}`}
+                    onClick={() => selectTherapist(t)}
+                  >
+                    <span className="leave-mgmt-manual__result-name">{t.full_name}</span>
+                    <span className="leave-mgmt-manual__result-email">{t.email}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
 
       {!therapistId ? (
-        <p className="admin-muted leave-mgmt-manual__hint">Select a therapist to view cases, leave history, and record leave manually.</p>
+        <p className="admin-muted leave-mgmt-manual__hint">
+          Search and select a therapist to view cases, leave history, and record leave manually.
+        </p>
       ) : loadingContext ? (
         <div className="admin-skeleton" style={{ minHeight: 120 }} />
       ) : (
         <>
-          {selectedTherapist ? (
-            <p className="leave-mgmt-manual__therapist-name">
-              {selectedTherapist.full_name}
-              <span className="admin-muted"> · Leave credit {leaveCreditPendingLabel(balance)}</span>
+          <div className="leave-mgmt-manual__selected-bar">
+            <p className="leave-mgmt-manual__selected-label">
+              {selectedTherapist?.full_name || 'Therapist'}
+              <span className="leave-mgmt-manual__selected-meta">
+                {' '}
+                · Leave credit {leaveCreditPendingLabel(balance)}
+              </span>
             </p>
-          ) : null}
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearTherapist}>
+              Change therapist
+            </button>
+          </div>
 
           <div className="leave-mgmt-manual__grid">
             <section className="leave-mgmt-manual__panel">
-              <h3 className="leave-mgmt-manual__panel-title">Leave credit</h3>
               <TherapistLeaveBalancePanel
                 therapistUserId={Number(therapistId)}
                 year={year}

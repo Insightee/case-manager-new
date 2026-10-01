@@ -43,6 +43,9 @@ def test_build_case_records_rows_includes_required_fields(client: TestClient):
         assert match, "Expected seeded case in export rows"
         row = match[0]
         assert "external_client_id" in row
+        assert "zoho_id" in row
+        assert "client_name" in row
+        assert "parent_name" in row
         assert "therapist_external_id" in row
         assert "case_create_date" in row
         assert "session_log_count" in row
@@ -64,8 +67,42 @@ def test_cases_records_export_csv_endpoint(client: TestClient):
     reader = csv.DictReader(io.StringIO(res.text))
     headers = reader.fieldnames or []
     assert "Case Id" in headers
+    assert "Zoho id" in headers
     assert "Client id" in headers
+    assert "Client name" in headers
+    assert "Parent name" in headers
+    assert headers.index("Parent name") == headers.index("Client name") + 1
     assert "Approval pending" in headers
     assert "Approved child absence" in headers
     rows = list(reader)
     assert len(rows) >= 1
+
+
+def test_cases_records_export_csv_filtered_by_case_ids(client: TestClient):
+    token = _login()
+    db = next(get_db())
+    case_id = None
+    case_code = None
+    try:
+        case = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE).limit(1)).first()
+        assert case is not None
+        case_id = case.id
+        case_code = case.case_code
+        user = db.scalars(select(User).where(User.email == "superadmin@demo.com")).first()
+        all_rows = export_svc.build_case_records_rows(db, user)
+        assert len(all_rows) >= 2, "Need multiple cases to verify filtering"
+        filtered = export_svc.build_case_records_rows(db, user, case_ids=[case_id])
+        assert len(filtered) == 1
+        assert filtered[0]["case_code"] == case_code
+    finally:
+        db.close()
+
+    res = client.get(
+        f"/api/v1/admin/cases/export/records.csv?case_ids={case_id}",
+        headers=_auth(token),
+    )
+    assert res.status_code == 200, res.text
+    reader = csv.DictReader(io.StringIO(res.text))
+    rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["Case Id"] == case_code

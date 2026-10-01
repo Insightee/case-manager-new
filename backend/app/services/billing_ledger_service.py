@@ -1128,56 +1128,29 @@ def post_pending_finance_charge(db: Session, ledger_id: int, *, user_id: int, no
 
 
 def consume_package_session(db: Session, *, case_id: int, session: TherapySession) -> BillingLedger | None:
-    if not _ledger_writes_allowed():
-        return None
-    from app.models.client_billing import CarePackage, CarePackageStatus
+    """Compatibility wrapper — package SOT updates via apply_package_effect (DEC-01)."""
+    from app.services.package_effect_service import apply_package_effect, case_uses_package_sot
 
-    # Idempotency guard — do not double-consume for the same session.
-    existing_consumption = db.scalars(
+    case = db.get(Case, case_id)
+    if not case or not case_uses_package_sot(case):
+        return None
+    result = apply_package_effect(
+        db,
+        case_id=case_id,
+        session=session,
+        effect="consume",
+        require_times=False,  # absence / legacy callers may not have clock times
+    )
+    ledger_id = result.get("ledger_id")
+    if ledger_id:
+        return db.get(BillingLedger, ledger_id)
+    existing = db.scalars(
         select(BillingLedger).where(
             BillingLedger.source_type == LedgerSourceType.PACKAGE_CONSUMPTION,
             BillingLedger.session_id == session.id,
         )
     ).first()
-    if existing_consumption:
-        return existing_consumption
-
-    pkg = db.scalars(
-        select(CarePackage)
-        .where(
-            CarePackage.case_id == case_id,
-            CarePackage.status == CarePackageStatus.ACTIVE,
-        )
-        .order_by(CarePackage.id.desc())
-    ).first()
-    if not pkg or pkg.used_sessions >= pkg.total_sessions:
-        return None
-    pkg.used_sessions += 1
-    if pkg.used_sessions >= pkg.total_sessions:
-        pkg.status = CarePackageStatus.EXHAUSTED
-    case = db.get(Case, case_id)
-    rule = _resolve_rule(db, case) if case else None
-    row = BillingLedger(
-        case_id=case_id,
-        parent_user_id=pkg.parent_user_id,
-        therapist_user_id=session.therapist_user_id,
-        product_billing_rule_id=pkg.product_billing_rule_id or (rule.id if rule else None),
-        source_type=LedgerSourceType.PACKAGE_CONSUMPTION,
-        source_id=session.id,
-        session_id=session.id,
-        care_package_id=pkg.id,
-        ledger_month=_ledger_month(session.scheduled_date),
-        event_date=session.scheduled_date,
-        event_type=LedgerEventType.PACKAGE_CONSUMPTION,
-        billable_status=BillableStatus.BILLABLE,
-        quantity=1,
-        rate_inr=0,
-        amount_inr=0,
-        total_inr=0,
-    )
-    db.add(row)
-    db.flush()
-    return row
+    return existing
 
 
 # ---------------------------------------------------------------------------

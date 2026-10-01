@@ -19,6 +19,58 @@ from app.services.email.service import (
 from app.services import password_reset_service
 
 
+def consume_pending_portal_invites(db: Session, user: User, *, reason: str = "activated") -> None:
+    """Mark open portal invites consumed; apply invite role when the user has none yet."""
+    from app.core.rbac_access import sync_user_access_fields
+
+    now = datetime.now(timezone.utc)
+    email_l = user.email.lower().strip()
+    rows = list(
+        db.scalars(
+            select(InviteToken)
+            .where(
+                InviteToken.email == email_l,
+                InviteToken.used_at.is_(None),
+            )
+            .order_by(InviteToken.id.desc())
+        ).all()
+    )
+    if not rows:
+        return
+
+    latest = rows[0]
+    invite_meta = latest.invite_metadata or {}
+
+    for inv in rows:
+        inv.used_at = now
+        meta = dict(inv.invite_metadata or {})
+        meta["consumed_reason"] = reason
+        inv.invite_metadata = meta
+
+    if not (user.role_names or []) and latest.role_name:
+        from app.services.role_registry_service import ensure_role
+
+        try:
+            role = ensure_role(db, latest.role_name)
+        except ValueError:
+            role = None
+        if role:
+            user.roles = [role]
+            sync_user_access_fields(
+                user,
+                role_names=[latest.role_name],
+                module_assignments=latest.module_assignments or [],
+                module_access_grants=invite_meta.get("module_access_grants"),
+                feature_overrides=invite_meta.get("feature_overrides"),
+                view_only=bool(invite_meta.get("view_only", False)),
+                db=db,
+            )
+        if invite_meta.get("department"):
+            user.department = invite_meta["department"]
+
+    db.flush()
+
+
 def login_ready(user: User, db: Session | None = None) -> bool:
     """User can sign in with their chosen password (not a provisional invite-only account)."""
     if not user.is_active or not user.password_hash:
@@ -336,6 +388,7 @@ def activate_user_for_login(db: Session, user_id: int) -> dict:
     if not user:
         raise ValueError("User not found")
     user.is_active = True
+    consume_pending_portal_invites(db, user, reason="activate_for_login")
     db.flush()
     return _build_result(user, db=db, invite_sent=False, invite_error=None)
 

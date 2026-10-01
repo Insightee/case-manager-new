@@ -111,13 +111,10 @@ def renewal_preview(db: Session, pkg: CarePackage, case: Case) -> dict:
 
 
 def record_consumption(db: Session, *, care_package_id: int, sessions: int = 1) -> ClientPackageCycle | None:
-    cycle = get_active_cycle(db, care_package_id=care_package_id)
-    if not cycle:
-        return None
-    cycle.consumed_sessions = min(cycle.billed_sessions, cycle.consumed_sessions + sessions)
-    cycle.remaining_sessions = max(0, cycle.billed_sessions - cycle.consumed_sessions)
-    db.flush()
-    return cycle
+    """Non-authoritative cycle helper — DEC-01: do not use for remaining SOT; prefer care_packages."""
+    # Intentionally a no-op for remaining math until cycle epic. Keep signature for callers.
+    del db, care_package_id, sessions
+    return None
 
 
 def advance_cycle(db: Session, pkg: CarePackage, case: Case) -> ClientPackageCycle:

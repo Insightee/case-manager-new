@@ -1,18 +1,19 @@
 /**
- * Browser geolocation + OpenStreetMap reverse geocoding (no API key).
- * Geolocation requires HTTPS or http://localhost.
+ * Browser geolocation + reverse geocoding (no API key).
+ * The browser "Allow location" dialog only appears when getCurrentPosition
+ * runs in the same user-gesture turn. Do not query permission state first.
  */
 
 import { apiFetch } from './apiClient.js'
 
-function geolocationErrorMessage(error, { manualHint = true } = {}) {
+export function geolocationErrorMessage(error, { manualHint = true } = {}) {
   if (!error) return 'Could not get your location.'
   const suffix = manualHint ? ' You can type the address below — GPS is optional.' : ''
   switch (error.code) {
     case error.PERMISSION_DENIED:
-      return `Location permission denied. Allow location for this site in browser settings, then try again.${suffix}`
+      return `Location permission denied. Allow location for this site in the browser prompt or site settings, then try again.${suffix}`
     case error.POSITION_UNAVAILABLE:
-      return `Location unavailable. Check that system location services are on, or enter the address manually.${suffix}`
+      return `Location unavailable. Allow this site when the browser asks, and turn on device location services.${suffix}`
     case error.TIMEOUT:
       return `Location request timed out. Try again or enter the address manually.${suffix}`
     default:
@@ -20,54 +21,53 @@ function geolocationErrorMessage(error, { manualHint = true } = {}) {
   }
 }
 
-function requestPosition(options) {
+const PROMPT_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 25000,
+  maximumAge: 0,
+}
+
+function coordsFromPosition(pos) {
+  return {
+    latitude: pos.coords.latitude,
+    longitude: pos.coords.longitude,
+  }
+}
+
+/**
+ * Ask the browser for location. This is what shows the Allow / Block prompt.
+ * Must be called directly from a click — no await before this function starts
+ * the getCurrentPosition call.
+ */
+export function requestBrowserLocation(options = {}) {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       reject(new Error('Geolocation is not supported in this browser.'))
       return
     }
-    if (typeof window !== 'undefined' && !window.isSecureContext) {
-      reject(
-        new Error(
-          'Location requires a secure page. Open the app via https:// or http://localhost (not a plain IP address).',
-        ),
-      )
-      return
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, options)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve(coordsFromPosition(pos)),
+      (error) => reject(new Error(geolocationErrorMessage(error))),
+      { ...PROMPT_OPTIONS, ...options },
+    )
   })
 }
 
 export function getCurrentPosition(options = {}) {
-  const highAccuracy = {
+  return requestBrowserLocation({
     timeout: 20000,
-    maximumAge: 60000,
     ...options,
     enableHighAccuracy: true,
-  }
-  const lowAccuracy = {
-    timeout: 30000,
-    maximumAge: 300000,
-    ...options,
-    enableHighAccuracy: false,
-  }
-
-  return requestPosition(highAccuracy).then((pos) => ({
-    latitude: pos.coords.latitude,
-    longitude: pos.coords.longitude,
-  })).catch(async (firstErr) => {
-    const POSITION_UNAVAILABLE = 2
-    const TIMEOUT = 3
-    const retryable = firstErr?.code === POSITION_UNAVAILABLE || firstErr?.code === TIMEOUT
-    if (!retryable) {
-      throw new Error(geolocationErrorMessage(firstErr))
-    }
-    try {
-      const pos = await requestPosition(lowAccuracy)
-      return { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
-    } catch (secondErr) {
-      throw new Error(geolocationErrorMessage(secondErr))
-    }
+    maximumAge: 0,
+  }).catch((firstErr) => {
+    const retryable = /unavailable|timed out/i.test(firstErr?.message || '')
+    if (!retryable) throw firstErr
+    return requestBrowserLocation({
+      enableHighAccuracy: false,
+      timeout: 30000,
+      maximumAge: 0,
+      ...options,
+    })
   })
 }
 
@@ -87,7 +87,7 @@ export async function reverseGeocode(latitude, longitude) {
 }
 
 export async function resolveCurrentLocationAddress() {
-  const coords = await getCurrentPosition()
+  const coords = await requestBrowserLocation()
   let fields = {}
   try {
     fields = await reverseGeocode(coords.latitude, coords.longitude)

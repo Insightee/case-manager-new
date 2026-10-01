@@ -21,6 +21,22 @@ from app.models.user import User
 from app.services.admin_scope_service import team_case_access_clause
 from app.services.case_portal_visibility import portal_visible_case_status_filter
 
+_EMPTY_ZOHO_MARKERS = frozenset({"", "-", "—", "–", "n/a", "na", "none", "null"})
+
+
+def normalize_zoho_id(value: str | None) -> str | None:
+    text = (value or "").strip()
+    if not text or text.lower() in _EMPTY_ZOHO_MARKERS:
+        return None
+    return text[:64]
+
+
+def normalize_case_code(value: str | None) -> str | None:
+    text = (value or "").strip().upper()
+    if not text or text.lower() in _EMPTY_ZOHO_MARKERS:
+        return None
+    return text
+
 
 def _apply_module_filter(stmt, user: User):
     allowed = get_allowed_case_product_modules(user)
@@ -196,7 +212,7 @@ def list_cases_for_user(
     transition_case_ids = _cases_in_transition(db, [c.id for c in rows])
     items = []
     for c in rows:
-        item = case_to_read(c, db, resolve_therapist=False)
+        item = case_to_read(c, db, resolve_therapist=False, viewer=user)
         item["therapist_name"] = therapist_by_case.get(c.id)
         item["in_transition"] = c.id in transition_case_ids
         items.append(item)
@@ -222,24 +238,70 @@ def case_manager_contact(db: Session, case: Case) -> tuple[Optional[str], Option
     return cm.full_name, cm.email
 
 
+def _user_contact(db: Session, user_id: int | None) -> dict[str, Optional[str]] | None:
+    if not user_id:
+        return None
+    user = db.get(User, user_id)
+    if not user:
+        return None
+    return {
+        "name": user.full_name,
+        "phone": user.phone,
+        "email": user.email,
+    }
+
+
+def _active_assignment_contact(db: Session, case_id: int) -> dict[str, Optional[str]] | None:
+    assignment = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+        .limit(1)
+    ).first()
+    if not assignment:
+        return None
+    return _user_contact(db, assignment.therapist_user_id)
+
+
 def case_to_read(
     case: Case,
     db: Session | None = None,
     *,
     resolve_therapist: bool = True,
+    viewer: User | None = None,
 ) -> dict:
     service_addr = case_service_address_read(case)
     cm_name, cm_email = (None, None)
     therapist_name = None
+    parent_contact = None
+    therapist_contact = None
+    access_as_mentor = False
+    primary_parent_user_id = None
     if db is not None:
         cm_name, cm_email = case_manager_contact(db, case)
         if resolve_therapist:
             therapist_name = _active_therapist_names(db, [case.id]).get(case.id)
+        if case.child_id:
+            # Local import avoids a circular dependency with parent_service -> case_service.
+            from app.services import parent_service
+
+            parent_user_id = parent_service.primary_parent_user_id_for_child(db, case.child_id)
+            primary_parent_user_id = parent_user_id
+            parent_contact = _user_contact(db, parent_user_id)
+        therapist_contact = _active_assignment_contact(db, case.id)
+        if viewer is not None:
+            from app.services.mentor_scope_service import is_mentor_only_on_case
+
+            access_as_mentor = is_mentor_only_on_case(db, viewer, case)
     in_transition = bool(db and case.id in _cases_in_transition(db, [case.id]))
     return {
         "id": case.id,
         "case_code": case.case_code,
         "external_case_ref": case.external_case_ref,
+        "zoho_id": case.zoho_id,
         "child_id": case.child_id,
         "child_name": case.child.full_name if case.child else None,
         "therapist_name": therapist_name,
@@ -254,6 +316,10 @@ def case_to_read(
         "case_manager_user_id": case.case_manager_user_id,
         "case_manager_name": cm_name,
         "case_manager_email": cm_email,
+        "access_as_mentor": access_as_mentor,
+        "primary_parent_user_id": primary_parent_user_id,
+        "parent_contact": parent_contact,
+        "therapist_contact": therapist_contact,
         "notes": case.notes,
         "region": case.region,
         "operational_stage": case.operational_stage,

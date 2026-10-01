@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
+from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import User
 from app.services.admin_scope_service import apply_case_scope
 from app.services import case_service
@@ -48,6 +49,16 @@ def month_long_label(ym: str) -> str:
     return start.strftime("%B %Y")
 
 
+def export_generated_on_stamp() -> str:
+    """IST calendar date for download filenames and document titles (YYYY-MM-DD)."""
+    return datetime.now(IST).strftime("%Y-%m-%d")
+
+
+def export_filename_stem(report_key: str, *, generated_on: str | None = None) -> str:
+    stamp = generated_on or export_generated_on_stamp()
+    return f"{report_key}-{stamp}"
+
+
 def export_case_id(case: Case | None) -> str:
     if not case:
         return ""
@@ -69,6 +80,55 @@ def user_display_name(user: User | None) -> str:
     return (user.full_name or user.email or "").strip()
 
 
+def parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, Any]]:
+    """Map child_id → first linked parent {user_id, parent_name, parent_email}."""
+    if not child_ids:
+        return {}
+
+    rows = db.execute(
+        select(
+            parent_child_link.c.child_id,
+            User.id,
+            User.full_name,
+            User.email,
+        )
+        .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+        .join(User, User.id == ParentGuardian.user_id)
+        .where(parent_child_link.c.child_id.in_(child_ids))
+        .order_by(parent_child_link.c.child_id, ParentGuardian.id)
+    ).all()
+    out: dict[int, dict[str, Any]] = {}
+    for child_id, user_id, full_name, email in rows:
+        if child_id in out:
+            continue
+        out[child_id] = {
+            "user_id": user_id,
+            "parent_name": full_name or "",
+            "parent_email": email or "",
+        }
+    return out
+
+
+def case_people_export_fields(
+    case: Case | None,
+    *,
+    therapist: User | None = None,
+    parent_info: dict[str, Any] | None = None,
+    include_therapist: bool = True,
+) -> dict[str, str]:
+    """Standard Case / Child / Parent / Therapist identity columns for HR exports."""
+    parent = parent_info or {}
+    fields: dict[str, str] = {
+        "Case ID": export_case_id(case),
+        "Child Name": case_service.case_child_display_name(case) or "",
+        "Parent Name": str(parent.get("parent_name") or ""),
+    }
+    if include_therapist:
+        fields["Therapist Name"] = user_display_name(therapist)
+        fields["Therapist ID"] = export_therapist_id(therapist)
+    return fields
+
+
 def enum_value(value: Any) -> str:
     if value is None:
         return ""
@@ -77,12 +137,50 @@ def enum_value(value: Any) -> str:
     return str(value)
 
 
+def parse_int_list(value: int | str | list[int] | None) -> list[int] | None:
+    """Parse a single int, list of ints, or comma-separated string into ints.
+
+    Returns None when empty / unset. Used by HR report and meeting filters so
+    ``case_manager_user_id=1,2,3`` (and repeated query values coerced to a list)
+    work alongside legacy single-id callers.
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, list):
+        ids = [int(x) for x in value if x is not None and str(x).strip() != ""]
+        return ids or None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    ids: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        ids.append(int(part))
+    return ids or None
+
+
+def apply_case_manager_filter(stmt: Any, column: Any, case_manager_user_id: int | list[int] | None):
+    """Filter by one CM id (equality) or many (``IN_``). No-op when unset/empty."""
+    if case_manager_user_id is None:
+        return stmt
+    if isinstance(case_manager_user_id, list):
+        ids = [int(i) for i in case_manager_user_id if i is not None]
+        if not ids:
+            return stmt
+        return stmt.where(column.in_(ids))
+    return stmt.where(column == case_manager_user_id)
+
+
 def scoped_cases(
     db: Session,
     user: User | None,
     *,
     product_module: str | None = None,
-    case_manager_user_id: int | None = None,
+    case_manager_user_id: int | list[int] | None = None,
     active_only: bool = False,
 ) -> list[Case]:
     stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
@@ -90,8 +188,7 @@ def scoped_cases(
         stmt = apply_case_scope(stmt, user)
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
-    if case_manager_user_id:
-        stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
+    stmt = apply_case_manager_filter(stmt, Case.case_manager_user_id, case_manager_user_id)
     if active_only:
         stmt = stmt.where(Case.status == CaseStatus.ACTIVE)
     return list(db.scalars(stmt).all())
@@ -115,8 +212,123 @@ def assignment_therapist(db: Session, assignment: CaseAssignment | None) -> User
     return db.get(User, assignment.therapist_user_id)
 
 
+def cases_by_ids(db: Session, case_ids: set[int] | list[int]) -> dict[int, Case]:
+    """Batch-load cases with child for export identity columns."""
+    ids = {int(cid) for cid in case_ids if cid is not None}
+    if not ids:
+        return {}
+    rows = db.scalars(
+        select(Case).options(selectinload(Case.child)).where(Case.id.in_(ids))
+    ).all()
+    return {case.id: case for case in rows}
+
+
+def active_therapists_by_case(
+    db: Session, case_ids: set[int] | list[int]
+) -> dict[int, User]:
+    """Map case_id → active therapist user (latest active assignment wins)."""
+    ids = {int(cid) for cid in case_ids if cid is not None}
+    if not ids:
+        return {}
+    assign_rows = db.execute(
+        select(CaseAssignment.case_id, CaseAssignment.therapist_user_id)
+        .where(
+            CaseAssignment.case_id.in_(ids),
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).all()
+    therapist_id_by_case: dict[int, int] = {}
+    for case_id, therapist_user_id in assign_rows:
+        if case_id not in therapist_id_by_case:
+            therapist_id_by_case[case_id] = int(therapist_user_id)
+    if not therapist_id_by_case:
+        return {}
+    users = {
+        u.id: u
+        for u in db.scalars(
+            select(User).where(User.id.in_(set(therapist_id_by_case.values())))
+        ).all()
+    }
+    return {
+        case_id: users[tid]
+        for case_id, tid in therapist_id_by_case.items()
+        if tid in users
+    }
+
+
+def clip_assignment_to_month(
+    assign_start: date,
+    assign_end: date | None,
+    month_start: date,
+    month_end: date,
+) -> tuple[date, date] | None:
+    """Inclusive clip of an assignment window into a month. None if no overlap."""
+    end = assign_end if assign_end is not None else month_end
+    start = max(assign_start, month_start)
+    end = min(end, month_end)
+    if start > end:
+        return None
+    return start, end
+
+
+def assignment_segments_for_month(
+    db: Session,
+    case_ids: list[int] | set[int],
+    month_start: date,
+    month_end: date,
+) -> dict[int, list[dict[str, Any]]]:
+    """
+    Case → assignment slices overlapping the month (ACTIVE/ENDED/TRANSFERRED).
+
+    Each segment: assignment, therapist_user_id, start, end (clipped inclusive).
+    Cases with no overlapping history get no entry (caller may fall back).
+    """
+    ids = [int(cid) for cid in case_ids if cid is not None]
+    out: dict[int, list[dict[str, Any]]] = {cid: [] for cid in ids}
+    if not ids:
+        return {}
+
+    rows = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id.in_(ids),
+            CaseAssignment.status.in_(
+                [
+                    CaseAssignmentStatus.ACTIVE,
+                    CaseAssignmentStatus.ENDED,
+                    CaseAssignmentStatus.TRANSFERRED,
+                ]
+            ),
+            CaseAssignment.start_date <= month_end,
+        )
+        .order_by(CaseAssignment.case_id, CaseAssignment.start_date, CaseAssignment.id)
+    ).all()
+
+    for assign in rows:
+        if assign.end_date is not None and assign.end_date < month_start:
+            continue
+        clipped = clip_assignment_to_month(
+            assign.start_date, assign.end_date, month_start, month_end
+        )
+        if not clipped:
+            continue
+        out.setdefault(assign.case_id, []).append(
+            {
+                "assignment": assign,
+                "therapist_user_id": assign.therapist_user_id,
+                "start": clipped[0],
+                "end": clipped[1],
+            }
+        )
+    return {cid: segs for cid, segs in out.items() if segs}
+
+
 def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
-    """Flatten locked assignment billing snapshot for HR export rows."""
+    """Flatten locked assignment billing snapshot for HR export rows.
+
+    Always presents lumpsum INR pay — never legacy PERCENTAGE / \"share\" wording.
+    """
     if not snapshot:
         return {
             "Previous Billing Type": "",
@@ -138,13 +350,17 @@ def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
         amount = snapshot.get("package_amount_inr")
         client_rate = f"₹{amount} / {count} sessions" if amount is not None and count else ""
 
-    comp_mode = snapshot.get("compensation_mode") or ""
-    if comp_mode == "FIXED_LUMP":
-        pay = snapshot.get("therapist_fixed_pay_inr")
-        therapist_pay = f"₹{pay} fixed" if pay is not None else ""
-    else:
+    # Prefer fixed lump; fall back to legacy share column (already INR). Never label as %.
+    pay = snapshot.get("therapist_fixed_pay_inr")
+    if pay is None or float(pay or 0) <= 0:
         pay = snapshot.get("pay_share_amount_inr")
-        therapist_pay = f"₹{pay} share" if pay is not None else ""
+    therapist_pay = f"₹{pay} lumpsum" if pay is not None and float(pay or 0) > 0 else ""
+
+    raw_mode = (snapshot.get("compensation_mode") or "").strip()
+    if raw_mode in ("", "PERCENTAGE"):
+        comp_mode_label = "FIXED LUMP" if therapist_pay else ""
+    else:
+        comp_mode_label = raw_mode.replace("_", " ")
 
     package_amount = ""
     if billing_type == "PACKAGE" and snapshot.get("package_amount_inr") is not None:
@@ -154,7 +370,7 @@ def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
         "Previous Billing Type": billing_type.replace("_", " "),
         "Previous Client Rate": client_rate,
         "Previous Package Amount": package_amount,
-        "Previous Compensation Mode": comp_mode.replace("_", " "),
+        "Previous Compensation Mode": comp_mode_label,
         "Previous Therapist Pay": therapist_pay,
     }
 
@@ -224,26 +440,29 @@ def _leave_days_overlap_month(
     db: Session,
     leaves: list[TherapistLeave],
     ym: str,
+    *,
+    case_id: int | None = None,
 ) -> dict[str, int]:
-    from app.services import leave_service
-    from app.services.leave_policy_service import _paid_unpaid_for_leave
+    from app.services import leave_dates_service as leave_dates
+    from app.services.leave_policy_service import (
+        allocations_for_leave,
+        month_paid_unpaid_from_allocations,
+    )
 
     start, end = month_bounds(ym)
-    year = int(ym.split("-")[0])
     paid = unpaid = 0
     for lv in leaves:
-        p, u = _paid_unpaid_for_leave(db, lv, year)
-        overlap_start = max(lv.start_date, start)
-        overlap_end = min(lv.end_date, end)
-        if overlap_end < overlap_start:
-            continue
-        total = leave_service.leave_day_count(overlap_start, overlap_end)
-        if total <= 0:
-            continue
-        full = leave_service.leave_day_count(lv.start_date, lv.end_date) or 1
-        ratio = total / full
-        paid += round(p * ratio)
-        unpaid += round(u * ratio)
+        allocations = allocations_for_leave(db, lv)
+        if case_id is not None:
+            case_days = set(leave_dates.billable_leave_dates(db, lv, case_id=case_id))
+            allocations = [item for item in allocations if item.day in case_days]
+        month_paid, month_unpaid = month_paid_unpaid_from_allocations(
+            allocations,
+            start,
+            end,
+        )
+        paid += month_paid
+        unpaid += month_unpaid
     return {"paid": paid, "unpaid": unpaid, "carry_forward": 0}
 
 
@@ -281,8 +500,12 @@ def leave_days_in_month_for_case(
             TherapistLeave.end_date >= start,
         )
     ).all()
-    scoped = [lv for lv in leaves if leave_applies_to_case(lv, case_id)]
-    return _leave_days_overlap_month(db, scoped, ym)
+    scoped = [
+        lv
+        for lv in leaves
+        if leave_applies_to_case(lv, case_id) or (not lv.case_id and not lv.case_ids)
+    ]
+    return _leave_days_overlap_month(db, scoped, ym, case_id=case_id)
 
 
 def is_shadow_case(case: Case | None) -> bool:

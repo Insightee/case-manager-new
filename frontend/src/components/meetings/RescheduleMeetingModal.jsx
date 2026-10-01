@@ -4,7 +4,8 @@ import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { MeetingAvailabilitySlots } from './MeetingAvailabilitySlots.jsx'
 import { MODAL_INPUT_STYLE, MODAL_LABEL_STYLE } from './meetingConstants.js'
-import { buildMeetingsAvailabilityQuery, meetingDisplayTitle } from './meetingUtils.js'
+import { buildSharedAvailabilityQuery, meetingDisplayTitle } from './meetingUtils.js'
+import './meetings-mobile.css'
 
 export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
   const [form, setForm] = useState({
@@ -29,17 +30,12 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
       return
     }
     setSlotsLoading(true)
-    const adminIds = meeting.admin_user_ids?.length
-      ? meeting.admin_user_ids
-      : (meeting.attendees || []).filter((a) => a.role === 'admin').map((a) => a.user_id)
-    const qs = buildMeetingsAvailabilityQuery({
+    const qs = buildSharedAvailabilityQuery({
       targetDate: form.scheduled_date,
       durationMinutes: form.duration_minutes,
-      caseManagerId: meeting.case_manager_user_id,
-      therapistId: meeting.therapist_user_id,
-      adminIds,
+      userIds: meeting.case_manager_user_id ? [meeting.case_manager_user_id] : [],
     })
-    apiFetch(`/api/v1/meetings/availability?${qs}`)
+    apiFetch(`/api/v1/calendar/availability?${qs}`)
       .then(setSlots)
       .catch(() => setSlots(null))
       .finally(() => setSlotsLoading(false))
@@ -47,9 +43,6 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
     form.scheduled_date,
     form.duration_minutes,
     meeting.case_manager_user_id,
-    meeting.therapist_user_id,
-    meeting.admin_user_ids,
-    meeting.attendees,
   ])
 
   async function submit(e) {
@@ -97,10 +90,10 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px' }}>Reschedule meeting</h2>
-        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 16px' }}>
+    <div className="meetings-modal-backdrop">
+      <div className="meetings-modal-panel">
+        <h2 className="meetings-modal-panel__title">Reschedule meeting</h2>
+        <p className="meetings-modal-panel__subtitle">
           {meetingDisplayTitle(meeting) || meeting.child_name || 'Case manager meeting'}
         </p>
         {error ? (
@@ -109,7 +102,7 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
           </p>
         ) : null}
         <form onSubmit={submit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          <div className="meetings-modal-form-grid">
             <label style={MODAL_LABEL_STYLE}>
               New date *
               <input
@@ -140,6 +133,11 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
             onSelectTime={(time) => set('scheduled_time', time)}
             onSelectDate={(date) => set('scheduled_date', date)}
           />
+          {slots?.freebusy_stale ? (
+            <p style={{ margin: '-6px 0 12px', fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 12px' }}>
+              Google Calendar was temporarily unavailable for at least one attendee, so these slots were calculated from local availability first.
+            </p>
+          ) : null}
 
           <label style={MODAL_LABEL_STYLE}>
             Reason for reschedule *
@@ -152,7 +150,7 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
             />
           </label>
 
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <div className="meetings-modal-actions">
             <button
               type="submit"
               disabled={saving}

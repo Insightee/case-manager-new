@@ -6,8 +6,8 @@ import './therapist-leave.css'
 
 /**
  * Shared leave request fields — case selection, dates, split preview, parent consultation.
- * When hideLeaveCreditDetails is true (therapist migration UI), paid/unpaid radios and
- * credit copy are hidden; billing_category is still auto-set for the backend.
+ * When hideLeaveCreditDetails is true, credit balance copy is hidden; paid/unpaid radios
+ * still show for shadow so therapists can choose (paid default).
  */
 export function TherapistLeaveRequestFields({
   assignedCases = [],
@@ -46,8 +46,8 @@ export function TherapistLeaveRequestFields({
   const creditsAvailable =
     hasShadowSelection && isLeaveBalanceUpdated(leaveBalance) && Number(creditPending) > 0
   const showLeaveType = hasShadowSelection
-  const leaveTypeLockedPaid = showLeaveType && creditsAvailable
-  const canChooseUnpaid = showLeaveType && !creditsAvailable
+  const canChoosePaid = showLeaveType && creditsAvailable
+  const forceUnpaid = showLeaveType && !creditsAvailable
 
   useEffect(() => {
     if (!onBillingCategoryChange) return
@@ -55,14 +55,14 @@ export function TherapistLeaveRequestFields({
       if (billingCategory !== 'UNPAID') onBillingCategoryChange('UNPAID')
       return
     }
-    if (leaveTypeLockedPaid && billingCategory !== 'PAID') {
-      onBillingCategoryChange('PAID')
+    if (forceUnpaid && billingCategory !== 'UNPAID') {
+      onBillingCategoryChange('UNPAID')
       return
     }
-    if (canChooseUnpaid && billingCategory === 'PAID') {
-      onBillingCategoryChange('UNPAID')
+    if (canChoosePaid && billingCategory !== 'PAID' && billingCategory !== 'UNPAID') {
+      onBillingCategoryChange('PAID')
     }
-  }, [hasShadowSelection, leaveTypeLockedPaid, canChooseUnpaid, billingCategory, onBillingCategoryChange])
+  }, [hasShadowSelection, forceUnpaid, canChoosePaid, billingCategory, onBillingCategoryChange])
 
   useEffect(() => {
     if (!startDate || !endDate || endDate < startDate) {
@@ -202,11 +202,13 @@ export function TherapistLeaveRequestFields({
         </div>
       ) : null}
 
-      {!hideLeaveCreditDetails && suggestion ? (
-        <p className="therapist-leave-page__suggest">{formatLeaveSplitLabel(suggestion)}</p>
+      {suggestion && formatLeaveSplitLabel(suggestion) ? (
+        <p className="therapist-leave-page__suggest" role="status">
+          {formatLeaveSplitLabel(suggestion)}
+        </p>
       ) : null}
 
-      {!hideLeaveCreditDetails && showLeaveType ? (
+      {showLeaveType ? (
         <fieldset className="therapist-leave-page__leave-type" style={{ border: 'none', margin: 0, padding: 0 }}>
           <legend className="therapist-leave-page__field" style={{ marginBottom: 8 }}>
             Leave type
@@ -215,8 +217,7 @@ export function TherapistLeaveRequestFields({
             {LEAVE_CATEGORIES.map((cat) => {
               const isPaid = cat.value === 'PAID'
               const isSelected = billingCategory === cat.value
-              const isDisabled =
-                disabled || (isPaid && !creditsAvailable) || (cat.value === 'UNPAID' && leaveTypeLockedPaid)
+              const isDisabled = disabled || (isPaid && !canChoosePaid)
               return (
                 <label key={cat.value} className="therapist-leave-page__case-option">
                   <input
@@ -232,14 +233,16 @@ export function TherapistLeaveRequestFields({
               )
             })}
           </div>
-          {leaveTypeLockedPaid ? (
+          {canChoosePaid && billingCategory === 'PAID' ? (
             <p className="therapist-leave-page__hint" style={{ marginTop: 8 }}>
-              Paid leave is selected — your available leave credits will be used for shadow support days.
+              Paid leave is selected by default — your available leave credits will be used.
             </p>
           ) : null}
-          {canChooseUnpaid && billingCategory === 'UNPAID' ? (
+          {billingCategory === 'UNPAID' && showLeaveType ? (
             <div className="therapist-leave-page__warn" role="alert" style={{ marginTop: 8 }}>
-              You will not be compensated for this leave.
+              {forceUnpaid
+                ? 'No paid leave credits left — this leave is unpaid.'
+                : 'You will not be compensated for this leave.'}
             </div>
           ) : null}
         </fieldset>

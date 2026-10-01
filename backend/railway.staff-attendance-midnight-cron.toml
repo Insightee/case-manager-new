@@ -1,0 +1,7 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python scripts/auto_close_staff_attendance_midnight.py"
+cronSchedule = "30 18 * * *"
+restartPolicyType = "NEVER"

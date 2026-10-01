@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class QualificationEntry(BaseModel):
+    kind: Literal["degree", "certificate"] = "certificate"
+    title: str = Field(..., min_length=1, max_length=255)
+    year: Optional[int] = Field(None, ge=1950, le=2035)
 
 
 class TherapistProfileBase(BaseModel):
     display_name: Optional[str] = Field(None, max_length=255)
     short_bio: Optional[str] = Field(None, max_length=2000)
     academic_qualifications: Optional[str] = Field(None, max_length=4000)
+    academic_qualification_level: Optional[str] = Field(None, max_length=32)
     professional_certificates: list[str] = Field(default_factory=list)
+    professional_qualification_entries: list[QualificationEntry] = Field(default_factory=list)
     services_offered: list[str] = Field(default_factory=list)
 
 
@@ -22,15 +30,17 @@ class TherapistProfileUpdate(TherapistProfileBase):
     leave_paid_days_backfill: Optional[int] = None
     leave_carry_forward_days_backfill: Optional[int] = None
     leave_backfill_note: Optional[str] = None
+    tds_rate_percent: Optional[float] = Field(None, ge=0, le=100)
 
 
 class TherapistProfileRead(TherapistProfileBase):
-    id: int
+    id: Optional[int] = None
     user_id: int
     status: str
     admin_note: Optional[str] = None
     submitted_at: Optional[datetime] = None
     reviewed_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
     supervisor_user_id: Optional[int] = None
@@ -45,6 +55,10 @@ class TherapistProfileRead(TherapistProfileBase):
     approved_snapshot: Optional[dict] = None
     pending_submission: Optional[dict] = None
     has_pending_changes: bool = False
+    last_session_log_at: Optional[datetime] = None
+    days_since_last_session_log: Optional[int] = None
+    tds_rate_percent: Optional[float] = None
+    quality: Optional[dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 
@@ -59,6 +73,10 @@ class TherapistProfileAdminCreate(TherapistProfileBase):
 
 class TherapistProfileReview(BaseModel):
     admin_note: Optional[str] = None
+
+
+class TherapistProfileRequestChanges(BaseModel):
+    admin_note: str = Field(..., min_length=8, max_length=2000)
 
 
 class ProductModuleDef(BaseModel):

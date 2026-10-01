@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -66,6 +67,11 @@ from app.schemas.admin_case_pipeline import AdminCasePipelineBoard
 from app.schemas.admin_iep import AdminIepDashboard
 from app.schemas.clinical import ObservationChecklistReview
 from app.schemas.iep_plan import IepPlanSave, IepPlanSuggestionCreate
+from app.schemas.case_zoho import (
+    CaseZohoIdBulkRequest,
+    CaseZohoIdBulkResponse,
+    CaseZohoIdBulkRowResult,
+)
 from app.schemas.therapist_onboarding import (
     TherapistBulkOnboardRequest,
     TherapistOnboardCreate,
@@ -81,12 +87,14 @@ from app.schemas.therapist_profile import (
     ServiceCategoryUpdate,
     TherapistProfileAdminCreate,
     TherapistProfileRead,
+    TherapistProfileRequestChanges,
     TherapistProfileReview,
     TherapistProfileUpdate,
 )
 from app.services import admin_case_pipeline_service as case_pipeline_svc
 from app.services import admin_case_records_export_service as case_records_export_svc
 from app.services import admin_iep_service as admin_iep_svc
+from app.services import case_zoho_id_bulk_service as case_zoho_bulk_svc
 from app.services import therapist_onboarding_service as therapist_onboard_svc
 from app.services import therapist_primary_cm_bulk_service as therapist_cm_bulk_svc
 from app.schemas.therapist_review import (
@@ -105,9 +113,11 @@ from app.core.rbac_access import (
     preview_access,
     sync_user_access_fields,
 )
-from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services import auth_service, case_delete_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
 from app.services import therapist_profile_export_service as therapist_profile_export_svc
 from app.services.admin_scope_service import apply_case_scope, case_row_scope_clause
+from app.services.reports_export_helpers import parent_by_child, case_people_export_fields
 from app.services import therapist_review_service as review_svc
 from app.core.permissions import RoleName
 
@@ -115,6 +125,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _admin_dashboard_user(user: User = Depends(get_current_user)) -> User:
+    roles = set(user.role_names or [])
+    if RoleName.SPOT.value in roles:
+        return user
     if not (
         user_has_permission(user, "case.read.all")
         or user_has_permission(user, "case.read.team")
@@ -181,6 +194,10 @@ def _user_to_read(u: User, *, db: Session | None = None, login_meta: dict | None
         is_email_suppressed=meta.get("is_email_suppressed", False),
         suppression_reason=meta.get("suppression_reason"),
         delivery_message=meta.get("delivery_message"),
+        staff_employment_type=u.staff_employment_type.value if u.staff_employment_type else None,
+        staff_probation_months=u.staff_probation_months,
+        staff_employment_start_date=u.staff_employment_start_date,
+        staff_leave_credit_balance=u.staff_leave_credit_balance,
     )
 
 
@@ -509,6 +526,9 @@ def update_therapist_primary_cm(
     old_cm = profile.supervisor_user_id
     profile.supervisor_user_id = payload.primary_case_manager_user_id
     if payload.mentor_user_id is not None:
+        from app.services.mentor_scope_service import validate_mentor_is_case_manager
+
+        validate_mentor_is_case_manager(db, payload.mentor_user_id)
         profile.mentor_user_id = payload.mentor_user_id
     cases_updated = 0
     if payload.update_active_cases:
@@ -666,6 +686,56 @@ def admin_app_usage_summary(
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
+@router.get("/platform-stats")
+def admin_platform_stats(
+    days: int = Query(1, ge=1, le=90),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "admin.override"):
+        raise HTTPException(status_code=403, detail="Super admin permission required")
+    from app.services import platform_stats_service
+
+    try:
+        return platform_stats_service.build_platform_stats(db, user, days=days)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+@router.get("/platform-stats/activity")
+def admin_platform_stats_activity(
+    days: int = Query(1, ge=1, le=90),
+    q: Optional[str] = Query(None, max_length=120),
+    status: str = Query("all"),
+    role: Optional[str] = Query(None, max_length=64),
+    portal: Optional[str] = Query(None, max_length=32),
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "admin.override"):
+        raise HTTPException(status_code=403, detail="Super admin permission required")
+    from app.services import platform_stats_service
+
+    try:
+        return platform_stats_service.list_platform_activity(
+            db,
+            user,
+            days=days,
+            q=q,
+            status=status,
+            role=role,
+            portal=portal,
+            page=page,
+            limit=limit,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get("/cases/{case_id}/timeline")
 def admin_case_timeline(
     case_id: int,
@@ -698,14 +768,6 @@ def dashboard_summary(
         stmt = select(func.count()).select_from(Case).where(Case.status == status)
         stmt = apply_case_scope(stmt, user)
         return db.scalar(stmt) or 0
-
-    pending_stmt = (
-        select(Case.id, Case.case_code, Case.service_type, Case.status, Child.first_name, Child.last_name)
-        .join(Child, Case.child_id == Child.id)
-        .where(Case.status == CaseStatus.PENDING_ALLOTMENT)
-    )
-    pending_stmt = apply_case_scope(pending_stmt, user).order_by(Case.created_at.desc()).limit(6)
-    pending_rows = db.execute(pending_stmt).all()
 
     report_stmt = (
         select(
@@ -799,13 +861,16 @@ def dashboard_summary(
 
     total_cases_stmt = apply_case_scope(select(func.count()).select_from(Case), user)
 
+    from app.services import admin_case_pipeline_service as pipeline_svc
     from app.services import admin_workbench_service as wb_svc
 
     ops_counts = wb_svc.build_ops_counts(db, user)
+    pending_allotment_count = pipeline_svc.count_pending_therapist_assignments(db, user)
+    pending_allotment_queue = pipeline_svc.list_pending_therapist_assignment_queue(db, user, limit=6)
 
     return {
         "open_cases": _count_case_status(CaseStatus.ACTIVE),
-        "pending_allotment": _count_case_status(CaseStatus.PENDING_ALLOTMENT),
+        "pending_allotment": pending_allotment_count,
         "suspended_cases": _count_case_status(CaseStatus.SUSPENDED),
         "closed_cases": _count_case_status(CaseStatus.CLOSED),
         "total_cases": db.scalar(total_cases_stmt) or 0,
@@ -825,16 +890,7 @@ def dashboard_summary(
             "SUSPENDED": _count_case_status(CaseStatus.SUSPENDED),
             "CLOSED": _count_case_status(CaseStatus.CLOSED),
         },
-        "pending_allotment_queue": [
-            {
-                "id": row.id,
-                "case_code": row.case_code,
-                "child_name": f"{row.first_name} {row.last_name}".strip(),
-                "service_type": row.service_type,
-                "status": row.status.value if hasattr(row.status, "value") else str(row.status),
-            }
-            for row in pending_rows
-        ],
+        "pending_allotment_queue": pending_allotment_queue,
         "reports_queue": [
             {
                 "id": row.id,
@@ -895,8 +951,9 @@ def sessions_analytics(
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
         base_filters.append(Case.product_module == product_module)
-    if session_status:
-        base_filters.append(TherapySession.status == session_status)
+    from app.services.session_analytics_filters import append_session_status_filter
+
+    append_session_status_filter(base_filters, session_status)
     if case_id:
         base_filters.append(TherapySession.case_id == case_id)
 
@@ -1041,9 +1098,8 @@ def sessions_analytics(
         .join(Case, TherapySession.case_id == Case.id)
         .where(
             TherapySession.scheduled_date >= month_start,
-            *([TherapySession.therapist_user_id == therapist_id] if therapist_id else []),
-            *([Case.product_module == product_module] if product_module else []),
-            *(base_filters[0:1] if base_filters else []),
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
         )
         .group_by("yr", "mo")
         .order_by("yr", "mo")
@@ -1058,9 +1114,19 @@ def sessions_analytics(
         for r in month_rows
     ]
 
-    # Recent sessions for the table (last 50 within filter range)
+    # Recent sessions for the table (within filter range)
     from sqlalchemy.orm import selectinload
-    recent_limit = 200 if case_id else 50
+    recent_limit = 200
+    total_count = db.scalar(
+        select(func.count())
+        .select_from(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+    ) or 0
     sessions_q = (
         select(TherapySession)
         .join(Case, TherapySession.case_id == Case.id)
@@ -1086,13 +1152,9 @@ def sessions_analytics(
             tu = db.get(User, s.therapist_user_id)
             therapist_name = tu.full_name if tu else None
         duration_mins = None
-        if s.actual_start_at and s.actual_end_at:
-            duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
-        elif s.start_time and s.end_time:
-            from datetime import datetime as dt
-            s_start = dt.combine(s.scheduled_date, s.start_time)
-            s_end = dt.combine(s.scheduled_date, s.end_time)
-            duration_mins = int((s_end - s_start).total_seconds() / 60)
+        from app.services import session_duration_compliance_service as duration_svc
+
+        duration_mins = duration_svc.admin_list_duration_minutes(s, s.daily_log)
         recent_sessions.append({
             "id": s.id,
             "case_id": s.case_id,
@@ -1115,12 +1177,14 @@ def sessions_analytics(
             "has_daily_log": s.daily_log is not None,
             "actual_times_edited": bool(getattr(s, "actual_times_edited", False)),
             "duplicate_day_session": bool(getattr(s, "is_additional_visit", False)),
+            "data_quality_flag": getattr(s, "data_quality_flag", None),
         })
 
     return {
         "today_count": today_count,
         "week_count": week_count,
         "status_counts": status_counts,
+        "total_count": total_count,
         "by_therapist": by_therapist,
         "by_product": by_product,
         "by_day": by_day,
@@ -1201,8 +1265,9 @@ def export_sessions_xlsx(
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
         base_filters.append(Case.product_module == product_module)
-    if session_status:
-        base_filters.append(TherapySession.status == session_status)
+    from app.services.session_analytics_filters import append_session_status_filter
+
+    append_session_status_filter(base_filters, session_status)
     if case_id:
         base_filters.append(TherapySession.case_id == case_id)
 
@@ -1210,12 +1275,16 @@ def export_sessions_xlsx(
     sessions_rows = db.scalars(
         select(TherapySession)
         .join(Case, TherapySession.case_id == Case.id)
-        .options(selectinload(TherapySession.case).selectinload(Case.child))
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
+        )
         .where(TherapySession.scheduled_date >= d_from, TherapySession.scheduled_date <= d_to, *base_filters)
         .order_by(TherapySession.scheduled_date.desc())
     ).all()
 
     from app.services.export_document_service import export_meta, xlsx_footer_rows, xlsx_preamble_rows
+    from app.services import session_duration_compliance_service as duration_svc
 
     meta = export_meta(user)
     wb = openpyxl.Workbook()
@@ -1228,20 +1297,21 @@ def export_sessions_xlsx(
     ):
         ws.append(row)
     headers = ["Session ID", "Date", "Start", "End", "Actual Start", "Actual End", "Duration (min)",
-               "Case Code", "Child", "Therapist ID", "Product Module", "Mode", "Status"]
+               "Case Code", "Child", "Parent", "Therapist ID", "Product Module", "Mode", "Status"]
     ws.append(headers)
+
+    child_ids = {s.case.child_id for s in sessions_rows if s.case and s.case.child_id}
+    parents = parent_by_child(db, child_ids)
 
     for s in sessions_rows:
         case_obj = s.case
         child_name = (case_obj.child.full_name if case_obj and case_obj.child else "")
-        duration_mins = ""
-        if s.actual_start_at and s.actual_end_at:
-            duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
-        elif s.start_time and s.end_time:
-            from datetime import datetime as dt
-            s_start = dt.combine(s.scheduled_date, s.start_time)
-            s_end = dt.combine(s.scheduled_date, s.end_time)
-            duration_mins = int((s_end - s_start).total_seconds() / 60)
+        parent_name = case_people_export_fields(
+            case_obj,
+            parent_info=parents.get(case_obj.child_id) if case_obj and case_obj.child_id else None,
+            include_therapist=False,
+        )["Parent Name"]
+        duration_mins = duration_svc.admin_list_duration_minutes(s, s.daily_log) or ""
         ws.append([
             s.id,
             s.scheduled_date.isoformat(),
@@ -1252,6 +1322,7 @@ def export_sessions_xlsx(
             duration_mins,
             case_obj.case_code if case_obj else "",
             child_name,
+            parent_name,
             s.therapist_user_id,
             case_obj.product_module if case_obj else "",
             s.mode.value if hasattr(s.mode, "value") else str(s.mode),
@@ -1300,8 +1371,9 @@ def export_sessions_pdf(
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
         base_filters.append(Case.product_module == product_module)
-    if session_status:
-        base_filters.append(TherapySession.status == session_status)
+    from app.services.session_analytics_filters import append_session_status_filter
+
+    append_session_status_filter(base_filters, session_status)
     if case_id:
         base_filters.append(TherapySession.case_id == case_id)
 
@@ -1328,10 +1400,18 @@ def export_sessions_pdf(
     )
     elements.append(Spacer(1, 12))
 
-    table_data = [["Date", "Case", "Child", "Therapist", "Module", "Mode", "Status", "Duration"]]
+    child_ids = {s.case.child_id for s in sessions_rows if s.case and s.case.child_id}
+    parents = parent_by_child(db, child_ids)
+
+    table_data = [["Date", "Case", "Child", "Parent", "Therapist", "Module", "Mode", "Status", "Duration"]]
     for s in sessions_rows:
         c = s.case
         child_name = (c.child.full_name if c and c.child else "")
+        parent_name = case_people_export_fields(
+            c,
+            parent_info=parents.get(c.child_id) if c and c.child_id else None,
+            include_therapist=False,
+        )["Parent Name"]
         duration = ""
         if s.actual_start_at and s.actual_end_at:
             duration = f"{int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)} min"
@@ -1342,6 +1422,7 @@ def export_sessions_pdf(
             s.scheduled_date.isoformat(),
             c.case_code if c else "",
             child_name,
+            parent_name,
             str(s.therapist_user_id),
             c.product_module if c else "",
             s.mode.value if hasattr(s.mode, "value") else str(s.mode),
@@ -1506,6 +1587,40 @@ def export_session_logs(
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=session_logs.csv"})
 
 
+@router.get("/session-logs/duration-outliers/export/xlsx")
+def export_session_log_duration_outliers_xlsx(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    month: Optional[str] = Query(None, description="YYYY-MM (overrides date_from/date_to when set)"),
+    therapist_user_id: Optional[int] = Query(None, alias="therapist_id"),
+    product_module: Optional[str] = None,
+    case_id: Optional[int] = None,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import session_duration_outlier_export_service as outlier_export
+
+    d_from, d_to = outlier_export.resolve_export_date_range(
+        date_from=date_from,
+        date_to=date_to,
+        month=month,
+    )
+    content, filename = outlier_export.build_duration_outliers_xlsx(
+        db,
+        user=user,
+        date_from=d_from,
+        date_to=d_to,
+        product_module=product_module,
+        therapist_user_id=therapist_user_id,
+        case_id=case_id,
+    )
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 def require_user_directory_read(user: User = Depends(get_current_user)) -> User:
     """Staff pickers and People directory — manage, read-only directory, or therapist pickers."""
     if (
@@ -1660,6 +1775,10 @@ def _directory_item_from_user(u: User, meta: dict) -> "UserDirectoryItem":
         is_email_suppressed=meta.get("is_email_suppressed", False),
         suppression_reason=meta.get("suppression_reason"),
         delivery_message=meta.get("delivery_message"),
+        staff_employment_type=u.staff_employment_type.value if u.staff_employment_type else None,
+        staff_probation_months=u.staff_probation_months,
+        staff_employment_start_date=u.staff_employment_start_date,
+        staff_leave_credit_balance=u.staff_leave_credit_balance,
     )
 
 
@@ -1725,10 +1844,9 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
     if payload.role_names is not None:
         _ensure_assignable_roles(payload.role_names)
-        from app.models.role import Role
+        from app.services.role_registry_service import ensure_roles
 
-        roles = db.scalars(select(Role).where(Role.name.in_(payload.role_names))).all()
-        target.roles = list(roles)
+        target.roles = ensure_roles(db, payload.role_names)
     if (
         payload.module_assignments is not None
         or payload.module_access_grants is not None
@@ -1768,6 +1886,58 @@ def update_user(
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         apply_external_employee_id(target, user_updates["external_employee_id"])
+    staff_fields = (
+        "staff_employment_type",
+        "staff_probation_months",
+        "staff_employment_start_date",
+        "staff_leave_credit_balance",
+    )
+    if any(k in user_updates for k in staff_fields):
+        from app.services import staff_employment_service as staff_employment
+
+        merged_type = (
+            payload.staff_employment_type
+            if "staff_employment_type" in user_updates
+            else target.staff_employment_type
+        )
+        merged_probation = (
+            payload.staff_probation_months
+            if "staff_probation_months" in user_updates
+            else target.staff_probation_months
+        )
+        merged_start = (
+            payload.staff_employment_start_date
+            if "staff_employment_start_date" in user_updates
+            else target.staff_employment_start_date
+        )
+        staff_employment.validate_staff_employment_fields(
+            employment_type=merged_type,
+            probation_months=merged_probation,
+            employment_start_date=merged_start,
+        )
+        staff_employment.apply_staff_employment_fields(
+            target,
+            employment_type=payload.staff_employment_type
+            if "staff_employment_type" in user_updates
+            else None,
+            probation_months=payload.staff_probation_months
+            if "staff_probation_months" in user_updates
+            else None,
+            employment_start_date=payload.staff_employment_start_date
+            if "staff_employment_start_date" in user_updates
+            else None,
+            leave_credit_balance=payload.staff_leave_credit_balance
+            if "staff_leave_credit_balance" in user_updates
+            else None,
+            clear_unset_probation="staff_employment_type" in user_updates,
+        )
+        from app.models.user import StaffEmploymentType
+
+        if (
+            "staff_employment_type" in user_updates
+            and payload.staff_employment_type != StaffEmploymentType.PROBATION
+        ):
+            target.staff_probation_end_notified_at = None
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="update", entity_type="user", entity_id=user_id, **meta)
     db.commit()
@@ -1810,6 +1980,29 @@ def create_user(
         view_only=payload.view_only,
         db=db,
     )
+    if any(
+        getattr(payload, field, None) is not None
+        for field in (
+            "staff_employment_type",
+            "staff_probation_months",
+            "staff_employment_start_date",
+            "staff_leave_credit_balance",
+        )
+    ):
+        from app.services import staff_employment_service as staff_employment
+
+        staff_employment.validate_staff_employment_fields(
+            employment_type=payload.staff_employment_type,
+            probation_months=payload.staff_probation_months,
+            employment_start_date=payload.staff_employment_start_date,
+        )
+        staff_employment.apply_staff_employment_fields(
+            new_user,
+            employment_type=payload.staff_employment_type,
+            probation_months=payload.staff_probation_months,
+            employment_start_date=payload.staff_employment_start_date,
+            leave_credit_balance=payload.staff_leave_credit_balance,
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="user", entity_id=new_user.id, **meta)
     db.commit()
@@ -1824,10 +2017,17 @@ def deactivate_user(
     current: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.models.user import EmploymentStatus
+    from app.services.therapist_eligibility_service import apply_therapist_exit
+
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     target.is_active = False
+    if "THERAPIST" in (target.role_names or []):
+        if target.employment_status in (None, EmploymentStatus.ACTIVE):
+            target.employment_status = EmploymentStatus.SUSPENDED
+        apply_therapist_exit(db, target.id, reason="Admin deactivated user")
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="deactivate", entity_type="user", entity_id=user_id, **meta)
     db.commit()
@@ -1910,10 +2110,9 @@ def admin_set_user_password(
         raise HTTPException(status_code=404, detail="User not found")
     target.password_hash = hash_password(payload.password)
     target.is_active = True
-    from app.services.family_admin_service import consume_pending_parent_invites
+    from app.services import user_provision_service
 
-    if "PARENT" in (target.role_names or []):
-        consume_pending_parent_invites(db, target.email, reason="admin_set_password")
+    user_provision_service.consume_pending_portal_invites(db, target, reason="admin_set_password")
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -2257,37 +2456,118 @@ def backfill_therapist_case_managers(
     return outcome
 
 
+class DeleteCaseByCodeBody(BaseModel):
+    case_code: str = Field(min_length=3, max_length=64)
+    confirm: bool = False
+
+
+@router.post("/maintenance/delete-case-by-code")
+def admin_delete_case_by_code(
+    payload: DeleteCaseByCodeBody,
+    request: Request,
+    user: User = Depends(require_permission("admin.override")),
+    db: Session = Depends(get_db),
+):
+    """Hard-delete one case by case_code. Super-admin maintenance only."""
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm=true to delete")
+
+    try:
+        result = case_delete_service.delete_case_by_code(db, payload.case_code.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        orig = getattr(exc, "orig", None)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Delete blocked by database constraint: {orig or exc}",
+        ) from exc
+    except ProgrammingError as exc:
+        db.rollback()
+        orig = getattr(exc, "orig", None)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Delete failed (schema/SQL): {orig or exc}",
+        ) from exc
+
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete_case",
+        entity_type="case",
+        entity_id=result.get("case_id"),
+        case_id=result.get("case_id"),
+        new_value={"case_code": payload.case_code, **result},
+        **meta,
+    )
+    try:
+        commit_or_http(db)
+    except HTTPException as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc.detail)) from exc
+    return result
+
+
 @router.get("/therapist-profiles/summary")
 def therapist_profiles_summary(
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    from app.models.role import Role
-
-    profiles = profile_svc.list_profiles(db, None)
-    therapists = db.scalars(
-        select(User).join(User.roles).where(Role.name == RoleName.THERAPIST.value)
-    ).all()
-    therapist_ids = {t.id for t in therapists}
-    profile_user_ids = {p.user_id for p in profiles}
-    counts = profile_svc.profile_summary_counts(profiles)
-    no_profile = len(therapist_ids - profile_user_ids)
-    return {**counts, "no_profile": no_profile, "total": len(profiles)}
+    backfill_deleted_profiles_from_audit(db)
+    db.commit()
+    counts = profile_svc.profile_summary_counts(db)
+    counts["no_profile"] = counts.get("needs_listing", 0)
+    return counts
 
 
-@router.get("/therapist-profiles", response_model=list[TherapistProfileRead])
+@router.get("/therapist-profiles", response_model=PaginatedList[TherapistProfileRead])
 def list_therapist_profiles(
     status: Optional[str] = None,
+    activity: Optional[str] = Query(None, description="Activity filter, e.g. no_sessions_15d"),
+    q: Optional[str] = Query(None, description="Search name or email"),
+    user_id: Optional[int] = Query(None, description="Filter to a single therapist user id"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated therapist user ids"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    st = TherapistProfileStatus(status) if status else None
-    profiles = profile_svc.list_profiles(db, st)
-    result = []
-    for p in profiles:
-        u = db.get(User, p.user_id)
-        result.append(TherapistProfileRead(**profile_svc.profile_to_dict(p, u)))
-    return result
+    from app.services.therapist_profile_service import NEEDS_LISTING_STATUS
+
+    parsed_user_ids: list[int] | None = None
+    if user_ids:
+        parsed_user_ids = [int(part.strip()) for part in user_ids.split(",") if part.strip()]
+
+    if status == NEEDS_LISTING_STATUS:
+        listing_status: TherapistProfileStatus | str | None = NEEDS_LISTING_STATUS
+    elif status:
+        listing_status = TherapistProfileStatus(status)
+    else:
+        listing_status = None
+
+    items, total = profile_svc.paginate_profile_listings(
+        db,
+        status=listing_status,
+        activity=activity,
+        search=q,
+        user_id=user_id,
+        user_ids=parsed_user_ids,
+        page=page,
+        page_size=page_size,
+    )
+    pages = max(1, (total + page_size - 1) // page_size) if page_size else 1
+    return PaginatedList[TherapistProfileRead](
+        items=[TherapistProfileRead(**row) for row in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
 
 
 @router.get("/therapist-profiles/export.csv")
@@ -2323,15 +2603,16 @@ def admin_create_therapist_profile(
     if RoleName.THERAPIST.value not in target.role_names:
         raise HTTPException(status_code=400, detail="User is not a therapist")
     existing = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == payload.user_id)).first()
-    if existing:
+    if existing and existing.status != TherapistProfileStatus.DELETED:
         raise HTTPException(status_code=400, detail="Profile already exists for this therapist")
-    profile = TherapistProfile(user_id=payload.user_id)
+    profile = existing if existing and existing.status == TherapistProfileStatus.DELETED else TherapistProfile(user_id=payload.user_id)
     profile_svc.apply_profile_fields(profile, payload.model_dump(exclude={"user_id", "status"}), db)
     try:
         st = TherapistProfileStatus(payload.status or "APPROVED")
     except ValueError:
         st = TherapistProfileStatus.APPROVED
     profile.status = st
+    profile.deleted_at = None
     profile.reviewed_by_user_id = user.id
     profile.reviewed_at = datetime.now(timezone.utc)
     if st == TherapistProfileStatus.APPROVED:
@@ -2412,6 +2693,34 @@ def admin_approve_profile(
     return TherapistProfileRead(**profile_svc.profile_to_dict(profile, db.get(User, profile.user_id)))
 
 
+@router.post("/therapist-profiles/{profile_id}/request-changes", response_model=TherapistProfileRead)
+def admin_request_profile_changes(
+    profile_id: int,
+    payload: TherapistProfileRequestChanges,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    profile = db.get(TherapistProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    profile_svc.admin_request_changes(profile, payload.admin_note)
+    profile.reviewed_by_user_id = user.id
+    profile.reviewed_at = datetime.now(timezone.utc)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="request_profile_changes",
+        entity_type="therapist_profile",
+        entity_id=profile_id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(profile)
+    return TherapistProfileRead(**profile_svc.profile_to_dict(profile, db.get(User, profile.user_id)))
+
+
 @router.post("/therapist-profiles/{profile_id}/pause", response_model=TherapistProfileRead)
 def admin_pause_profile(
     profile_id: int,
@@ -2428,6 +2737,9 @@ def admin_pause_profile(
     profile.reviewed_at = datetime.now(timezone.utc)
     if payload.admin_note:
         profile.admin_note = payload.admin_note
+    from app.services.therapist_eligibility_service import apply_therapist_exit
+
+    apply_therapist_exit(db, profile.user_id, reason="Therapist profile paused")
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="pause_profile", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()
@@ -2463,13 +2775,57 @@ def admin_delete_therapist_profile(
     user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.services.therapist_profile_backfill_service import audit_delete_snapshot
+
     profile = db.get(TherapistProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.status == TherapistProfileStatus.DELETED:
+        return None
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="delete", entity_type="therapist_profile", entity_id=profile_id, **meta)
-    db.delete(profile)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete",
+        entity_type="therapist_profile",
+        entity_id=profile_id,
+        old_value=audit_delete_snapshot(profile),
+        **meta,
+    )
+    profile_svc.soft_delete_profile(profile)
+    from app.services.therapist_eligibility_service import apply_therapist_exit
+
+    apply_therapist_exit(db, profile.user_id, reason="Therapist profile deleted")
     db.commit()
+
+
+@router.post("/therapist-profiles/{profile_id}/restore", response_model=TherapistProfileRead)
+def admin_restore_therapist_profile(
+    profile_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    profile = db.get(TherapistProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.status != TherapistProfileStatus.DELETED:
+        raise HTTPException(status_code=400, detail="Profile is not deleted")
+    profile_svc.restore_profile(profile)
+    profile.reviewed_by_user_id = user.id
+    profile.reviewed_at = datetime.now(timezone.utc)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="restore_profile",
+        entity_type="therapist_profile",
+        entity_id=profile_id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(profile)
+    return TherapistProfileRead(**profile_svc.profile_to_dict(profile, db.get(User, profile.user_id)))
 
 
 # --- Case allotment & families ---
@@ -2501,12 +2857,35 @@ def admin_cases_pipeline_board(
 
 @router.get("/cases/export/records.csv")
 def admin_cases_records_export(
+    case_ids: str | None = Query(
+        None,
+        description="Comma-separated case ids to export (must match the viewer's scoped caseload).",
+    ),
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
 ):
-    """All-case CSV snapshot for the Cases board (session logs, leaves, absences)."""
+    """CSV snapshot for Cases board rows (session logs, leaves, absences)."""
+    parsed_ids: list[int] | None = None
+    if case_ids:
+        parsed_ids = []
+        for part in case_ids.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                parsed_ids.append(int(part))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid case_ids query parameter.",
+                ) from exc
+        if not parsed_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid case ids provided.",
+            )
     try:
-        csv_text = case_records_export_svc.export_case_records_csv(db, user)
+        csv_text = case_records_export_svc.export_case_records_csv(db, user, case_ids=parsed_ids)
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -2514,6 +2893,39 @@ def admin_cases_records_export(
         content=csv_text,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="case-records-{stamp}.csv"'},
+    )
+
+
+@router.post("/cases/bulk-update-zoho-id", response_model=CaseZohoIdBulkResponse)
+def bulk_update_case_zoho_ids(
+    payload: CaseZohoIdBulkRequest,
+    request: Request,
+    user: User = Depends(require_mutation_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    rows = [row.model_dump() for row in payload.rows]
+    outcome = case_zoho_bulk_svc.process_bulk_zoho_id_rows(db, rows, actor=user, apply=payload.apply)
+    if payload.apply and outcome["summary"].get("updated", 0) > 0:
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="bulk_update_case_zoho_id",
+            entity_type="case",
+            entity_id=None,
+            new_value={
+                "updated": outcome["summary"].get("updated", 0),
+                "unchanged": outcome["summary"].get("unchanged", 0),
+                "skipped": outcome["summary"].get("skipped", 0),
+                "failed": outcome["summary"].get("failed", 0),
+            },
+            **meta,
+        )
+        db.commit()
+    return CaseZohoIdBulkResponse(
+        apply=payload.apply,
+        summary=outcome["summary"],
+        results=[CaseZohoIdBulkRowResult(**row) for row in outcome["results"]],
     )
 
 

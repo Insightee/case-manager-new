@@ -3,9 +3,9 @@ from __future__ import annotations
 import enum
 from typing import Optional
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -16,6 +16,12 @@ class EmploymentStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
     ARCHIVED = "ARCHIVED"
+
+
+class StaffEmploymentType(str, enum.Enum):
+    PROBATION = "PROBATION"
+    CONSULTANT = "CONSULTANT"
+    EMPLOYEE = "EMPLOYEE"
 
 
 class User(Base):
@@ -65,6 +71,13 @@ class User(Base):
     org_capability_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     feature_overrides: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     is_view_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    staff_employment_type: Mapped[Optional[StaffEmploymentType]] = mapped_column(
+        Enum(StaffEmploymentType), nullable=True
+    )
+    staff_probation_months: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    staff_employment_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    staff_leave_credit_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
+    staff_probation_end_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     roles = relationship("Role", secondary=user_roles, back_populates="users")

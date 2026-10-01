@@ -159,6 +159,8 @@ def parent_profile_update(
             "case_id": payload.service_address.case_id,
             "address": payload.service_address.address.model_dump(exclude_unset=True),
         }
+    if payload.email_preferences is not None:
+        data["email_preferences"] = payload.email_preferences.model_dump(exclude_unset=True)
     result = parent_service.update_parent_profile(db, user, data)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update_parent_profile", entity_type="user", entity_id=user.id, **meta)
@@ -606,6 +608,7 @@ def parent_session_log_download(
         audience="parent",
         generated_by=meta["generated_by"],
         generated_at=meta["generated_at"],
+        db=db,
     )
     filename = session_log_pdf_service.session_log_pdf_filename(
         case_code=case.case_code if case else None,
@@ -1051,7 +1054,13 @@ def parent_observation_report_download(
     if not case:
         raise HTTPException(status_code=404, detail="Report not found")
     child_name = case.child.full_name if case.child else ""
-    pdf = report_pdf_service.observation_report_pdf(report, case.case_code, child_name)
+    pdf = report_pdf_service.observation_report_pdf(
+        report,
+        case.case_code,
+        child_name,
+        db=db,
+        child_id=case.child_id,
+    )
     safe = (report.title or "observation").replace(" ", "_")[:40]
     return Response(
         content=pdf,

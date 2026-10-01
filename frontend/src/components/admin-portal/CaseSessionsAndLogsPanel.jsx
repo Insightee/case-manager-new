@@ -221,6 +221,16 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     }
   }
 
+  async function handleMentorReviewLog(logId) {
+    setActingLogId(logId)
+    try {
+      await apiFetch(`/api/v1/daily-logs/${logId}/mentor-review`, { method: 'POST' })
+      await fetchSessionsAndLogs()
+    } finally {
+      setActingLogId(null)
+    }
+  }
+
   function handleLogCommentCountChange(logId, commentCount, openParentCommentCount = 0) {
     setLogs((prev) =>
       prev.map((entry) =>
@@ -252,6 +262,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     canReview: attendanceOnly ? false : canReview,
     attendanceOnly,
     onReviewLog: handleReviewLog,
+    onMentorReviewLog: attendanceOnly ? undefined : handleMentorReviewLog,
     actingLogId,
     rejectingLogId,
     setRejectingLogId,

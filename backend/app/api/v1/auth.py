@@ -35,9 +35,11 @@ from app.schemas.auth import (
     RefreshRequest,
     ResetPasswordPreviewResponse,
     ResetPasswordRequest,
+    TherapistProfileCompletionRead,
     TokenResponse,
     UserMeResponse,
 )
+from app.services import therapist_profile_completion_service as profile_completion_service
 from app.services import address_service, auth_service, avatar_service, password_reset_service
 from app.services.portal_login_service import (
     default_login_portal_for_roles,
@@ -55,6 +57,21 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     user = auth_service.authenticate_user(db, payload.email, payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    from app.services.therapist_eligibility_service import user_may_login
+
+    allowed, block_code = user_may_login(db, user)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": block_code or "ACCOUNT_INACTIVE",
+                "message": (
+                    "Your account is not active for login right now. "
+                    "You can request HR to restore your status from the login screen."
+                ),
+                "can_request_restore": True,
+            },
+        )
     login_portal = normalize_login_portal(payload.portal)
     if login_portal is not None and not user_may_login_on_portal(user, login_portal):
         raise HTTPException(
@@ -70,6 +87,38 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         refresh_token=refresh,
         user=_user_me_response(user, db),
     )
+
+
+class StatusRestoreRequest(BaseModel):
+    email: str
+    password: str
+    note: Optional[str] = None
+
+
+@router.post("/request-status-restore")
+def request_status_restore(payload: StatusRestoreRequest, db: Session = Depends(get_db)):
+    """Unauthenticated: prove identity, then open an HR restore ticket (DEC-03)."""
+    user = auth_service.authenticate_user(db, payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    from app.services.therapist_eligibility_service import (
+        create_status_restore_request,
+        user_may_login,
+    )
+
+    allowed, _ = user_may_login(db, user)
+    if allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your account is already active — try signing in again.",
+        )
+    ticket = create_status_restore_request(db, user, note=payload.note)
+    db.commit()
+    return {
+        "ticket_id": ticket.id,
+        "status": ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status),
+        "message": "HR has been notified. You'll be able to sign in once your status is restored.",
+    }
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -278,6 +327,8 @@ def _avatar_url(user: User) -> Optional[str]:
 
 def _user_me_response(user: User, db: Session) -> UserMeResponse:
     module_summaries = [ModuleSummary(**m) for m in modules_for_api(user, db)]
+    completion_raw = profile_completion_service.completion_for_therapist_user(db, user)
+    completion = TherapistProfileCompletionRead(**completion_raw) if completion_raw else None
     return UserMeResponse(
         id=user.id,
         email=user.email,
@@ -301,6 +352,7 @@ def _user_me_response(user: User, db: Session) -> UserMeResponse:
         is_view_only=is_view_only_user(user),
         features=get_user_features(user, db),
         modules=module_summaries,
+        profile_completion=completion,
     )
 
 
@@ -363,6 +415,12 @@ def update_me(
         if payload.employment_status not in allowed:
             raise HTTPException(status_code=400, detail="Therapists may only set status to ACTIVE or SUSPENDED")
         user.employment_status = EmploymentStatus(payload.employment_status)
+        # DEC-03 / HR-002: keep login flag aligned when therapist self-updates employment.
+        user.is_active = user.employment_status == EmploymentStatus.ACTIVE
+        if not user.is_active:
+            from app.services.therapist_eligibility_service import apply_therapist_exit
+
+            apply_therapist_exit(db, user.id, reason="Therapist set employment to suspended")
     if payload.bio is not None:
         user.bio = payload.bio.strip() or None
     if payload.job_title is not None:

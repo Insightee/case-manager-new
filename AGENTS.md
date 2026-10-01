@@ -9,6 +9,7 @@
 - Incident reporting should be available across relevant service lines (e.g. shadow and homecare), not a single product only.
 - Use frontend/UI design skills when improving portal layouts (login sizing, admin dashboard density, therapist quick actions).
 - Invoice UX should support case-by-case preview, session review, late/extra sessions before submit, and admin breakdown review.
+- Prefer **Grok** (`cursor-grok-*`) and **Composer** (`composer-*`) models for subagents, parallel exploration, and browser/UI verification to manage token spend. Use heavier reasoning models (Opus, Sonnet thinking, GPT Sol xhigh, etc.) only when the user explicitly picks one or the task clearly needs deep multi-file reasoning.
 
 ## Documentation
 
@@ -36,7 +37,7 @@
 | **Railway** | `case-manager-new` (repo `Insightee/case-manager-new`) | FastAPI API, Postgres, Redis — all backend env vars |
 | **Vercel** | **`insightes-projects/frontend`** only (`prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN`) | Vite React UI — **`VITE_API_URL` only** |
 
-Never use Vercel project `case-manager-new` (deleted duplicate). CLI: `vercel … --scope insightes-projects --project frontend`. See [docs/RAILWAY_VERCEL.md](docs/RAILWAY_VERCEL.md).
+Never use Vercel project `case-manager-new` (deleted duplicate). Official UI is `frontend` only (production branch `main`, Railway API). Leftover `insightecasestaging` / `insightecasetesting` Git integrations still post failing PR checks — disconnect those apps; do not treat them as deploy targets. CLI: `vercel … --scope insightes-projects --project frontend`. See [docs/RAILWAY_VERCEL.md](docs/RAILWAY_VERCEL.md).
 
 ## Learned Workspace Facts
 

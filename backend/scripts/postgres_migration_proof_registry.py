@@ -746,6 +746,481 @@ register_head(
 )
 
 
+def _seed_b95440cc4d91(db: Session) -> dict[str, Any]:
+    """Merge-only head — schema ownership stays on parent revisions."""
+    return {"merge_only": True}
+
+
+register_head(
+    "b95440cc4d91",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_b95440cc4d91,
+)
+
+
+def _seed_i0merge1integration(db: Session) -> dict[str, Any]:
+    """Merge-only head — unifies prior divergent Alembic tips."""
+    return {"merge_only": True}
+
+
+register_head(
+    "i0merge1integration",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_i0merge1integration,
+)
+
+
+def _seed_i1integr2api3layer(db: Session) -> dict[str, Any]:
+    from app.core.security import hash_password
+    from app.models.case import Case
+    from app.models.integration import (
+        IntegrationCaseGrant,
+        IntegrationClient,
+        IntegrationClientStatus,
+        IntegrationCredential,
+    )
+    from app.models.user import User
+
+    existing = db.scalar(
+        select(IntegrationClient.id).where(IntegrationClient.name == "migration-proof-client")
+    )
+    if existing:
+        return {"client_id": existing, "skipped": True}
+
+    admin = db.scalar(select(User).where(User.email == "superadmin@demo.com"))
+    case = db.scalar(select(Case).limit(1))
+    if not admin or not case:
+        raise RuntimeError("Need seeded superadmin and cases — run demo_seed first")
+
+    client = IntegrationClient(
+        name="migration-proof-client",
+        status=IntegrationClientStatus.ACTIVE.value,
+        scopes_json=["ops:summary", "cases:read"],
+        rate_limit_per_minute=30,
+        created_by_user_id=admin.id,
+    )
+    db.add(client)
+    db.flush()
+    cred = IntegrationCredential(
+        integration_client_id=client.id,
+        public_client_id="ic_migration_proof_001",
+        secret_hash=hash_password("migration-proof-secret-not-used"),
+    )
+    db.add(cred)
+    grant = IntegrationCaseGrant(integration_client_id=client.id, case_id=case.id)
+    db.add(grant)
+    db.flush()
+    return {
+        "client_id": client.id,
+        "credential_id": cred.id,
+        "grant_id": grant.id,
+    }
+
+
+register_head(
+    "i1integr2api3layer",
+    tables_added=[
+        "integration_clients",
+        "integration_credentials",
+        "integration_case_grants",
+    ],
+    columns_added=[("audit_events", "integration_client_id")],
+    seed=_seed_i1integr2api3layer,
+)
+
+
+def _seed_a8b9c0d1e2f3(db: Session) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+
+    profile = db.scalar(select(TherapistProfile).limit(1))
+    if not profile:
+        raise RuntimeError("Need seeded therapist profile — run demo_seed first")
+    profile.status = TherapistProfileStatus.DELETED
+    profile.deleted_at = datetime.now(timezone.utc)
+    db.flush()
+    return {"profile_id": profile.id}
+
+
+register_head(
+    "a8b9c0d1e2f3",
+    tables_added=[],
+    columns_added=[("therapist_profiles", "deleted_at")],
+    seed=_seed_a8b9c0d1e2f3,
+)
+
+
+def _seed_j0merge2therapist(db: Session) -> dict[str, Any]:
+    """Merge-only head — therapist soft-delete branch + integration API head."""
+    return {"merge_only": True}
+
+
+register_head(
+    "j0merge2therapist",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_j0merge2therapist,
+)
+
+
+def _seed_k1shadow2lumpsum3(db: Session) -> dict[str, Any]:
+    """Data-only head — shadow school backfill + PERCENTAGE→FIXED_LUMP copy (no schema)."""
+    return {"data_only": True}
+
+
+register_head(
+    "k1shadow2lumpsum3",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_k1shadow2lumpsum3,
+)
+
+
+def _seed_k2pct2lumpfix(db: Session) -> dict[str, Any]:
+    """Data-only head — force leftover PERCENTAGE → FIXED_LUMP (no schema)."""
+    return {"data_only": True}
+
+
+register_head(
+    "k2pct2lumpfix",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_k2pct2lumpfix,
+)
+
+
+def _seed_v6w7x8y9z0a1(db: Session) -> dict[str, Any]:
+    """Prove billing rate-change source columns after head upgrade."""
+    from datetime import date
+
+    from app.models.case import Case
+    from app.models.case_billing_rate_change import CaseBillingRateChange
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    actor = db.scalar(select(User).limit(1))
+    if not case or not actor:
+        raise RuntimeError("Need seeded case + user — run demo_seed first")
+    row = CaseBillingRateChange(
+        case_id=case.id,
+        previous_client_amount_inr=1000,
+        new_client_amount_inr=1200,
+        previous_therapist_amount_inr=600,
+        new_therapist_amount_inr=720,
+        client_effective_from=date.today(),
+        therapist_effective_from=date.today(),
+        notes="postgres migration proof",
+        changed_by_user_id=actor.id,
+        source="FORM",
+        therapist_user_id=None,
+        audit_event_id=None,
+    )
+    db.add(row)
+    db.flush()
+    return {"rate_change_id": row.id, "case_id": case.id}
+
+
+register_head(
+    "v6w7x8y9z0a1",
+    tables_added=[],
+    columns_added=[
+        ("case_billing_rate_changes", "source"),
+        ("case_billing_rate_changes", "audit_event_id"),
+        ("case_billing_rate_changes", "therapist_user_id"),
+    ],
+    seed=_seed_v6w7x8y9z0a1,
+)
+
+
+def _seed_op1n2o3t4e5(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.case_operational_note import CaseOperationalNote
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    actor = db.scalar(select(User).limit(1))
+    if not case or not actor:
+        raise RuntimeError("Need seeded case + user — run demo_seed first")
+    note = CaseOperationalNote(
+        case_id=case.id,
+        heading="Migration proof",
+        body="Operational notes table is live.",
+        author_user_id=actor.id,
+    )
+    db.add(note)
+    db.flush()
+    return {"note_id": note.id, "case_id": case.id}
+
+
+register_head(
+    "op1n2o3t4e5",
+    tables_added=["case_operational_notes"],
+    columns_added=[],
+    seed=_seed_op1n2o3t4e5,
+)
+
+
+def _seed_st1ff4tt3nd1(db: Session) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.core.timezone import today_ist
+    from app.models.leave import LeaveStatus
+    from app.models.staff_attendance import (
+        StaffAttendance,
+        StaffAttendanceEntryType,
+        StaffAttendanceSegment,
+        StaffAttendanceSegmentType,
+        StaffAttendanceStatus,
+    )
+    from app.models.staff_leave import StaffLeave
+    from app.models.user import User
+
+    actor = db.scalar(select(User).where(User.email == "hr@demo.com"))
+    if not actor:
+        actor = db.scalar(select(User).limit(1))
+    if not actor:
+        raise RuntimeError("Need seeded user — run demo_seed first")
+
+    today = today_ist()
+    start = datetime.combine(today, datetime.min.time().replace(hour=9), tzinfo=timezone.utc)
+    end = datetime.combine(today, datetime.min.time().replace(hour=17), tzinfo=timezone.utc)
+
+    att = StaffAttendance(
+        user_id=actor.id,
+        work_date=today,
+        entry_type=StaffAttendanceEntryType.LIVE,
+        status=StaffAttendanceStatus.COMPLETED,
+        work_summary="Migration proof staff attendance",
+        total_work_seconds=3600,
+        total_break_seconds=0,
+    )
+    db.add(att)
+    db.flush()
+
+    seg = StaffAttendanceSegment(
+        attendance_id=att.id,
+        segment_type=StaffAttendanceSegmentType.WORK,
+        started_at=start,
+        ended_at=end,
+    )
+    db.add(seg)
+    db.flush()
+
+    leave = StaffLeave(
+        staff_user_id=actor.id,
+        leave_date=today,
+        reason="Migration proof staff leave",
+        status=LeaveStatus.PENDING,
+    )
+    db.add(leave)
+    db.flush()
+
+    return {"attendance_id": att.id, "segment_id": seg.id, "leave_id": leave.id}
+
+
+register_head(
+    "st1ff4tt3nd1",
+    tables_added=["staff_attendance", "staff_attendance_segments", "staff_leaves"],
+    columns_added=[],
+    seed=_seed_st1ff4tt3nd1,
+)
+
+
+def _seed_bb6328f4ca05(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.integration import (
+        IntegrationClient,
+        IntegrationClientStatus,
+        IntegrationSignal,
+        IntegrationWebhook,
+        IntegrationWebhookStatus,
+    )
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    actor = db.scalar(select(User).limit(1))
+    if not case or not actor:
+        raise RuntimeError("Need seeded case + user — run demo_seed first")
+    client = IntegrationClient(
+        name="Migration proof key",
+        status=IntegrationClientStatus.ACTIVE.value,
+        scopes_json=["cases:read", "sessions:write"],
+        rate_limit_per_minute=60,
+        access_token_minutes=15,
+        key_ttl_days=90,
+        mcp_enabled=True,
+        created_by_user_id=actor.id,
+    )
+    db.add(client)
+    db.flush()
+    webhook = IntegrationWebhook(
+        integration_client_id=client.id,
+        url="https://partner.example/hooks/migration-proof",
+        secret_hash="migration-proof-hash",
+        events_json=["session.logged"],
+        status=IntegrationWebhookStatus.ACTIVE.value,
+    )
+    signal = IntegrationSignal(
+        integration_client_id=client.id,
+        case_id=case.id,
+        domain="sessions",
+        signal_key="progress_signal",
+        level=3,
+        status="pending_review",
+    )
+    db.add(webhook)
+    db.add(signal)
+    db.flush()
+    return {
+        "integration_client_id": client.id,
+        "webhook_id": webhook.id,
+        "signal_id": signal.id,
+        "case_id": case.id,
+    }
+
+
+register_head(
+    "bb6328f4ca05",
+    tables_added=["integration_webhooks", "integration_signals"],
+    columns_added=[
+        ("integration_clients", "access_token_minutes"),
+        ("integration_clients", "key_ttl_days"),
+        ("integration_clients", "mcp_enabled"),
+    ],
+    seed=_seed_bb6328f4ca05,
+)
+
+
+def _seed_s7p0t3m4p5l6(db: Session) -> dict[str, Any]:
+    from datetime import date
+
+    from app.core.timezone import today_ist
+    from app.models.leave import LeaveBillingCategory, LeaveStatus
+    from app.models.staff_leave import StaffLeave
+    from app.models.user import StaffEmploymentType, User
+
+    user = db.scalar(select(User).where(User.email == "hr@demo.com"))
+    if not user:
+        user = db.scalar(select(User).limit(1))
+    if not user:
+        raise RuntimeError("Need seeded user — run demo_seed first")
+
+    if user.staff_employment_type is None:
+        user.staff_employment_type = StaffEmploymentType.PROBATION
+        user.staff_probation_months = 3
+        user.staff_employment_start_date = date(2099, 1, 1)
+        user.staff_leave_credit_balance = 12
+
+    leave = db.scalar(select(StaffLeave).limit(1))
+    if not leave:
+        leave = StaffLeave(
+            staff_user_id=user.id,
+            leave_date=today_ist(),
+            reason="Migration proof staff leave billing category",
+            status=LeaveStatus.PENDING,
+        )
+        db.add(leave)
+        db.flush()
+    if leave.billing_category is None:
+        leave.billing_category = LeaveBillingCategory.PAID
+        db.flush()
+
+    return {
+        "user_id": user.id,
+        "leave_id": leave.id,
+        "billing_category": leave.billing_category.value if leave.billing_category else None,
+    }
+
+
+register_head(
+    "s7p0t3m4p5l6",
+    tables_added=[],
+    columns_added=[
+        ("users", "staff_employment_type"),
+        ("users", "staff_probation_months"),
+        ("users", "staff_employment_start_date"),
+        ("users", "staff_leave_credit_balance"),
+        ("users", "staff_probation_end_notified_at"),
+        ("staff_leaves", "billing_category"),
+    ],
+    seed=_seed_s7p0t3m4p5l6,
+)
+
+
+def _seed_tp_qual_level_2703(db: Session) -> dict[str, Any]:
+    from app.models.therapist_profile import TherapistProfile
+
+    profile = db.scalar(select(TherapistProfile).limit(1))
+    if not profile:
+        raise RuntimeError("Need seeded therapist profile — run demo_seed first")
+    profile.academic_qualification_level = "PG"
+    db.flush()
+    return {
+        "profile_id": profile.id,
+        "academic_qualification_level": profile.academic_qualification_level,
+    }
+
+
+register_head(
+    "tp_qual_level_2703",
+    tables_added=[],
+    columns_added=[("therapist_profiles", "academic_qualification_level")],
+    seed=_seed_tp_qual_level_2703,
+)
+
+
+def _seed_tp_qual_cards_1001(db: Session) -> dict[str, Any]:
+    from app.models.therapist_profile import TherapistProfile
+
+    profile = db.scalar(select(TherapistProfile).limit(1))
+    if not profile:
+        raise RuntimeError("Need seeded therapist profile — run demo_seed first")
+    profile.professional_qualification_entries = [
+        {"kind": "degree", "title": "M.Sc. Psychology", "year": 2019},
+    ]
+    db.flush()
+    return {"profile_id": profile.id, "entries": 1}
+
+
+register_head(
+    "tp_qual_cards_1001",
+    tables_added=[],
+    columns_added=[("therapist_profiles", "professional_qualification_entries")],
+    seed=_seed_tp_qual_cards_1001,
+)
+
+
+def _seed_i2all3cases4fin(db: Session) -> dict[str, Any]:
+    from app.models.integration import IntegrationClient, IntegrationClientStatus
+    from app.models.user import User
+
+    actor = db.scalar(select(User).limit(1))
+    if not actor:
+        raise RuntimeError("Need a user — run demo_seed first")
+    client = IntegrationClient(
+        name="migration-proof-all-cases",
+        status=IntegrationClientStatus.ACTIVE.value,
+        scopes_json=["finance:read"],
+        all_cases=True,
+        rate_limit_per_minute=30,
+        created_by_user_id=actor.id,
+    )
+    db.add(client)
+    db.flush()
+    return {"client_id": client.id, "all_cases": True}
+
+
+register_head(
+    "i2all3cases4fin",
+    tables_added=[],
+    columns_added=[("integration_clients", "all_cases")],
+    seed=_seed_i2all3cases4fin,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

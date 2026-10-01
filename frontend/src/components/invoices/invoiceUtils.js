@@ -10,10 +10,54 @@ export function isInvoiceAmendable(apiStatus) {
   return apiStatus === 'IN_REVIEW' || apiStatus === 'QUERIED' || apiStatus === 'REJECTED' || apiStatus === 'DRAFT'
 }
 
+export function formatModalHeaderSummary(attendanceSummary) {
+  if (!attendanceSummary) return null
+  const parts = []
+  const approved = attendanceSummary.approved_sessions ?? 0
+  const pending = attendanceSummary.pending_sessions ?? 0
+  const billableAbsence = attendanceSummary.billable_absence ?? 0
+  if (approved > 0) parts.push(`${approved} in this pay`)
+  if (pending > 0) parts.push(`${pending} waiting on review`)
+  if (billableAbsence > 0) parts.push(`${billableAbsence} session cancelled`)
+  if (attendanceSummary.leave_taken != null && attendanceSummary.leave_taken > 0) {
+    parts.push(`${attendanceSummary.leave_taken} session cancelled`)
+  } else {
+    const paid = attendanceSummary.paid_leaves ?? 0
+    const unpaid = attendanceSummary.unpaid_leaves ?? 0
+    if (paid > 0 || unpaid > 0) {
+      const bits = []
+      if (paid > 0) bits.push(`${paid} paid leave`)
+      if (unpaid > 0) bits.push(`${unpaid} unpaid leave`)
+      parts.push(bits.join(' · '))
+    }
+  }
+  return parts.length ? parts.join(' · ') : null
+}
+
+export function formatCaseAttendanceStrip(attendance, billingProfile) {
+  if (!attendance) return null
+  const parts = []
+  if ((attendance.approved_sessions ?? 0) > 0) parts.push(`${attendance.approved_sessions} sessions in pay`)
+  if ((attendance.pending_sessions ?? 0) > 0) parts.push(`${attendance.pending_sessions} waiting on review`)
+  if (billingProfile === 'calendar_day') {
+    if ((attendance.billable_absence ?? 0) > 0 || (attendance.pending_absence ?? 0) > 0) {
+      const away = (attendance.billable_absence ?? 0) + (attendance.pending_absence ?? 0)
+      parts.push(`${away} child away`)
+    }
+    if ((attendance.paid_leaves ?? 0) > 0) parts.push(`${attendance.paid_leaves} paid leave`)
+    if ((attendance.unpaid_leaves ?? 0) > 0) parts.push(`${attendance.unpaid_leaves} unpaid leave`)
+  } else {
+    if ((attendance.pending_absence ?? 0) > 0) parts.push(`${attendance.pending_absence} child away waiting review`)
+    if ((attendance.leave_taken ?? 0) > 0) parts.push(`${attendance.leave_taken} cancelled for leave`)
+  }
+  return parts.length ? parts.join(' · ') : null
+}
+
 export function applyLocalExcludes(preview, excludeIds) {
   if (!preview) return preview
   const exclude = new Set(excludeIds)
   const next = structuredClone(preview)
+  const staticLeave = next.leave_deduction_inr || 0
   let subtotal = 0
   let totalSessions = 0
   for (const cg of next.cases || []) {
@@ -33,6 +77,10 @@ export function applyLocalExcludes(preview, excludeIds) {
         else if (line.line_type === 'INCLUDED') included += 1
       }
     }
+    const absenceTotal = (cg.child_absence_lines || [])
+      .filter((l) => l.included)
+      .reduce((sum, l) => sum + (l.amount_inr || 0), 0)
+    caseTotal += absenceTotal
     cg.therapist_share_inr = calendarPay ? originalGross : Math.round(caseTotal * 100) / 100
     cg.included_sessions = included
     cg.additional_sessions = additional
@@ -43,7 +91,8 @@ export function applyLocalExcludes(preview, excludeIds) {
   }
   next.subtotal_inr = Math.round(subtotal * 100) / 100
   next.total_sessions = totalSessions
-  next.net_amount_inr = Math.max(next.subtotal_inr - (next.leave_deduction_inr || 0), 0)
+  next.leave_deduction_inr = staticLeave
+  next.net_amount_inr = Math.max(next.subtotal_inr - staticLeave, 0)
   next.amount_inr = next.net_amount_inr
   return next
 }
@@ -107,17 +156,24 @@ export function lineTypeLabel(type) {
 // therapist only ever sees their own share — never client-side money.
 export function billingSummary(b) {
   if (!b?.billing_type) return 'Billing not configured'
-  const share = b.pay_share_amount_inr || 0
+  const lump =
+    (b.therapist_fixed_pay_inr != null && Number(b.therapist_fixed_pay_inr) > 0
+      ? Number(b.therapist_fixed_pay_inr)
+      : null) ??
+    (b.pay_share_amount_inr != null ? Number(b.pay_share_amount_inr) : 0) ??
+    0
   if (b.billing_type === 'PER_SESSION') {
     const clientPart =
       b.client_rate_per_session_inr != null ? `₹${b.client_rate_per_session_inr}/session · ` : ''
-    return `${clientPart}₹${share} therapist share`
+    return `${clientPart}₹${lump} therapist pay`
   }
-  if (b.compensation_mode === 'FIXED_LUMP') {
-    return `Package ${b.package_session_count} sessions · ₹${b.therapist_fixed_pay_inr} fixed pay`
+  if (b.billing_type === 'MONTHLY_FIXED') {
+    const clientPart =
+      b.client_monthly_rate_inr != null ? `₹${b.client_monthly_rate_inr}/month · ` : ''
+    return `${clientPart}₹${lump} therapist pay`
   }
   const clientPart = b.package_amount_inr != null ? `₹${b.package_amount_inr} · ` : ''
-  return `Package ${b.package_session_count} sessions · ${clientPart}₹${share} therapist share`
+  return `Package ${b.package_session_count || '—'} sessions · ${clientPart}₹${lump} therapist pay`
 }
 
 // Deduction lines we intend to show but for which no rule is configured yet.
@@ -145,7 +201,7 @@ export function statementLadder(data) {
 
   const leave = data.leave_deduction_inr ?? 0
   if (leave > 0) {
-    rows.push({ key: 'leave', label: 'Leave deduction', kind: 'deduction', amount: leave })
+    rows.push({ key: 'leave', label: 'Unpaid leave adjustment', kind: 'deduction', amount: leave })
   }
   if (data.adjustment_inr != null && data.adjustment_inr !== 0) {
     const adj = data.adjustment_inr
@@ -156,7 +212,12 @@ export function statementLadder(data) {
       amount: Math.abs(adj),
     })
   }
-  rows.push(placeholder('tds', 'TDS'))
+  const tds = data.tds_inr ?? data.tdsInr
+  if (tds != null) {
+    rows.push({ key: 'tds', label: 'TDS', kind: 'deduction', amount: Number(tds) })
+  } else {
+    rows.push(placeholder('tds', 'TDS'))
+  }
   rows.push(placeholder('holdback', 'Holdback'))
   rows.push({ key: 'net', label: 'Net payable', kind: 'net', amount: data.net_amount_inr ?? data.amount_inr ?? 0 })
   rows.push(placeholder('payment_date', 'Expected payment date'))

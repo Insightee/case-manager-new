@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
+import { setPwaUpdateHandler } from './lib/pwaUpdate.js'
 import './index.css'
 import './styles/forest-light-theme.css'
 import App from './App.jsx'
@@ -11,7 +12,13 @@ if (import.meta.env.DEV && typeof navigator !== 'undefined' && 'serviceWorker' i
     regs.forEach((reg) => void reg.unregister())
   })
 } else if (!import.meta.env.DEV) {
-  registerSW({ immediate: true })
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      void updateSW(true)
+    },
+  })
+  setPwaUpdateHandler(updateSW)
 }
 
 // Canonical host: apex insighte.org 308-redirects and breaks credentialed /api PATCH preflights.

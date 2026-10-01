@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate, formatDisplayDateRange } from '../../lib/datetime.js'
+import { moduleLabel } from '../../lib/moduleLabels.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -13,8 +14,26 @@ import {
   AdminTaskCard,
   StatusBadge,
 } from './ui/index.js'
-import { SessionAbsenceApprovals } from '../shared/SessionAbsenceApprovals.jsx'
 import './admin-sessions-dashboard.css'
+
+const SESSION_STATUS_OPTIONS = [
+  { value: 'SCHEDULED', label: 'Scheduled' },
+  { value: 'IN_PROGRESS', label: 'In progress' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+  { value: 'CLIENT_ABSENT', label: 'Child absence' },
+  { value: 'THERAPIST_LEAVE', label: 'Therapist leave' },
+  { value: 'FLAGGED', label: 'Flag / under review' },
+]
+
+const SESSION_STATUS_LABELS = Object.fromEntries(
+  SESSION_STATUS_OPTIONS.map(({ value, label }) => [value, label]),
+)
+
+function sessionStatusLabel(code) {
+  if (!code) return ''
+  return SESSION_STATUS_LABELS[code] || code.replaceAll('_', ' ')
+}
 
 const STATUS_COLORS = {
   COMPLETED:       '#10b981',
@@ -25,6 +44,7 @@ const STATUS_COLORS = {
   RESCHEDULED:     '#8b5cf6',
   CLIENT_ABSENT:   '#f97316',
   THERAPIST_LEAVE: '#94a3b8',
+  FLAGGED:         '#dc2626',
 }
 
 const PIE_PALETTE = ['#6366f1', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#f97316']
@@ -43,6 +63,58 @@ function fmt(d) {
   if (!d) return '—'
   const dt = new Date(d)
   return dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
+function formatDurationMins(mins) {
+  if (mins == null) return null
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60)
+    const rest = mins % 60
+    return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`
+  }
+  return `${mins}m`
+}
+
+function formatProductLabel(key) {
+  if (!key) return null
+  const labeled = moduleLabel(String(key).toLowerCase()) || String(key).replaceAll('_', ' ')
+  return labeled.charAt(0).toUpperCase() + labeled.slice(1)
+}
+
+function formatSessionMode(mode) {
+  if (!mode) return ''
+  return String(mode).replaceAll('_', ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())
+}
+
+function sessionCanFlag(status) {
+  return status === 'CANCELLED' || status === 'NO_SHOW' || status === 'CLIENT_ABSENT'
+}
+
+function sessionReviewHref(session) {
+  return session.case_id
+    ? `/admin/cases/${session.case_id}?tab=logs&session_id=${session.id}`
+    : null
+}
+
+function sessionRowModel(s) {
+  const startDisplay = s.actual_start_at ? fmt(s.actual_start_at) : (s.start_time ? s.start_time.slice(0, 5) : '—')
+  const endDisplay = s.actual_end_at ? fmt(s.actual_end_at) : (s.end_time ? s.end_time.slice(0, 5) : '—')
+  const durationLabel = formatDurationMins(s.duration_mins)
+  const isLate = Boolean(
+    s.actual_start_at && s.start_time &&
+    new Date(s.actual_start_at).toISOString().slice(11, 16) > s.start_time.slice(0, 5),
+  )
+  return {
+    startDisplay,
+    endDisplay,
+    timeRange: `${startDisplay}${endDisplay !== '—' ? ` – ${endDisplay}` : ''}`,
+    durationLabel,
+    productLabel: formatProductLabel(s.product_module),
+    modeLabel: formatSessionMode(s.mode),
+    canFlag: sessionCanFlag(s.status),
+    isLate,
+    reviewHref: sessionReviewHref(s),
+  }
 }
 
 
@@ -208,7 +280,10 @@ function OverviewTab({ data }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Status summary pill row */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-        {Object.entries(status_counts).map(([k, v]) => (
+        {Object.entries(status_counts)
+          .filter(([, v]) => v > 0)
+          .filter(([k]) => k !== 'NO_SHOW' && k !== 'RESCHEDULED')
+          .map(([k, v]) => (
           <div key={k} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: '#f8fafc', border: '1px solid #e2e8f0',
@@ -219,7 +294,7 @@ function OverviewTab({ data }) {
               width: 8, height: 8, borderRadius: '50%',
               background: STATUS_COLORS[k] || '#94a3b8', flexShrink: 0,
             }} />
-            {k.replaceAll('_', ' ')}: {v}
+            {sessionStatusLabel(k)}: {v}
           </div>
         ))}
       </div>
@@ -395,9 +470,30 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
     }
   }
 
+  async function downloadDurationOutliers() {
+    const p = new URLSearchParams()
+    if (filters.dateFrom) p.set('date_from', filters.dateFrom)
+    if (filters.dateTo) p.set('date_to', filters.dateTo)
+    if (filters.therapistId) p.set('therapist_id', filters.therapistId)
+    if (filters.productModule) p.set('product_module', filters.productModule)
+    if (filters.caseId) p.set('case_id', filters.caseId)
+    const qs = p.toString()
+    const from = filters.dateFrom || 'export'
+    const to = filters.dateTo || 'export'
+    try {
+      await apiDownload(
+        `/api/v1/admin/session-logs/duration-outliers/export/xlsx${qs ? `?${qs}` : ''}`,
+        `session_duration_outliers_${from}_${to}.xlsx`,
+      )
+    } catch (err) {
+      window.alert(err.message || 'Export failed')
+    }
+  }
+
   return (
     <>
       <div className="sessions-dash__export-bar">
+        <p className="sessions-dash__duration-note">Duration values are in minutes.</p>
         <input
           type="search"
           className="sessions-dash__filter-input sessions-dash__filter-input--grow"
@@ -406,24 +502,31 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
           placeholder="Filter rows…"
           aria-label="Filter sessions"
         />
-        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('xlsx')}>
-          Excel
-        </button>
-        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('pdf')}>
-          PDF
-        </button>
+        <div className="sessions-dash__export-actions">
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('xlsx')}>
+            Excel
+          </button>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={downloadDurationOutliers}>
+            Outliers
+          </button>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('pdf')}>
+            PDF
+          </button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
         <div className="sessions-dash__empty">No sessions found for this filter.</div>
       ) : (
         <AdminDataList
+          className="admin-data-list--sessions"
           desktop={
         <div className="admin-table-wrap sessions-dash__table-wrap">
           <table className="admin-table admin-table--compact sessions-dash__table">
             <thead>
               <tr>
                 <th>When</th>
+                <th>Duration (min)</th>
                 <th>Case / client</th>
                 <th>Therapist</th>
                 <th>Programme</th>
@@ -434,17 +537,8 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
             </thead>
             <tbody>
               {filtered.map((s) => {
-                const startDisplay = s.actual_start_at ? fmt(s.actual_start_at) : (s.start_time ? s.start_time.slice(0, 5) : '—')
-                const endDisplay   = s.actual_end_at   ? fmt(s.actual_end_at)   : (s.end_time   ? s.end_time.slice(0, 5)   : '—')
-                const isLate = s.actual_start_at && s.start_time &&
-                  new Date(s.actual_start_at).toISOString().slice(11, 16) > s.start_time.slice(0, 5)
-                const canFlag = s.status === 'CANCELLED' || s.status === 'NO_SHOW' || s.status === 'CLIENT_ABSENT'
+                const row = sessionRowModel(s)
                 const isHighlight = highlightSessionId && String(s.id) === String(highlightSessionId)
-                const durationLabel = s.duration_mins != null
-                  ? (s.duration_mins >= 60
-                    ? `${Math.floor(s.duration_mins / 60)}h${s.duration_mins % 60 > 0 ? ` ${s.duration_mins % 60}m` : ''}`
-                    : `${s.duration_mins}m`)
-                  : null
                 return (
                   <tr
                     key={s.id}
@@ -454,17 +548,18 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                     <td className="sessions-dash__when">
                       <span className="admin-table__primary">{formatDisplayDate(s.scheduled_date)}</span>
                       <span className="admin-table__meta">
-                        {startDisplay}
-                        {endDisplay !== '—' ? ` – ${endDisplay}` : ''}
-                        {durationLabel ? ` · ${durationLabel}` : ''}
+                        {row.timeRange}
                       </span>
-                      {isLate ? (
+                      {row.isLate ? (
                         <span className="admin-badge admin-badge--warning sessions-dash__pill">Late</span>
                       ) : null}
                     </td>
+                    <td className="sessions-dash__duration-mins">
+                      {s.duration_mins != null ? s.duration_mins : '—'}
+                    </td>
                     <td>
                       {s.case_id ? (
-                        <Link to={`/admin/cases/${s.case_id}?tab=logs&session_id=${s.id}`} className="admin-table__primary">
+                        <Link to={row.reviewHref} className="admin-table__primary">
                           {s.case_code || `Case #${s.case_id}`}
                         </Link>
                       ) : '—'}
@@ -474,11 +569,16 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                       {s.therapist_name || (s.therapist_id ? `#${s.therapist_id}` : '—')}
                     </td>
                     <td>
-                      {s.product_module ? <span className="admin-chip admin-chip--sm">{s.product_module}</span> : '—'}
-                      <span className="admin-table__meta">{s.mode?.toLowerCase() || ''}</span>
+                      {row.productLabel ? <span className="admin-chip admin-chip--sm">{row.productLabel}</span> : '—'}
+                      {row.modeLabel ? <span className="admin-table__meta">{row.modeLabel}</span> : null}
                     </td>
                     <td>
-                      <StatusBadge status={s.status} />
+                      {s.status ? <StatusBadge status={s.status} /> : null}
+                      {s.data_quality_flag ? (
+                        <span className="admin-badge admin-badge--danger sessions-dash__pill" style={{ marginLeft: 6 }}>
+                          Flagged
+                        </span>
+                      ) : null}
                       {s.actual_times_edited ? (
                         <span className="admin-badge admin-badge--warning sessions-dash__pill" style={{ marginLeft: 6 }}>
                           Times edited
@@ -499,15 +599,15 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                     </td>
                     <td>
                       <div className="sessions-dash__row-actions">
-                        {s.case_id ? (
+                        {row.reviewHref ? (
                           <Link
-                            to={`/admin/cases/${s.case_id}?tab=logs&session_id=${s.id}`}
+                            to={row.reviewHref}
                             className="admin-btn admin-btn--ghost admin-btn--sm"
                           >
                             View
                           </Link>
                         ) : null}
-                        {canFlag ? (
+                        {row.canFlag ? (
                           <button
                             type="button"
                             className="admin-btn admin-btn--sm sessions-dash__flag-btn"
@@ -526,21 +626,57 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
         </div>
           }
           mobile={filtered.map((s) => {
-                const startDisplay = s.actual_start_at ? fmt(s.actual_start_at) : (s.start_time ? s.start_time.slice(0, 5) : '—')
-                const endDisplay = s.actual_end_at ? fmt(s.actual_end_at) : (s.end_time ? s.end_time.slice(0, 5) : '—')
+                const row = sessionRowModel(s)
                 const isHighlight = highlightSessionId && String(s.id) === String(highlightSessionId)
-                const reviewHref = s.case_id
-                  ? `/admin/cases/${s.case_id}?tab=logs&session_id=${s.id}`
-                  : null
+                const titleParts = [formatDisplayDate(s.scheduled_date), row.timeRange]
+                if (s.duration_mins != null) titleParts.push(`${s.duration_mins} min`)
                 return (
                   <li key={s.id} ref={isHighlight ? highlightRef : null}>
                     <AdminTaskCard
+                      className="sessions-dash__session-card"
                       highlight={isHighlight}
-                      title={`${formatDisplayDate(s.scheduled_date)} · ${startDisplay}${endDisplay !== '—' ? ` – ${endDisplay}` : ''}`}
-                      meta={[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
+                      title={titleParts.join(' · ')}
+                      meta={
+                        <>
+                          <span className="sessions-dash__card-meta-line">
+                            {[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
+                          </span>
+                          <span className="sessions-dash__card-facts">
+                            <span className="sessions-dash__card-fact">
+                              <span className="sessions-dash__card-fact-label">Programme</span>
+                              {row.productLabel ? (
+                                <span className="admin-chip admin-chip--sm">{row.productLabel}</span>
+                              ) : (
+                                <span>—</span>
+                              )}
+                            </span>
+                            <span className="sessions-dash__card-fact">
+                              <span className="sessions-dash__card-fact-label">Location</span>
+                              <span>{row.modeLabel || '—'}</span>
+                            </span>
+                            {s.duration_mins != null ? (
+                              <span className="sessions-dash__card-fact">
+                                <span className="sessions-dash__card-fact-label">Duration (min)</span>
+                                <span>{s.duration_mins}</span>
+                              </span>
+                            ) : null}
+                          </span>
+                        </>
+                      }
                       badges={
                         <>
-                          <StatusBadge status={s.status} />
+                          {s.status ? <StatusBadge status={s.status} /> : null}
+                          {s.data_quality_flag ? (
+                            <span className="admin-badge admin-badge--danger sessions-dash__pill">Flagged</span>
+                          ) : null}
+                          {s.has_daily_log ? (
+                            <span className="admin-badge admin-badge--success sessions-dash__pill">Submitted</span>
+                          ) : (
+                            <span className="admin-badge admin-badge--warning sessions-dash__pill">Pending</span>
+                          )}
+                          {row.isLate ? (
+                            <span className="admin-badge admin-badge--warning sessions-dash__pill">Late</span>
+                          ) : null}
                           {s.actual_times_edited ? (
                             <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
                           ) : null}
@@ -550,31 +686,29 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                         </>
                       }
                       actions={
-                        <>
-                          {reviewHref ? (
-                            <Link
-                              to={reviewHref}
-                              className="admin-btn admin-btn--primary admin-btn--sm"
-                            >
-                              {s.has_daily_log ? 'Review log' : 'View case'}
-                            </Link>
-                          ) : null}
-                          {s.status === 'CANCELLED' || s.status === 'NO_SHOW' || s.status === 'CLIENT_ABSENT' ? (
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn--sm sessions-dash__flag-btn"
-                              onClick={() => setFlagSession(s)}
-                            >
-                              Flag
-                            </button>
-                          ) : null}
-                        </>
+                        row.reviewHref || row.canFlag ? (
+                          <>
+                            {row.reviewHref ? (
+                              <Link
+                                to={row.reviewHref}
+                                className="admin-btn admin-btn--primary sessions-dash__card-action"
+                              >
+                                View
+                              </Link>
+                            ) : null}
+                            {row.canFlag ? (
+                              <button
+                                type="button"
+                                className="admin-btn sessions-dash__flag-btn sessions-dash__card-action"
+                                onClick={() => setFlagSession(s)}
+                              >
+                                Flag
+                              </button>
+                            ) : null}
+                          </>
+                        ) : null
                       }
-                    >
-                      <p className="admin-muted" style={{ margin: 0 }}>
-                        {s.product_module || '—'} · Log: {s.has_daily_log ? 'Submitted' : 'Pending'}
-                      </p>
-                    </AdminTaskCard>
+                    />
                   </li>
                 )
               })}
@@ -679,7 +813,7 @@ export function AdminSessionLogsPage() {
   }
 
   const sc = data?.status_counts || {}
-  const totalInRange = Object.values(sc).reduce((a, b) => a + b, 0)
+  const totalInRange = data?.total_count ?? Object.values(sc).reduce((a, b) => a + b, 0)
 
   const filterChips = []
   if (filters.dateFrom || filters.dateTo) {
@@ -689,8 +823,8 @@ export function AdminSessionLogsPage() {
     const t = therapists.find((x) => String(x.therapist_user_id || x.id) === String(filters.therapistId))
     filterChips.push(t?.therapist_name || t?.full_name || `Therapist #${filters.therapistId}`)
   }
-  if (filters.productModule) filterChips.push(filters.productModule)
-  if (filters.status) filterChips.push(filters.status.replaceAll('_', ' '))
+  if (filters.productModule) filterChips.push(formatProductLabel(filters.productModule) || filters.productModule)
+  if (filters.status) filterChips.push(sessionStatusLabel(filters.status))
   if (filters.caseId) filterChips.push(`Case #${filters.caseId}`)
 
   const activeFilterCount = [
@@ -707,13 +841,6 @@ export function AdminSessionLogsPage() {
         title="Session logs"
         subtitle="Scheduled sessions and submitted daily logs — filter by case, therapist, and date."
       />
-
-      <AdminTaskCard title="Pending therapist leave" subtitle="Session-level therapist leave requests awaiting approval.">
-        <SessionAbsenceApprovals
-          listPath="/api/v1/sessions/absence/pending"
-          emptyLabel="No absence requests in the queue."
-        />
-      </AdminTaskCard>
 
       {filters.caseId ? (
         <div className="sessions-dash__case-banner">
@@ -771,7 +898,7 @@ export function AdminSessionLogsPage() {
                 <option value="">All services</option>
                 {modules.map((m) => (
                   <option key={m} value={m}>
-                    {m}
+                    {formatProductLabel(m) || m}
                   </option>
                 ))}
               </select>
@@ -786,9 +913,9 @@ export function AdminSessionLogsPage() {
             onChange={(e) => setFilter('status', e.target.value)}
           >
             <option value="">All statuses</option>
-            {['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED', 'CLIENT_ABSENT', 'THERAPIST_LEAVE'].map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
+            {SESSION_STATUS_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
@@ -801,7 +928,6 @@ export function AdminSessionLogsPage() {
           <KpiCard label="This week" value={data?.week_count} sub="sessions" accent="blue" />
           <KpiCard label="Completed" value={sc.COMPLETED} sub={`of ${totalInRange}`} accent="green" />
           <KpiCard label="Cancelled" value={(sc.CANCELLED || 0) + (sc.CLIENT_ABSENT || 0)} sub="in range" accent="red" />
-          <KpiCard label="No-shows" value={sc.NO_SHOW} accent="amber" />
         </div>
       ) : null}
 
@@ -820,7 +946,7 @@ export function AdminSessionLogsPage() {
             className={`sessions-dash__tab ${activeTab === 'sessions' ? 'is-active' : ''}`}
             onClick={() => switchTab('sessions')}
           >
-            Sessions ({data?.recent_sessions?.length ?? 0})
+            Sessions ({data?.total_count ?? data?.recent_sessions?.length ?? 0})
           </button>
         </div>
 

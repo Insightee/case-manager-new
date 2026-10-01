@@ -1,5 +1,351 @@
 /* Case detail — mobile / tablet operating-dashboard layout */
 
+/* Overview tab — all breakpoints (was mistakenly scoped to mobile only) */
+.admin-case-overview {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-case-overview__panel {
+  padding: 14px 16px;
+}
+
+.admin-case-overview__panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-case-overview__panel-head--split {
+  align-items: center;
+}
+
+.admin-case-overview__eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0d9488;
+}
+
+.admin-case-overview__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-case-overview__contacts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+.admin-case-overview__contact-card,
+.admin-case-overview__readonly {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.admin-case-overview__zoho {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.admin-case-overview__contact-label {
+  margin: 0 0 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.admin-case-overview__contact-name {
+  margin: 0 0 4px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-case-overview__contact-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.admin-case-overview__contact-link {
+  color: #0d9488;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.admin-case-overview__contact-link + .admin-case-overview__contact-link {
+  margin-top: 2px;
+}
+
+.admin-case-overview__readonly-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.admin-case-overview__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-case-overview__meta-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-case-overview__meta-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.admin-case-overview__meta-value {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.admin-case-overview__notes-form {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-case-overview__notes-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.admin-case-overview__notes-form textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.admin-case-ops-note__latest {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.admin-case-ops-note__latest-heading {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.admin-case-ops-note__meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-case-ops-note__body {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-case-ops-note__paragraph {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.admin-case-ops-note__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.admin-case-ops-note__success {
+  margin: 0 0 10px;
+}
+
+.admin-case-ops-note__modal {
+  max-width: 520px;
+  width: min(96vw, 520px);
+}
+
+.admin-case-ops-note__modal--wide {
+  max-width: 640px;
+  width: min(96vw, 640px);
+}
+
+.admin-case-ops-note__modal-subtitle {
+  margin: -8px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.admin-case-ops-note__form {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-case-ops-note__form .admin-form-grid input,
+.admin-case-ops-note__form .admin-form-grid textarea {
+  width: 100%;
+}
+
+.admin-case-ops-note__textarea {
+  min-height: 132px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.admin-case-ops-note__form .admin-form-grid textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.admin-case-ops-note__stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+}
+
+.admin-case-ops-note__stack-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.admin-case-ops-note__stack-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.admin-case-ops-note__delete {
+  margin-top: 8px;
+  color: #b91c1c;
+}
+
+.admin-case-overview__zoho-form {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-case-overview__zoho-form label {
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.admin-case-overview__meeting-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-case-overview__meeting-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-case-overview__meeting-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.admin-case-overview__meeting-head strong {
+  font-size: 0.875rem;
+  line-height: 1.3;
+  color: #0f172a;
+}
+
+.admin-case-overview__meeting-meta,
+.admin-case-overview__meeting-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.admin-case-overview__meeting-label {
+  font-weight: 700;
+  color: #334155;
+}
+
+.admin-case-overview__meeting-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 44px;
+  color: #0d9488;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+@media (min-width: 901px) {
+  .admin-case-overview__contacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-case-overview__meta {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .admin-case-overview__meeting-item {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+}
+
 @media (max-width: 900px) {
   .admin-case-detail-page {
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
@@ -77,6 +423,8 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     padding-bottom: 2px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail-summary__chips::-webkit-scrollbar {
@@ -152,6 +500,8 @@
   /* Primary tab pills */
   .admin-case-detail__mobile-nav {
     margin-bottom: 12px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail__primary-tabs {
@@ -164,6 +514,8 @@
     scrollbar-width: none;
     padding: 2px 0 8px;
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail__primary-tabs::-webkit-scrollbar {
@@ -206,6 +558,8 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     padding-bottom: 2px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .admin-case-detail__quick-actions::-webkit-scrollbar {
@@ -490,5 +844,19 @@
 
   .admin-case-detail-stat__value {
     font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-case-overview__panel {
+    padding: 12px;
+  }
+
+  .admin-case-overview__meta {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-case-overview__meeting-head {
+    flex-direction: column;
   }
 }

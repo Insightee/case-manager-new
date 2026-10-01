@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case as sa_case, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import get_allowed_case_product_modules
+from app.services.admin_scope_service import apply_case_scope
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case, CaseStatus
+from app.models.child import Child
 from app.models.case_therapist_transition import (
     CaseTherapistTransition,
     CaseTherapistTransitionStatus,
@@ -26,6 +27,60 @@ from app.services.assignment_service import (
     sync_case_manager_from_therapist,
 )
 
+def pending_therapist_assignment_clause():
+    """Cases waiting for a therapist: new allotment or ACTIVE without an active assignment."""
+    no_active_assignment = ~exists(
+        select(1).where(
+            CaseAssignment.case_id == Case.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+    )
+    return or_(
+        Case.status == CaseStatus.PENDING_ALLOTMENT,
+        and_(Case.status == CaseStatus.ACTIVE, no_active_assignment),
+    )
+
+
+def count_pending_therapist_assignments(db: Session, user: User) -> int:
+    stmt = select(func.count()).select_from(Case).where(pending_therapist_assignment_clause())
+    stmt = apply_case_scope(stmt, user)
+    return int(db.scalar(stmt) or 0)
+
+
+def list_pending_therapist_assignment_queue(db: Session, user: User, *, limit: int = 6) -> list[dict]:
+    kind_order = sa_case((Case.status == CaseStatus.PENDING_ALLOTMENT, 0), else_=1)
+    stmt = (
+        select(
+            Case.id,
+            Case.case_code,
+            Case.service_type,
+            Case.status,
+            Child.first_name,
+            Child.last_name,
+        )
+        .join(Child, Case.child_id == Child.id)
+        .where(pending_therapist_assignment_clause())
+    )
+    stmt = apply_case_scope(stmt, user).order_by(kind_order, Case.created_at.desc()).limit(limit)
+    rows = db.execute(stmt).all()
+    items: list[dict] = []
+    for row in rows:
+        status_val = row.status.value if hasattr(row.status, "value") else str(row.status)
+        items.append(
+            {
+                "id": row.id,
+                "case_code": row.case_code,
+                "child_name": f"{row.first_name} {row.last_name}".strip(),
+                "service_type": row.service_type,
+                "status": status_val,
+                "allotment_kind": "pending_allotment"
+                if status_val == CaseStatus.PENDING_ALLOTMENT.value
+                else "needs_therapist",
+            }
+        )
+    return items
+
+
 PIPELINE_COLUMNS = [
     ("pending_allotment", "Pending allotment", "slate"),
     ("needs_therapist", "Needs therapist", "warning"),
@@ -36,19 +91,6 @@ PIPELINE_COLUMNS = [
     ("active", "Active", "success"),
     ("closed", "Closed", "muted"),
 ]
-
-
-def _case_filters(user: User) -> list:
-    allowed = get_allowed_case_product_modules(user)
-    if allowed is None:
-        return []
-    if not allowed:
-        from app.core.permissions import is_finance_desk_user, user_has_permission
-
-        if is_finance_desk_user(user) and user_has_permission(user, "case.read.all"):
-            return []
-        return [Case.id < 0]
-    return [Case.product_module.in_(allowed)]
 
 
 def _classify_pipeline(
@@ -103,10 +145,9 @@ def _next_action(column: str, *, missing_logs: int, reports_under_review: int, h
 
 
 def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
-    filters = _case_filters(user)
-    cases = db.scalars(
-        select(Case).options(selectinload(Case.child)).where(*filters).order_by(Case.case_code)
-    ).all()
+    stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
+    stmt = apply_case_scope(stmt, user)
+    cases = db.scalars(stmt).all()
     if not cases:
         empty = {
             "columns": [{"id": c[0], "title": c[1], "tone": c[2], "count": 0, "cases": []} for c in PIPELINE_COLUMNS],
@@ -159,6 +200,14 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
         cm_names = dict(
             db.execute(select(User.id, User.full_name).where(User.id.in_(cm_ids))).all()
         )
+
+    from app.models.therapist_profile import TherapistProfile
+
+    mentored_therapist_ids = set(
+        db.scalars(
+            select(TherapistProfile.user_id).where(TherapistProfile.mentor_user_id == user.id)
+        ).all()
+    )
 
     report_counts = dict(
         db.execute(
@@ -275,6 +324,11 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             "pipeline_column": column,
             "case_manager_user_id": cm_user_id,
             "case_manager_name": cm_names.get(cm_user_id) if cm_user_id else None,
+            "is_mentor_case": bool(
+                therapist_user_id
+                and therapist_user_id in mentored_therapist_ids
+                and cm_user_id != user.id
+            ),
             "therapist_user_id": therapist_user_id,
             "therapist_name": therapist_name,
             "assignment_end_date": end_date.isoformat() if end_date else None,

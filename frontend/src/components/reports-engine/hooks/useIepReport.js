@@ -306,6 +306,21 @@ export function useIepReport(caseId) {
     return res
   }
 
+  async function renewIep() {
+    setSaving(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/cases/${caseId}/reports/iep/renew`, { method: 'POST' })
+      await loadSummary()
+      return true
+    } catch (err) {
+      setError(normalizeClinicalApiError(err, 'IEP'))
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function patchClinicalInsights(patch) {
     const sec = workspace?.sections?.find((s) => s.key === 'clinical_insights')
     const data = { ...(sec?.structured_data || {}), ...patch }
@@ -347,6 +362,7 @@ export function useIepReport(caseId) {
     stakeholderApprove,
     stakeholderRequestReview,
     cmResendForApproval,
+    renewIep,
     patchClinicalInsights,
     AUTO_SAVE_MS,
     aiEnabled: AI_ENABLED,

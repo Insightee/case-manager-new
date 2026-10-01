@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { billingSummary } from '../invoices/invoiceUtils.js'
-import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   product_billing_rule_id: '',
   billing_type: '',
   client_billing_mode: '',
   client_rate_per_session_inr: '',
+  client_monthly_rate_inr: '',
   package_session_count: '',
   package_amount_inr: '',
-  compensation_mode: '',
+  compensation_mode: 'FIXED_LUMP',
   pay_share_amount_inr: '',
   therapist_fixed_pay_inr: '',
   billing_notes: '',
+  client_billing_effective_from: '',
+  therapist_remuneration_effective_from: '',
+}
+
+function resolvedTherapistPay(item) {
+  const fixed = item?.therapist_fixed_pay_inr
+  const share = item?.pay_share_amount_inr
+  if (fixed != null && fixed !== '' && Number(fixed) > 0) return String(fixed)
+  if (share != null && share !== '' && Number(share) > 0) return String(share)
+  return ''
 }
 
 export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLabel = 'Save billing', blankSlate = false }) {
@@ -21,12 +31,38 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState('')
   const [productRules, setProductRules] = useState([])
+  const [productRulesState, setProductRulesState] = useState('idle')
+  const [productRulesHint, setProductRulesHint] = useState('')
 
   useEffect(() => {
     if (!caseItem?.product_module) return
+    let cancelled = false
+    setProductRulesState('loading')
+    setProductRulesHint('')
     apiFetch(`/api/v1/admin/ledger-billing/product-rules?product_module=${caseItem.product_module}`)
-      .then(setProductRules)
-      .catch(() => setProductRules([]))
+      .then((rules) => {
+        if (cancelled) return
+        setProductRules(Array.isArray(rules) ? rules : [])
+        setProductRulesState('ready')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setProductRules([])
+        setProductRulesState('error')
+        const status = err?.status
+        if (status === 404) {
+          setProductRulesHint(
+            'Product billing rules are unavailable until ENABLE_BILLING is enabled on the server. You can still set rates below.',
+          )
+        } else if (status === 403) {
+          setProductRulesHint('Product rule list needs invoice.approve — rates below can still be saved.')
+        } else {
+          setProductRulesHint(err?.message || 'Could not load product billing rules.')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [caseItem?.product_module])
 
   useEffect(() => {
@@ -38,17 +74,21 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
       })
       return
     }
+    const lump = resolvedTherapistPay(caseItem)
     setForm({
       product_billing_rule_id: caseItem.product_billing_rule_id ?? '',
       billing_type: caseItem.billing_type || '',
       client_billing_mode: caseItem.client_billing_mode || '',
       client_rate_per_session_inr: caseItem.client_rate_per_session_inr ?? '',
+      client_monthly_rate_inr: caseItem.client_monthly_rate_inr ?? '',
       package_session_count: caseItem.package_session_count ?? '',
       package_amount_inr: caseItem.package_amount_inr ?? '',
-      compensation_mode: caseItem.compensation_mode || '',
-      pay_share_amount_inr: caseItem.pay_share_amount_inr ?? '',
-      therapist_fixed_pay_inr: caseItem.therapist_fixed_pay_inr ?? '',
+      compensation_mode: 'FIXED_LUMP',
+      pay_share_amount_inr: lump,
+      therapist_fixed_pay_inr: lump,
       billing_notes: caseItem.billing_notes || '',
+      client_billing_effective_from: '',
+      therapist_remuneration_effective_from: '',
     })
   }, [caseItem, blankSlate])
 
@@ -59,7 +99,11 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
       const next = { ...f, [key]: value }
       if (key === 'billing_type') {
         next.client_billing_mode = value === 'PACKAGE' ? 'PREPAID' : 'POSTPAID'
-        if (!next.compensation_mode) next.compensation_mode = 'PERCENTAGE'
+        next.compensation_mode = 'FIXED_LUMP'
+      }
+      if (key === 'therapist_fixed_pay_inr') {
+        next.pay_share_amount_inr = value
+        next.compensation_mode = 'FIXED_LUMP'
       }
       return next
     })
@@ -72,21 +116,66 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
     setLocalError('')
     onError?.('')
     try {
+      const lump = form.therapist_fixed_pay_inr ? Number(form.therapist_fixed_pay_inr) : null
+      const nextClient =
+        form.billing_type === 'PER_SESSION'
+          ? (form.client_rate_per_session_inr ? Number(form.client_rate_per_session_inr) : null)
+          : form.billing_type === 'MONTHLY_FIXED'
+            ? (form.client_monthly_rate_inr ? Number(form.client_monthly_rate_inr) : null)
+            : form.billing_type === 'PACKAGE'
+              ? (form.package_amount_inr ? Number(form.package_amount_inr) : null)
+              : null
+      const prevClient =
+        caseItem.billing_type === 'PER_SESSION'
+          ? Number(caseItem.client_rate_per_session_inr || 0)
+          : caseItem.billing_type === 'MONTHLY_FIXED'
+            ? Number(caseItem.client_monthly_rate_inr || caseItem.package_amount_inr || 0)
+            : Number(caseItem.package_amount_inr || 0)
+      const prevTherapist = Number(resolvedTherapistPay(caseItem) || 0)
+      const clientChanged =
+        nextClient != null && Math.round(nextClient * 100) !== Math.round(prevClient * 100)
+      const therapistChanged =
+        lump != null && Math.round(lump * 100) !== Math.round(prevTherapist * 100)
+      if (clientChanged && !form.client_billing_effective_from) {
+        throw new Error(
+          'Looks like we still need the client billing effective from date before we can save this rate change.',
+        )
+      }
+      if (therapistChanged && !form.therapist_remuneration_effective_from) {
+        throw new Error(
+          'Looks like we still need the therapist remuneration effective from date before we can save this rate change.',
+        )
+      }
       const payload = {
         product_billing_rule_id: form.product_billing_rule_id ? Number(form.product_billing_rule_id) : null,
         billing_type: form.billing_type || null,
         client_billing_mode: form.client_billing_mode || null,
-        client_rate_per_session_inr: form.client_rate_per_session_inr ? Number(form.client_rate_per_session_inr) : null,
-        package_session_count: form.package_session_count ? Number(form.package_session_count) : null,
-        package_amount_inr: form.package_amount_inr ? Number(form.package_amount_inr) : null,
-        compensation_mode: form.compensation_mode || null,
-        pay_share_amount_inr: form.pay_share_amount_inr ? Number(form.pay_share_amount_inr) : null,
-        therapist_fixed_pay_inr: form.therapist_fixed_pay_inr ? Number(form.therapist_fixed_pay_inr) : null,
+        client_rate_per_session_inr:
+          form.billing_type === 'PER_SESSION' && form.client_rate_per_session_inr
+            ? Number(form.client_rate_per_session_inr)
+            : null,
+        client_monthly_rate_inr:
+          form.billing_type === 'MONTHLY_FIXED' && form.client_monthly_rate_inr
+            ? Number(form.client_monthly_rate_inr)
+            : null,
+        package_session_count:
+          form.billing_type === 'PACKAGE' && form.package_session_count
+            ? Number(form.package_session_count)
+            : null,
+        package_amount_inr:
+          form.billing_type === 'PACKAGE' && form.package_amount_inr
+            ? Number(form.package_amount_inr)
+            : null,
+        compensation_mode: 'FIXED_LUMP',
+        therapist_fixed_pay_inr: lump,
+        pay_share_amount_inr: lump,
         billing_notes: form.billing_notes || null,
+        client_billing_effective_from: form.client_billing_effective_from || null,
+        therapist_remuneration_effective_from: form.therapist_remuneration_effective_from || null,
       }
       await onSave(payload)
     } catch (err) {
-      const msg = err.message || 'Could not save billing'
+      const msg = err.message || 'Looks like we still need a few details before we can save this.'
       setLocalError(msg)
       onError?.(msg)
     } finally {
@@ -97,10 +186,11 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
   const summary = billingSummary({
     billing_type: form.billing_type,
     client_rate_per_session_inr: form.client_rate_per_session_inr,
+    client_monthly_rate_inr: form.client_monthly_rate_inr,
     package_session_count: form.package_session_count,
     package_amount_inr: form.package_amount_inr,
-    compensation_mode: form.compensation_mode,
-    pay_share_amount_inr: form.pay_share_amount_inr,
+    compensation_mode: 'FIXED_LUMP',
+    pay_share_amount_inr: form.therapist_fixed_pay_inr,
     therapist_fixed_pay_inr: form.therapist_fixed_pay_inr,
   })
 
@@ -130,7 +220,17 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
             </option>
           ))}
         </select>
-        {productRules.length === 0 ? (
+        {productRulesState === 'loading' ? (
+          <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+            Loading product rules…
+          </span>
+        ) : null}
+        {productRulesHint ? (
+          <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+            {productRulesHint}
+          </span>
+        ) : null}
+        {productRulesState === 'ready' && productRules.length === 0 && !productRulesHint ? (
           <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
             No rules for module &quot;{caseItem.product_module}&quot; — add under Finance → ledger billing, or change
             this case&apos;s product module to match an existing rule set.
@@ -150,53 +250,109 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLab
         <select value={form.billing_type} onChange={(e) => setField('billing_type', e.target.value)} required>
           <option value="">Select…</option>
           <option value="PER_SESSION">Per session</option>
+          <option value="MONTHLY_FIXED">Monthly fixed</option>
           <option value="PACKAGE">Package</option>
         </select>
       </label>
 
       {form.billing_type === 'PER_SESSION' ? (
-        <>
-          <label>
-            Client rate per session (INR)
-            <input type="number" min="0" value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
-          </label>
-          <label>
-            Therapist share (INR)
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
-          </label>
-        </>
+        <label>
+          Client rate per session (INR)
+          <input
+            type="number"
+            min="0"
+            value={form.client_rate_per_session_inr}
+            onChange={(e) => setField('client_rate_per_session_inr', e.target.value)}
+            required
+          />
+        </label>
+      ) : null}
+
+      {form.billing_type === 'MONTHLY_FIXED' ? (
+        <label>
+          Monthly client rate (INR)
+          <input
+            type="number"
+            min="0"
+            value={form.client_monthly_rate_inr}
+            onChange={(e) => setField('client_monthly_rate_inr', e.target.value)}
+            required
+          />
+        </label>
       ) : null}
 
       {form.billing_type === 'PACKAGE' ? (
         <>
           <label>
             Package sessions
-            <input type="number" min="1" value={form.package_session_count} onChange={(e) => setField('package_session_count', e.target.value)} />
+            <input
+              type="number"
+              min="1"
+              value={form.package_session_count}
+              onChange={(e) => setField('package_session_count', e.target.value)}
+              required
+            />
           </label>
           <label>
             Package amount (INR, client)
-            <input type="number" min="0" value={form.package_amount_inr} onChange={(e) => setField('package_amount_inr', e.target.value)} />
+            <input
+              type="number"
+              min="0"
+              value={form.package_amount_inr}
+              onChange={(e) => setField('package_amount_inr', e.target.value)}
+              required
+            />
+          </label>
+        </>
+      ) : null}
+
+      {form.billing_type ? (
+        <label>
+          Therapist pay (lumpsum, INR)
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            value={form.therapist_fixed_pay_inr}
+            onChange={(e) => setField('therapist_fixed_pay_inr', e.target.value)}
+            required
+          />
+          <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+            Flat amount paid to the therapist. Must not exceed the client billing amount.
+            {caseItem.product_module === 'homecare' || caseItem.product_module === 'counselling'
+              ? ' Homecare/counselling: Insighte margin under 30% needs super-admin review (₹5k floor does not apply).'
+              : caseItem.product_module === 'shadow_support' || String(caseItem.product_module || '').includes('shadow')
+                ? ' Shadow: absolute profit under ₹5,000 needs super-admin review.'
+                : ''}
+          </span>
+        </label>
+      ) : null}
+
+      {form.billing_type ? (
+        <>
+          <label>
+            Client billing effective from
+            <input
+              type="date"
+              value={form.client_billing_effective_from}
+              onChange={(e) => setField('client_billing_effective_from', e.target.value)}
+            />
+            <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+              Required when the client charge changes. Invoices use this date for the service period.
+            </span>
           </label>
           <label>
-            Compensation mode
-            <select value={form.compensation_mode} onChange={(e) => setField('compensation_mode', e.target.value)}>
-              <option value="">Select…</option>
-              <option value="PERCENTAGE">Percentage of package</option>
-              <option value="FIXED_LUMP">Fixed lump to therapist</option>
-            </select>
+            Therapist remuneration effective from
+            <input
+              type="date"
+              value={form.therapist_remuneration_effective_from}
+              onChange={(e) => setField('therapist_remuneration_effective_from', e.target.value)}
+            />
+            <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem', marginTop: 4 }}>
+              Required when therapist pay changes. Payout uses this for service periods — not the live case amount alone.
+            </span>
           </label>
-          {form.compensation_mode === 'PERCENTAGE' ? (
-            <label>
-              Therapist share (INR)
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
-            </label>
-          ) : null}
-          {form.compensation_mode === 'FIXED_LUMP' ? (
-            <label>
-              Therapist fixed pay (INR)
-              <input type="number" min="0" value={form.therapist_fixed_pay_inr} onChange={(e) => setField('therapist_fixed_pay_inr', e.target.value)} />
-            </label>
-          ) : null}
         </>
       ) : null}
 

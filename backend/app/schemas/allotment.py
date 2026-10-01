@@ -34,6 +34,7 @@ class CaseAllotRequest(CaseBillingFields, CaseServiceAddressFields):
     product_module: str
     day_type: Optional[CaseDayType] = None
     case_code: Optional[str] = None
+    zoho_id: Optional[str] = Field(None, max_length=64)
     client_billing_mode: Optional[str] = None
     case_manager_user_id: Optional[int] = None
     region: Optional[str] = None

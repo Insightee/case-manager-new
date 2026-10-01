@@ -1,17 +1,35 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
 import { isBackfillWindowActive, migrationBackfillDateBounds } from '../../lib/leaveMigration.js'
+import { logsPathForSession } from '../../lib/sessionStartRules.js'
 
 function sliceTime(t) {
   if (!t) return ''
   return String(t).slice(0, 5)
 }
 
+function parseAbsenceReplaceConflict(detail) {
+  if (!detail || typeof detail === 'string') return null
+  if (
+    detail.can_replace_log &&
+    (detail.code === 'LOG_EXISTS_FOR_DAY' || detail.code === 'VISIT_EXISTS_NO_LOG')
+  ) {
+    return {
+      code: detail.code,
+      sessionId: detail.session_id,
+      message:
+        detail.message ||
+        'A log exists for this day. Remove the log and mark the child absent instead?',
+    }
+  }
+  return null
+}
+
 /** Log child absent — today via scheduled visit; July backfill via date picker + optional auto-session. */
 export function SessionAbsenceSheet({
-  sessions = [],
+  sessions: sessionsProp = [],
   selectedSessionId,
   onSessionChange,
   onSuccess,
@@ -27,11 +45,20 @@ export function SessionAbsenceSheet({
   const [localError, setLocalError] = useState('')
   const [pendingRequest, setPendingRequest] = useState(null)
   const [statusLoading, setStatusLoading] = useState(false)
+  const [todaySessions, setTodaySessions] = useState([])
+  const [todayLoading, setTodayLoading] = useState(false)
+  const [replaceConfirm, setReplaceConfirm] = useState(null)
 
   const backfillActive = isBackfillWindowActive(migrationInfo)
   const dateBounds = useMemo(() => migrationBackfillDateBounds(migrationInfo), [migrationInfo])
   const today = todayIsoIST()
   const [absenceDate, setAbsenceDate] = useState(today)
+
+  const sessions = useMemo(() => {
+    if (backfillActive || !caseId) return sessionsProp
+    if (todaySessions.length) return todaySessions
+    return sessionsProp.filter((s) => s.case_id === caseId && s.scheduled_date === today)
+  }, [backfillActive, caseId, todaySessions, sessionsProp, today])
 
   const sessionId = selectedSessionId || (sessions[0]?.id ?? null)
   const session = sessions.find((s) => s.id === sessionId) || sessions[0]
@@ -41,7 +68,28 @@ export function SessionAbsenceSheet({
   }, [sessions, caseId, absenceDate])
 
   const activeSessionId = sessionsForSelectedDate[0]?.id ?? sessionId
-  const activeSession = sessionsForSelectedDate[0] || session
+  const activeSession = sessionsForSelectedDate.find((s) => s.id === activeSessionId) || sessionsForSelectedDate[0] || session
+  const liveSession = String(activeSession?.status || '').toUpperCase() === 'IN_PROGRESS'
+
+  const loadTodaySessions = useCallback(async () => {
+    if (backfillActive || !caseId) {
+      setTodaySessions([])
+      return
+    }
+    setTodayLoading(true)
+    try {
+      const data = await apiFetch(`/api/v1/sessions/absence/today-sessions?case_id=${caseId}`)
+      setTodaySessions(Array.isArray(data?.items) ? data.items : [])
+    } catch {
+      setTodaySessions([])
+    } finally {
+      setTodayLoading(false)
+    }
+  }, [backfillActive, caseId])
+
+  useEffect(() => {
+    void loadTodaySessions()
+  }, [loadTodaySessions])
 
   useEffect(() => {
     if (backfillActive && dateBounds?.min) {
@@ -107,8 +155,21 @@ export function SessionAbsenceSheet({
     })
   }
 
-  async function submitChildAbsent(e) {
-    e.preventDefault()
+  async function postChildAbsence(sessionIdToUse, { confirmReplaceLog = false } = {}) {
+    await patchSessionTimesIfNeeded()
+    return apiFetch(`/api/v1/sessions/${sessionIdToUse}/absence`, {
+      method: 'POST',
+      body: JSON.stringify({
+        absence_type: 'CLIENT_ABSENT',
+        reason: reason.trim() || null,
+        confirm_replace_log: confirmReplaceLog,
+      }),
+    })
+  }
+
+  async function submitChildAbsent(e, { confirmReplaceLog = false } = {}) {
+    e?.preventDefault?.()
+    if (busy) return
     if (backfillActive) {
       if (!caseId) {
         setLocalError('Choose a client first.')
@@ -125,9 +186,10 @@ export function SessionAbsenceSheet({
 
     setBusy(true)
     setLocalError('')
+    setReplaceConfirm(null)
     try {
       if (backfillActive) {
-        await apiFetch('/api/v1/sessions/child-absence/backfill', {
+        const created = await apiFetch('/api/v1/sessions/child-absence/backfill', {
           method: 'POST',
           body: JSON.stringify({
             case_id: Number(caseId),
@@ -138,32 +200,57 @@ export function SessionAbsenceSheet({
           }),
         })
         setReason('')
+        if (created) setPendingRequest(created)
         onSuccess?.('Child absent logged — parent or admin will review.', activeSessionId)
         return
       }
 
-      await patchSessionTimesIfNeeded()
-      await apiFetch(`/api/v1/sessions/${activeSessionId}/absence`, {
-        method: 'POST',
-        body: JSON.stringify({
-          absence_type: 'CLIENT_ABSENT',
-          reason: reason.trim() || null,
-        }),
-      })
+      const targetId = replaceConfirm?.sessionId || activeSessionId
+      const created = await postChildAbsence(targetId, { confirmReplaceLog })
       setReason('')
-      onSuccess?.('Child absent logged — parent or admin will review.', activeSessionId)
+      if (created) setPendingRequest(created)
+      await loadTodaySessions()
+      onSuccess?.('Child absent logged — parent or admin will review.', targetId)
     } catch (err) {
       if (err.status === 409 && err.detail?.existing && err.detail?.absence_request) {
         setPendingRequest(err.detail.absence_request)
         onSuccess?.(err.detail.message || 'Child absence already submitted for this session.', activeSessionId)
         return
       }
-      const msg = err.message || 'Could not submit child absent'
+      if (err.status === 409 && err.detail?.code === 'SESSION_IN_PROGRESS') {
+        const msg =
+          err.detail.message ||
+          'A session is still in progress for this visit. End it first, then mark the child absent.'
+        setLocalError(msg)
+        onError?.(msg)
+        return
+      }
+      const replaceConflict = parseAbsenceReplaceConflict(err.detail)
+      if (err.status === 409 && replaceConflict && !confirmReplaceLog) {
+        setReplaceConfirm(replaceConflict)
+        return
+      }
+      const msg =
+        (typeof err.detail === 'string' ? err.detail : err.detail?.message) ||
+        err.message ||
+        'Could not submit child absent'
       setLocalError(msg)
       onError?.(msg)
     } finally {
       setBusy(false)
     }
+  }
+
+  if (!backfillActive && !caseId) {
+    return (
+      <p className="ic-session-composer__hint" style={{ marginTop: 12 }}>
+        Choose a client to log child absence for today&apos;s visit.
+      </p>
+    )
+  }
+
+  if (!backfillActive && todayLoading && !sessions.length) {
+    return <p className="ic-session-composer__hint">Loading today&apos;s visits…</p>
   }
 
   if (!backfillActive && !sessions.length) {
@@ -223,10 +310,66 @@ export function SessionAbsenceSheet({
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
                 {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
+                {s.status && s.status !== 'SCHEDULED' ? ` (${String(s.status).replace(/_/g, ' ').toLowerCase()})` : ''}
               </option>
             ))}
           </select>
         </label>
+      ) : null}
+
+      {liveSession && !pendingRequest ? (
+        <div
+          className="ic-session-composer__status-card"
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 8,
+            border: '1px solid #93c5fd',
+            background: '#eff6ff',
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 600, color: '#1d4ed8' }}>A session is already in progress</p>
+          <p style={{ margin: '6px 0 12px', fontSize: '0.875rem' }}>
+            End that session first. If you already submitted a log, remove it — then you can mark the child absent.
+          </p>
+          <Link to={logsPathForSession(activeSessionId)} className="ic-btn ic-btn--primary">
+            Go to session
+          </Link>
+        </div>
+      ) : null}
+
+      {replaceConfirm ? (
+        <div
+          className="ic-session-composer__status-card"
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 8,
+            border: '1px solid #fca5a5',
+            background: '#fef2f2',
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 600, color: '#b91c1c' }}>Replace session log with child absence?</p>
+          <p style={{ margin: '6px 0 12px', fontSize: '0.875rem' }}>{replaceConfirm.message}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button
+              type="button"
+              className="ic-btn ic-btn--primary"
+              disabled={disabled || busy}
+              onClick={(ev) => submitChildAbsent(ev, { confirmReplaceLog: true })}
+            >
+              {busy ? 'Working…' : 'Remove log and mark absent'}
+            </button>
+            <button
+              type="button"
+              className="ic-btn ic-btn--ghost"
+              disabled={busy}
+              onClick={() => setReplaceConfirm(null)}
+            >
+              Keep existing log
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {statusLoading ? (
@@ -263,7 +406,7 @@ export function SessionAbsenceSheet({
           <span className="ic-session-composer__visit-label">Session date</span>
           <strong>{formatDisplayDate(activeSession?.scheduled_date || absenceDate)}</strong>
         </div>
-        {!pendingRequest ? (
+        {!pendingRequest && !liveSession && !replaceConfirm ? (
           <div className="ic-session-composer__time-grid">
             <label className="ic-session-composer__field">
               <span>Start time</span>
@@ -289,7 +432,7 @@ export function SessionAbsenceSheet({
         ) : null}
       </div>
 
-      {!pendingRequest ? (
+      {!pendingRequest && !liveSession && !replaceConfirm ? (
         <form
           onSubmit={submitChildAbsent}
           style={{
@@ -315,6 +458,7 @@ export function SessionAbsenceSheet({
             />
           </label>
           {localError ? <p className="ic-session-composer__error">{localError}</p> : null}
+          <p className="ic-session-composer__hint">You can mark child absent any time today before midnight — no need to wait for the scheduled slot.</p>
           <p className="ic-session-composer__hint">Parent or admin must approve before billing is updated.</p>
           <p className="ic-session-composer__hint">
             For your own leave, use the{' '}

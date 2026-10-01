@@ -27,7 +27,7 @@ function isPoolFresh(entry) {
   return Array.isArray(entry.items) && Date.now() - entry.loadedAt < POOL_TTL_MS
 }
 
-async function loadCasePool(assignedOnly, { force = false } = {}) {
+export async function loadCasePool(assignedOnly, { force = false } = {}) {
   const key = poolKey(assignedOnly)
   const entry = casePools[key]
   if (!force && isPoolFresh(entry)) return entry.items
@@ -104,12 +104,12 @@ function useDropdownPosition(open, anchorRef) {
   return style
 }
 
-function formatCaseLabel(c) {
+export function formatCaseLabel(c) {
   if (!c) return ''
   return [c.case_code, c.child_name].filter(Boolean).join(' · ')
 }
 
-function formatCaseMeta(c) {
+export function formatCaseMeta(c) {
   if (!c) return ''
   const parts = []
   const mod = MODULE_LABELS[c.product_module] || c.product_module
@@ -118,7 +118,7 @@ function formatCaseMeta(c) {
   return parts.join(' · ')
 }
 
-function caseMatchesQuery(c, query) {
+export function caseMatchesQuery(c, query) {
   const q = query.trim().toLowerCase()
   if (!q) return true
   const hay = [

@@ -134,34 +134,37 @@ def test_cm_review_approve_and_parent_sees_published():
         db.close()
 
     cm_headers = _login("casemanager@demo.com")
+    pdf = io.BytesIO(b"%PDF-1.4 progress report")
     create = client.post(
         f"/api/v1/cases/{case_id}/documents",
         headers=cm_headers,
-        json={
+        data={
             "category": "MONTHLY_PROGRESS_REPORT",
             "title": "Progress report",
-            "source_type": "EXTERNAL_LINK",
-            "external_url": "https://docs.google.com/document/d/progress99/edit",
+            "source_type": "UPLOAD",
         },
+        files={"file": ("progress.pdf", pdf, "application/pdf")},
     )
     assert create.status_code == 201
     doc_id = create.json()["id"]
-    client.post(
+    submit = client.post(
         f"/api/v1/documents/{doc_id}/workflow/submit",
         headers=cm_headers,
         json={},
     )
-    cm_review_headers = _login("superadmin@demo.com")
-    client.post(
+    assert submit.status_code == 200, submit.text
+    approve = client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
         headers=cm_headers,
         json={"visibility": "CLIENT_VISIBLE_AFTER_APPROVAL"},
     )
-    client.post(
+    assert approve.status_code == 200, approve.text
+    publish = client.post(
         f"/api/v1/documents/{doc_id}/workflow/publish_client",
         headers=cm_headers,
         json={},
     )
+    assert publish.status_code == 200, publish.text
     parent_headers = _login("parent@demo.com")
     list_r = client.get("/api/v1/parent/documents", headers=parent_headers)
     assert list_r.status_code == 200

@@ -299,7 +299,7 @@ export function CaseClientStatusCard({ caseId, caseRow, canEdit, canReopen = fal
         ) : !auditData?.audit?.length ? (
           <p className="admin-muted" style={{ fontSize: '0.825rem' }}>No status changes recorded yet.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="cs-audit__table-wrap">
             <table className="cs-audit__table">
               <thead>
                 <tr>

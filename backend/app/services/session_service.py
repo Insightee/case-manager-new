@@ -132,6 +132,8 @@ def start_session(
     lng: float | None = None,
     idempotency_key: str | None = None,
     allow_duplicate: bool = False,
+    admin_override: bool = False,
+    override_reason: str | None = None,
 ) -> TherapySession:
     if session.therapist_user_id != therapist_user_id:
         raise ValueError("Not your session")
@@ -210,12 +212,38 @@ def start_session(
                 message="You already have an active session. Continue it before starting another.",
             )
 
+    # DEC-02 / Core OS: all hard case+therapist gates BEFORE mutating to IN_PROGRESS.
+    from app.services.session_operational_gate_service import (
+        SessionStartBlockedError,
+        assert_case_allows_new_session,
+        assert_therapist_may_operate_case,
+        mark_session_override_for_finance_review,
+    )
+
+    if session.case_id:
+        try:
+            assert_case_allows_new_session(
+                db,
+                session.case_id,
+                admin_override=bool(admin_override),
+                override_reason=override_reason,
+            )
+            assert_therapist_may_operate_case(
+                db,
+                therapist_user_id=therapist_user_id,
+                case_id=session.case_id,
+            )
+        except SessionStartBlockedError:
+            raise
+
     now = _now()
     if allow_duplicate:
         session.is_additional_visit = True
         # Step 6: structured add-on; legacy flag stays. Ledger history never rewritten.
         if not getattr(session, "add_on_kind", None):
             session.add_on_kind = "EXTRA_DAY"
+    if admin_override and session.case_id:
+        mark_session_override_for_finance_review(session, override_reason or "")
     session.status = SessionStatus.IN_PROGRESS
     session.actual_start_at = now
     sched_mins = scheduled_duration_minutes(
@@ -229,10 +257,6 @@ def start_session(
     if lng is not None:
         session.checkin_lng = lng
     db.flush()
-    if session.case_id:
-        from app.services.case_status_request_service import assert_case_allows_new_session
-
-        assert_case_allows_new_session(db, session.case_id)
 
     key = idempotency_key or start_svc.default_idempotency_key(therapist_user_id, session)
     start_svc.store_idempotency(

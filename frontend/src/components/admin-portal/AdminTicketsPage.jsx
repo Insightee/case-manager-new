@@ -9,6 +9,7 @@ import { TicketFileInput } from '../support/TicketFileInput.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import { CaseCombobox } from '../shared/CaseCombobox.jsx'
 import '../support/support-tickets.css'
+import { CANONICAL_STATUS_OPTIONS, canonicalLabel, rowCanonicalStatus } from '../../lib/supportStatus.js'
 import {
   AdminCollapsibleFilters,
   AdminPageHeader,
@@ -23,9 +24,16 @@ import {
 
 const PAGE_SIZE = 25
 
+const TICKET_STATUS_FILTERS = [
+  { value: 'ALL', label: 'All statuses' },
+  ...CANONICAL_STATUS_OPTIONS.filter((o) => o.value),
+]
+
 export function AdminTicketsPage({ embedded = false }) {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkTicketId = searchParams.get('ticket')
+  const caseFilterId = searchParams.get('case_id') || ''
+  const caseFilterCode = searchParams.get('case_code') || ''
   const handledDeepLink = useRef(null)
   const [tickets, setTickets] = useState([])
   const [listMeta, setListMeta] = useState({ total: 0, pages: 1 })
@@ -48,11 +56,18 @@ export function AdminTicketsPage({ embedded = false }) {
 
   useEffect(() => {
     setPage(1)
-  }, [searchDebounced, statusFilter, moduleFilter])
+  }, [searchDebounced, statusFilter, moduleFilter, caseFilterId])
+
+  function clearCaseFilter() {
+    const next = new URLSearchParams(searchParams)
+    next.delete('case_id')
+    next.delete('case_code')
+    setSearchParams(next, { replace: true })
+  }
 
   const loadOpenCount = useCallback(async () => {
     try {
-      const qs = new URLSearchParams({ status: 'OPEN', page_size: '1' })
+      const qs = new URLSearchParams({ canonical_status: 'open', page_size: '1' })
       if (moduleFilter) qs.set('product_module', moduleFilter)
       const data = await apiFetch(`/api/v1/tickets?${qs.toString()}`)
       setOpenCount(data.total ?? 0)
@@ -66,7 +81,8 @@ export function AdminTicketsPage({ embedded = false }) {
     try {
       const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
       if (moduleFilter) qs.set('product_module', moduleFilter)
-      if (statusFilter !== 'ALL') qs.set('status', statusFilter)
+      if (caseFilterId) qs.set('case_id', caseFilterId)
+      if (statusFilter !== 'ALL') qs.set('canonical_status', statusFilter)
       if (searchDebounced.trim()) qs.set('search', searchDebounced.trim())
       const data = await apiFetch(`/api/v1/tickets?${qs.toString()}`)
       setTickets(data.items || [])
@@ -77,7 +93,7 @@ export function AdminTicketsPage({ embedded = false }) {
     } finally {
       setLoading(false)
     }
-  }, [page, moduleFilter, statusFilter, searchDebounced])
+  }, [page, moduleFilter, caseFilterId, statusFilter, searchDebounced])
 
   useEffect(() => {
     load()
@@ -162,13 +178,14 @@ export function AdminTicketsPage({ embedded = false }) {
 
   const rangeStart = listMeta.total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
   const rangeEnd = Math.min(page * PAGE_SIZE, listMeta.total)
+  const caseFilterLabel = caseFilterCode || (caseFilterId ? `Case #${caseFilterId}` : '')
 
   const filterControls = (
     <>
       <AdminSearchInput
         value={search}
         onChange={setSearch}
-        placeholder="Search therapist, client, subject, or ID…"
+        placeholder="Search parent, therapist, client, subject, or ID…"
       />
       <select
         className="admin-search__input"
@@ -177,10 +194,11 @@ export function AdminTicketsPage({ embedded = false }) {
         onChange={(e) => setStatusFilter(e.target.value)}
         aria-label="Ticket status"
       >
-        <option value="ALL">All</option>
-        <option value="OPEN">Open</option>
-        <option value="IN_PROGRESS">In progress</option>
-        <option value="RESOLVED">Resolved</option>
+        {TICKET_STATUS_FILTERS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
       <ServiceFilterSelect
         className="admin-search__input"
@@ -227,20 +245,35 @@ export function AdminTicketsPage({ embedded = false }) {
               <AdminSearchInput
                 value={search}
                 onChange={setSearch}
-                placeholder="Search therapist, client, subject, or ID…"
+                placeholder="Search parent, therapist, client, subject, or ID…"
               />
             }
             activeChips={[
-              statusFilter !== 'ALL' ? statusFilter.replace('_', ' ') : null,
+              caseFilterLabel ? `Case: ${caseFilterLabel}` : null,
+              statusFilter !== 'ALL' ? canonicalLabel(statusFilter) : null,
               moduleFilter || null,
               searchDebounced.trim() ? `Search: ${searchDebounced.trim()}` : null,
             ].filter(Boolean)}
-            activeCount={[statusFilter !== 'ALL', moduleFilter, searchDebounced.trim()].filter(Boolean).length}
+            activeCount={[caseFilterId, statusFilter !== 'ALL', moduleFilter, searchDebounced.trim()].filter(Boolean).length}
           >
             <AdminToolbar className="admin-toolbar--mobile-compact admin-collapsible-filters__grid">
               {filterControls}
+              {caseFilterId ? (
+                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearCaseFilter}>
+                  Clear case filter
+                </button>
+              ) : null}
             </AdminToolbar>
           </AdminCollapsibleFilters>
+          {caseFilterLabel ? (
+            <p className="admin-muted" style={{ marginBottom: 12 }}>
+              Showing tickets linked to <strong>{caseFilterLabel}</strong>.
+              {' '}
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearCaseFilter}>
+                Show all tickets
+              </button>
+            </p>
+          ) : null}
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
@@ -321,7 +354,11 @@ export function AdminTicketsPage({ embedded = false }) {
           ) : tickets.length === 0 ? (
             <AdminEmptyState
               title="No tickets"
-              description="No support tickets match this filter. Tickets raised from the therapist or client portals appear here — try All statuses, or create a test ticket as therapist@demo.com."
+              description={
+                caseFilterLabel
+                  ? `No support tickets match this filter for ${caseFilterLabel}. Try All statuses, clear the case filter, or search by parent, child, or therapist name.`
+                  : 'No support tickets match this filter. Tickets raised from the therapist or client portals appear here — try All statuses, or create a test ticket as therapist@demo.com.'
+              }
             />
           ) : (
             <>
@@ -351,7 +388,7 @@ export function AdminTicketsPage({ embedded = false }) {
                           {t.attachment_count > 0 ? ` · ${t.attachment_count} attachment(s)` : ''}
                         </p>
                       </button>
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={rowCanonicalStatus({ ...t, record_type: 'ticket' })} />
                     </div>
                     {expandedId === t.id ? (
                       <div style={{ marginTop: 12, width: '100%' }}>

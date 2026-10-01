@@ -97,9 +97,35 @@ def test_parent_cases_hide_closed_and_suspended():
     )
     assert activate.status_code == 200, activate.text
 
+    # Second active case keeps parent portal login after the first case closes.
+    allot_b = client.post(
+        "/api/v1/admin/cases/allot",
+        headers=admin_headers,
+        json={
+            "child_id": child_id,
+            "service_type": "Shadow support",
+            "product_module": "shadow_support",
+            "billing_type": "PER_SESSION",
+            "compensation_mode": "PERCENTAGE",
+            "client_billing_mode": "POSTPAID",
+            "client_rate_per_session_inr": 900,
+            "pay_share_amount_inr": 540,
+            "therapist_user_id": therapist_id,
+            "day_type": "HALF_DAY",
+        },
+    )
+    assert allot_b.status_code == 201, allot_b.text
+    case_id_b = allot_b.json()["case"]["id"]
+    activate_b = client.post(
+        f"/api/v1/admin/cases/{case_id_b}/activate-allotment",
+        headers=admin_headers,
+    )
+    assert activate_b.status_code == 200, activate_b.text
+
     parent = _login(parent_email, parent_password)
     visible_before = client.get("/api/v1/parent/cases", headers=parent).json()
     assert any(row["id"] == case_id for row in visible_before)
+    assert any(row["id"] == case_id_b for row in visible_before)
 
     close = client.post(
         f"/api/v1/cases/{case_id}/client-status",
@@ -114,13 +140,55 @@ def test_parent_cases_hide_closed_and_suspended():
 
     visible = client.get("/api/v1/parent/cases", headers=parent).json()
     assert all(row["id"] != case_id for row in visible)
+    assert any(row["id"] == case_id_b for row in visible)
 
     home = client.get("/api/v1/parent/home", headers=parent).json()
     assert all(row["id"] != case_id for row in home["cases"])
+    assert any(row["id"] == case_id_b for row in home["cases"])
     assert home["stats"]["case_count"] == len(visible)
 
     detail = client.get(f"/api/v1/parent/cases/{case_id}", headers=parent)
     assert detail.status_code == 404
+
+    # DEC-02: SUSPENDED cases are also hidden from parent portal (PENDING_REPLACEMENT stays visible).
+    suspend_b = client.post(
+        f"/api/v1/cases/{case_id_b}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "SUSPENDED",
+            "effective_date": date.today().isoformat(),
+            "reason": "Test suspend for parent portal visibility",
+        },
+    )
+    assert suspend_b.status_code == 200, suspend_b.text
+    visible_after_suspend = client.get("/api/v1/parent/cases", headers=parent).json()
+    assert all(row["id"] != case_id_b for row in visible_after_suspend)
+    detail_b = client.get(f"/api/v1/parent/cases/{case_id_b}", headers=parent)
+    assert detail_b.status_code == 404
+
+    # PENDING_REPLACEMENT remains accessible to the family.
+    reopen = client.post(
+        f"/api/v1/cases/{case_id_b}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "ACTIVE",
+            "effective_date": date.today().isoformat(),
+            "reason": "Reactivate before replacement status",
+        },
+    )
+    assert reopen.status_code == 200, reopen.text
+    replace = client.post(
+        f"/api/v1/cases/{case_id_b}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "PENDING_REPLACEMENT",
+            "effective_date": date.today().isoformat(),
+            "reason": "Waiting for new therapist",
+        },
+    )
+    assert replace.status_code == 200, replace.text
+    visible_replace = client.get("/api/v1/parent/cases", headers=parent).json()
+    assert any(row["id"] == case_id_b for row in visible_replace)
 
 
 def test_parent_report_detail_and_other_family_denied():
@@ -206,6 +274,79 @@ def test_parent_profile_secondary_contact():
     body = patch.json()
     assert body["secondary_contact_name"] == "Spouse Name"
     assert body["secondary_contact_email"] == "spouse@example.com"
+
+
+def test_parent_profile_email_preferences():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+    prefs = profile.get("email_preferences") or {}
+    assert prefs.get("appointments") is True
+    assert profile.get("receive_log_leave_emails") is True
+
+    off = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "full_name": profile["full_name"],
+            "email_preferences": {
+                "appointments": False,
+                "session_logs": False,
+                "therapist_leave": False,
+                "billing": False,
+                "reports": False,
+                "meetings": False,
+            },
+        },
+    )
+    assert off.status_code == 200, off.text
+    body = off.json()
+    assert body["email_preferences"]["appointments"] is False
+    assert body["email_preferences"]["session_logs"] is False
+    assert body["receive_log_leave_emails"] is False
+
+    partial = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "full_name": profile["full_name"],
+            "email_preferences": {"appointments": True},
+        },
+    )
+    assert partial.status_code == 200, partial.text
+    assert partial.json()["email_preferences"]["appointments"] is True
+    assert partial.json()["email_preferences"]["billing"] is False
+
+    legacy = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": True},
+    )
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["receive_log_leave_emails"] is True
+    assert legacy.json()["email_preferences"]["session_logs"] is True
+    assert legacy.json()["email_preferences"]["therapist_leave"] is True
+
+
+def test_parent_profile_log_leave_email_preference_legacy_field():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+    assert profile.get("receive_log_leave_emails") is True
+
+    off = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": False},
+    )
+    assert off.status_code == 200, off.text
+    assert off.json()["receive_log_leave_emails"] is False
+
+    on = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"full_name": profile["full_name"], "receive_log_leave_emails": True},
+    )
+    assert on.status_code == 200, on.text
+    assert on.json()["receive_log_leave_emails"] is True
 
 
 def test_parent_profile_home_and_school_addresses_are_separate():

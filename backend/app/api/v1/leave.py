@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -62,6 +62,7 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 
 def _serialise(leave: TherapistLeave, db: Session) -> dict:
     retro = leave_migration.is_retroactive_leave(leave.start_date, leave.end_date)
+    day_allocations = policy.allocations_for_leave(db, leave)
     return {
         "id": leave.id,
         "therapist_user_id": leave.therapist_user_id,
@@ -73,6 +74,11 @@ def _serialise(leave: TherapistLeave, db: Session) -> dict:
         "billing_category": leave.billing_category.value if leave.billing_category else None,
         "paid_days": leave.paid_days,
         "unpaid_days": leave.unpaid_days,
+        "day_allocations": [item.to_dict() for item in day_allocations],
+        "split_message": policy.format_day_split_message(
+            day_allocations,
+            has_shadow_cases=bool(leave.includes_shadow_cases or leave.service_line == "shadow_support"),
+        ),
         "includes_shadow_cases": leave.includes_shadow_cases,
         "consulted_with_parents": leave.consulted_with_parents,
         "start_date": leave.start_date.isoformat(),
@@ -98,17 +104,52 @@ def _split_response(suggestion: policy.LeaveSplitSuggestion) -> dict:
         "total_days": suggestion.total_days,
         "has_shadow_cases": suggestion.has_shadow_cases,
         "message": suggestion.message,
+        "day_allocations": suggestion.day_allocations,
         "carry_forward_days": 0,
     }
+
+
+def _leave_admin_status_counts(db: Session) -> dict[str, int]:
+    rows = db.execute(
+        select(TherapistLeave.status, func.count())
+        .group_by(TherapistLeave.status)
+    ).all()
+    counts = {status.value: int(count) for status, count in rows}
+    for key in ("PENDING", "APPROVED", "REJECTED", "CANCELLED"):
+        counts.setdefault(key, 0)
+    counts["ALL"] = sum(counts.get(k, 0) for k in ("PENDING", "APPROVED", "REJECTED", "CANCELLED"))
+    return counts
+
+
+def _apply_leave_search(stmt, search: str):
+    term = f"%{search.strip()}%"
+    return stmt.join(User, User.id == TherapistLeave.therapist_user_id).where(
+        or_(
+            User.full_name.ilike(term),
+            User.email.ilike(term),
+            TherapistLeave.reason.ilike(term),
+        )
+    )
 
 
 @router.get("")
 def list_leave(
     therapist_id: Optional[int] = None,
     leave_status: Optional[LeaveStatus] = None,
+    search: Optional[str] = Query(None, max_length=120),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    admin_paginated = (
+        page is not None
+        and user_has_permission(user, "leave.manage")
+        and therapist_id is None
+    )
+    search_term = (search or "").strip()
+    search_active = len(search_term) >= 2
+
     stmt = select(TherapistLeave).order_by(TherapistLeave.created_at.desc())
     if user_has_permission(user, "leave.manage"):
         if therapist_id:
@@ -124,12 +165,35 @@ def list_leave(
             stmt = stmt.where(TherapistLeave.status == LeaveStatus.APPROVED)
         else:
             stmt = stmt.where(TherapistLeave.status == leave_status)
+    if search_active:
+        stmt = _apply_leave_search(stmt, search_term)
+
+    if admin_paginated:
+        counts = _leave_admin_status_counts(db)
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = int(db.scalar(count_stmt) or 0)
+        current_page = 1 if search_active else page
+        effective_page_size = min(total, 500) if search_active else page_size
+        offset = 0 if search_active else (page - 1) * page_size
+        leaves = db.scalars(stmt.offset(offset).limit(effective_page_size)).all()
+        return {
+            "items": [_serialise(l, db) for l in leaves],
+            "total": total,
+            "page": current_page,
+            "page_size": effective_page_size if search_active else page_size,
+            "counts": counts,
+        }
+
     leaves = db.scalars(stmt).all()
     return [_serialise(l, db) for l in leaves]
 
 
 @router.get("/child-absence", response_model=SessionAbsenceListResponse)
 def list_child_absence_requests(
+    search: Optional[str] = Query(None, max_length=120),
+    absence_status: Optional[str] = Query(None, pattern="^(PENDING|APPROVED|REJECTED|ALL)$"),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -137,7 +201,20 @@ def list_child_absence_requests(
 
     if not user_has_permission(user, "leave.manage") and not user_has_permission(user, "case.read.all"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    payload = {"items": absence_svc.list_child_absence_for_admin(db, user)}
+
+    paginated = page is not None and user_has_permission(user, "leave.manage")
+    if paginated:
+        payload = absence_svc.list_child_absence_for_admin_page(
+            db,
+            user,
+            search=search,
+            absence_status=absence_status,
+            page=page,
+            page_size=page_size,
+        )
+    else:
+        payload = {"items": absence_svc.list_child_absence_for_admin(db, user)}
+
     if is_finance_desk_user(user) and not user_has_permission(user, "leave.manage"):
         payload["items"] = [
             item for item in payload["items"] if str(item.get("leave_status") or item.get("status") or "").upper() == "APPROVED"
@@ -231,8 +308,39 @@ def leave_summary(
     return summary
 
 
-@router.get("/report")
-def leave_report(
+def _leave_period_export(
+    db: Session,
+    *,
+    year: int,
+    granularity: str,
+    export_format: Optional[str],
+) -> Response | dict:
+    rows = leave_service.build_report(db, year=year, granularity=granularity)
+    balance_cache: dict[int, dict] = {}
+    for row in rows:
+        tid = row.get("therapist_user_id")
+        if not tid:
+            continue
+        if tid not in balance_cache:
+            t = db.get(User, tid)
+            balance_cache[tid] = (
+                policy.get_leave_balance(db, t, year=year) if t else {}
+            )
+        bal = balance_cache[tid]
+        row["paid_remaining"] = bal.get("leave_credit_pending")
+        row["backfill_paid_used"] = bal.get("paid_leaves_taken")
+    if export_format == "csv":
+        csv_text = leave_service.report_to_csv(rows)
+        return Response(
+            content=csv_text,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="leave-report-{year}.csv"'},
+        )
+    return {"year": year, "granularity": granularity, "rows": rows}
+
+
+@router.get("/period-export")
+def leave_period_export(
     year: int = Query(..., ge=2000, le=2100),
     granularity: str = Query("monthly", pattern="^(monthly|yearly)$"),
     format: Optional[str] = Query(None, alias="format"),
@@ -241,23 +349,21 @@ def leave_report(
 ):
     if not user_has_permission(user, "leave.manage"):
         raise HTTPException(status_code=403, detail="leave.manage permission required")
-    rows = leave_service.build_report(db, year=year, granularity=granularity)
-    for row in rows:
-        tid = row.get("therapist_user_id")
-        if tid:
-            t = db.get(User, tid)
-            if t:
-                bal = policy.get_leave_balance(db, t, year=year)
-                row["paid_remaining"] = bal["leave_credit_pending"]
-                row["backfill_paid_used"] = bal["paid_leaves_taken"]
-    if format == "csv":
-        csv_text = leave_service.report_to_csv(rows)
-        return Response(
-            content=csv_text,
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="leave-report-{year}.csv"'},
-        )
-    return {"year": year, "granularity": granularity, "rows": rows}
+    return _leave_period_export(db, year=year, granularity=granularity, export_format=format)
+
+
+@router.get("/report", deprecated=True)
+def leave_report_legacy(
+    year: int = Query(..., ge=2000, le=2100),
+    granularity: str = Query("monthly", pattern="^(monthly|yearly)$"),
+    format: Optional[str] = Query(None, alias="format"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Legacy path kept for API clients; browsers may block `/report` (ad blockers)."""
+    if not user_has_permission(user, "leave.manage"):
+        raise HTTPException(status_code=403, detail="leave.manage permission required")
+    return _leave_period_export(db, year=year, granularity=granularity, export_format=format)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -392,6 +498,10 @@ def review_leave(
                 raise HTTPException(status_code=400, detail="Rejection comment is required")
 
     previous_status = leave.status
+    if payload.status == LeaveStatus.APPROVED and previous_status == LeaveStatus.PENDING:
+        therapist_for_split = db.get(User, leave.therapist_user_id)
+        if therapist_for_split:
+            policy.apply_live_paid_unpaid(db, leave, therapist_for_split)
     leave.status = payload.status
     if payload.review_note is not None:
         leave.review_note = (payload.review_note or "").strip() or None

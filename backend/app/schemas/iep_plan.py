@@ -40,6 +40,7 @@ class IepHeaderSection(BaseModel):
     date_of_evaluation: Optional[str] = None
     date_of_iep_meeting: Optional[str] = None
     review_date: Optional[str] = None
+    review_date_locked: bool = False
     about_child_brief: str = ""
 
 

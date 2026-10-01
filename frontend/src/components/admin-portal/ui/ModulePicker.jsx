@@ -23,6 +23,7 @@ const ROLE_LABELS = {
   THERAPIST: 'Therapist',
   PARENT: 'Parent / Guardian',
   SCHOOL_COORDINATOR: 'School Coordinator',
+  SPOT: 'SPOT Teacher',
   VIEWER: 'View only (legacy)',
 }
 

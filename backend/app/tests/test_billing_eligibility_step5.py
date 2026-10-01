@@ -16,6 +16,14 @@ from app.models.user import User
 from app.services import billing_ledger_service, session_service
 
 
+def _ensure_homecare_per_session(case: Case) -> None:
+    """Session×rate ledger holds require homecare; shadow/B2B use calendar-day pay."""
+    case.product_module = "homecare"
+    case.billing_type = BillingType.PER_SESSION
+    if case.client_rate_per_session_inr is None:
+        case.client_rate_per_session_inr = 1500.0
+
+
 def _therapist_and_per_session_case(db):
     therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
     assert therapist
@@ -26,9 +34,23 @@ def _therapist_and_per_session_case(db):
             CaseAssignment.therapist_user_id == therapist.id,
             CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
             Case.billing_type == BillingType.PER_SESSION,
+            Case.product_module == "homecare",
         )
     ).first()
     if case:
+        return therapist, case
+    case = db.scalars(
+        select(Case)
+        .join(CaseAssignment, CaseAssignment.case_id == Case.id)
+        .where(
+            CaseAssignment.therapist_user_id == therapist.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            Case.product_module == "homecare",
+        )
+    ).first()
+    if case:
+        _ensure_homecare_per_session(case)
+        db.flush()
         return therapist, case
     assignment = db.scalars(
         select(CaseAssignment).where(
@@ -38,9 +60,7 @@ def _therapist_and_per_session_case(db):
     ).first()
     assert assignment
     case = db.get(Case, assignment.case_id)
-    case.billing_type = BillingType.PER_SESSION
-    if case.client_rate_per_session_inr is None:
-        case.client_rate_per_session_inr = 1500.0
+    _ensure_homecare_per_session(case)
     db.flush()
     return therapist, case
 

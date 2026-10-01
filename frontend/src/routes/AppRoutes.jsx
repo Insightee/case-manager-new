@@ -112,6 +112,20 @@ const InvoiceComposer = lazy(() =>
 const AdminPeoplePage = lazy(() =>
   import('../components/admin-portal/AdminPeoplePage.jsx').then((m) => ({ default: m.AdminPeoplePage }))
 )
+const StaffAttendancePage = lazy(() =>
+  import('../components/admin-portal/StaffAttendancePage.jsx').then((m) => ({ default: m.StaffAttendancePage }))
+)
+const SpotAttendancePage = lazy(() =>
+  import('../components/admin-portal/SpotPortalPages.jsx').then((m) => ({ default: m.SpotAttendancePage }))
+)
+const SpotLeavePage = lazy(() =>
+  import('../components/admin-portal/SpotPortalPages.jsx').then((m) => ({ default: m.SpotLeavePage }))
+)
+const AdminStaffAttendanceDetailPage = lazy(() =>
+  import('../components/admin-portal/AdminStaffAttendanceDetailPage.jsx').then((m) => ({
+    default: m.AdminStaffAttendanceDetailPage,
+  }))
+)
 const AdminIepPage = lazy(() =>
   import('../components/admin-portal/AdminIepPage.jsx').then((m) => ({ default: m.AdminIepPage }))
 )
@@ -120,6 +134,16 @@ const AdminSupportHubPage = lazy(() =>
 )
 const AdminHrReportsPage = lazy(() =>
   import('../components/admin-portal/AdminHrReportsPage.jsx').then((m) => ({ default: m.AdminHrReportsPage }))
+)
+const AdminPlatformStatsPage = lazy(() =>
+  import('../components/admin-portal/AdminPlatformStatsPage.jsx').then((m) => ({
+    default: m.AdminPlatformStatsPage,
+  }))
+)
+const AdminIntegrationsPage = lazy(() =>
+  import('../components/admin-portal/AdminIntegrationsPage.jsx').then((m) => ({
+    default: m.AdminIntegrationsPage,
+  }))
 )
 const AdminTherapistProfilesPage = lazy(() =>
   import('../components/admin-portal/AdminTherapistProfilesPage.jsx').then((m) => ({
@@ -582,6 +606,38 @@ export function AppRoutes() {
         />
         <Route path="cm-meetings" element={<Navigate to="/admin/meetings" replace />} />
         <Route
+          path="attendance"
+          element={
+            <Lazy>
+              <StaffAttendancePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="spot-attendance"
+          element={
+            <Lazy>
+              <SpotAttendancePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="spot-leave"
+          element={
+            <Lazy>
+              <SpotLeavePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="staff-attendance/:userId"
+          element={
+            <Lazy>
+              <AdminStaffAttendanceDetailPage />
+            </Lazy>
+          }
+        />
+        <Route
           path="leave"
           element={
             <Lazy>
@@ -603,6 +659,22 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminHrReportsPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="integrations"
+          element={
+            <Lazy>
+              <AdminIntegrationsPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="platform-stats"
+          element={
+            <Lazy>
+              <AdminPlatformStatsPage />
             </Lazy>
           }
         />

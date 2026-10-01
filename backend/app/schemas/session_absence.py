@@ -11,6 +11,7 @@ class SessionAbsenceCreate(BaseModel):
     reason: Optional[str] = None
     notes: Optional[str] = None
     leave_billing_category: Optional[str] = None
+    confirm_replace_log: bool = False
 
 
 class ChildAbsenceBackfillCreate(BaseModel):
@@ -59,12 +60,33 @@ class SessionAbsenceRead(BaseModel):
 
 class SessionAbsenceListResponse(BaseModel):
     items: list[SessionAbsenceRead] = Field(default_factory=list)
+    total: Optional[int] = None
+    page: Optional[int] = None
+    page_size: Optional[int] = None
+    counts: Optional[dict[str, int]] = None
 
 
 class SessionAbsenceStatusResponse(BaseModel):
     status: str  # none | pending | approved | rejected
     message: Optional[str] = None
     absence_request: Optional[SessionAbsenceRead] = None
+
+
+class TodayAbsenceSessionRead(BaseModel):
+    id: int
+    case_id: int
+    case_code: Optional[str] = None
+    child_name: Optional[str] = None
+    scheduled_date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    status: str
+    has_daily_log: bool = False
+    log_approval_status: Optional[str] = None
+
+
+class TodayAbsenceSessionsResponse(BaseModel):
+    items: list[TodayAbsenceSessionRead] = Field(default_factory=list)
 
 
 class SessionAbsenceDuplicateResponse(BaseModel):

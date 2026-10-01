@@ -85,9 +85,13 @@ export function AdminFinanceOverviewTab() {
   if (!flagOn) {
     return (
       <AdminEmptyState
-        title="Finance Control Tower is not enabled"
-        description="Set VITE_ENABLE_FINANCE_DASHBOARD_V1=true in a non-production environment to open the Stage 1 read-only control tower. Existing invoice tabs remain available."
-        hints={['Billing module flags stay separate from this dashboard gate.']}
+        title="Finance Control Tower opens when this environment is ready"
+        description="Stage 1 is a read-only control tower for Finance and Super Admin. Existing invoice, payment, and receivables tabs stay available while this gate is set for the current build."
+        hints={[
+          'Non-production: VITE_ENABLE_FINANCE_DASHBOARD_V1 defaults on (or set true).',
+          'Canonical production needs VITE_ENABLE_FINANCE_DASHBOARD_V1=true and VITE_FINANCE_DASHBOARD_ALLOW_PROD=true.',
+          'Billing module flags stay separate from this dashboard gate.',
+        ]}
       />
     )
   }

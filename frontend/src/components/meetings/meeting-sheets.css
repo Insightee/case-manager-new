@@ -1,0 +1,213 @@
+.meeting-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 0;
+}
+
+.meeting-sheet {
+  width: 100%;
+  max-width: 720px;
+  max-height: 92vh;
+  overflow: auto;
+  background: linear-gradient(180deg, #f7fdf8 0%, #ffffff 20%);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  box-shadow: 0 -18px 60px rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.meeting-sheet__inner {
+  padding: 18px 18px 20px;
+}
+
+.meeting-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.meeting-sheet__eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4b6b57;
+}
+
+.meeting-sheet__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #163324;
+}
+
+.meeting-sheet__meta {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.meeting-sheet__body {
+  display: grid;
+  gap: 12px;
+}
+
+.meeting-sheet__card {
+  border: 1px solid #dbe7dd;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.meeting-sheet__card-title {
+  margin: 0 0 8px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: #214232;
+}
+
+.meeting-sheet__label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #365446;
+}
+
+.meeting-sheet__input,
+.meeting-sheet__select,
+.meeting-sheet__textarea,
+.meeting-sheet__file {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid #cfe0d2;
+  border-radius: 12px;
+  background: #fff;
+  color: #1f2937;
+  box-sizing: border-box;
+}
+
+.meeting-sheet__input,
+.meeting-sheet__select,
+.meeting-sheet__file {
+  padding: 10px 12px;
+  font-size: 0.94rem;
+}
+
+.meeting-sheet__textarea {
+  min-height: 120px;
+  resize: vertical;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.meeting-sheet__helper {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: #5d7266;
+}
+
+.meeting-sheet__helper--warning {
+  color: #92400e;
+}
+
+.meeting-sheet__inline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meeting-sheet__doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.meeting-sheet__doc-item {
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #f8fcf9;
+  border: 1px solid #d9eadf;
+}
+
+.meeting-sheet__doc-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #244032;
+}
+
+.meeting-sheet__doc-meta {
+  margin: 4px 0 0;
+  font-size: 0.79rem;
+  color: #64748b;
+}
+
+.meeting-sheet__actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), #ffffff 32%);
+  border-top: 1px solid rgba(203, 213, 225, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.meeting-sheet__btn {
+  flex: 1;
+  min-height: 46px;
+  border: none;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.meeting-sheet__btn--primary {
+  background: linear-gradient(180deg, #45a56c, #2f8f55);
+  color: #fff;
+}
+
+.meeting-sheet__btn--secondary {
+  background: #eff6f0;
+  color: #28513d;
+}
+
+.meeting-sheet__btn--ghost {
+  background: #f8faf8;
+  color: #45604f;
+  border: 1px solid #d9e6db;
+}
+
+.meeting-sheet__close {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 1.2rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+@media (min-width: 640px) {
+  .meeting-sheet-backdrop {
+    align-items: center;
+    padding: 16px;
+  }
+
+  .meeting-sheet {
+    border-radius: 24px;
+  }
+}

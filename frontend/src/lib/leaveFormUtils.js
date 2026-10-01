@@ -1,3 +1,4 @@
+import { formatDisplayDate } from './datetime.js'
 import { isLeaveBalanceUpdated } from './leaveBalanceDisplay.js'
 
 export const LEAVE_CATEGORIES = [
@@ -34,9 +35,18 @@ export function categoryLabel(value) {
   return String(value).replaceAll('_', ' ')
 }
 
+export function formatLeaveDayAllocations(allocations) {
+  if (!Array.isArray(allocations) || !allocations.length) return ''
+  return allocations
+    .map((row) => `${formatDisplayDate(row.date)} ${row.status === 'paid' ? 'paid' : 'unpaid'}`)
+    .join(' · ')
+}
+
 export function formatLeaveSplitLabel(suggestion) {
   if (!suggestion) return ''
   if (suggestion.message) return suggestion.message
+  const fromDays = formatLeaveDayAllocations(suggestion.day_allocations)
+  if (fromDays) return fromDays
   const paid = suggestion.paid_days ?? 0
   const unpaid = suggestion.unpaid_days ?? 0
   if (paid && unpaid) return `${paid} paid leave + ${unpaid} unpaid leave`
@@ -45,9 +55,12 @@ export function formatLeaveSplitLabel(suggestion) {
   return ''
 }
 
-/** @param {{ paid_days?: number | null, unpaid_days?: number | null, billing_category?: string, leave_type?: string }} leave */
+/** @param {{ paid_days?: number | null, unpaid_days?: number | null, billing_category?: string, leave_type?: string, day_allocations?: Array<{date?: string, status?: string}>, split_message?: string }} leave */
 export function formatLeaveRecordSplit(leave) {
   if (!leave) return '—'
+  const fromDays = formatLeaveDayAllocations(leave.day_allocations)
+  if (fromDays) return fromDays
+  if (leave.split_message) return leave.split_message
   if (leave.paid_days != null || leave.unpaid_days != null) {
     const paid = leave.paid_days ?? 0
     const unpaid = leave.unpaid_days ?? 0

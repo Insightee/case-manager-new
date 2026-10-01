@@ -9,9 +9,10 @@ from app.models.user import User
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
+    """Return user when credentials match. Caller must enforce login eligibility separately."""
     stmt = (
         select(User)
-        .where(User.email == email.lower(), User.is_active.is_(True))
+        .where(User.email == email.lower())
         .options(selectinload(User.roles).selectinload(Role.permissions))
     )
     user = db.scalars(stmt).first()
@@ -42,7 +43,9 @@ def create_user(
 ) -> User:
     from app.services.external_employee_id_service import normalize_external_employee_id
 
-    roles = db.scalars(select(Role).where(Role.name.in_(role_names))).all()
+    from app.services.role_registry_service import ensure_roles
+
+    roles = ensure_roles(db, role_names)
     user = User(
         email=email.lower(),
         external_employee_id=normalize_external_employee_id(external_employee_id),

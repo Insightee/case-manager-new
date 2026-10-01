@@ -335,6 +335,8 @@ def monthly_report_pdf_bytes(db: Session, user: User, report_id: int) -> tuple[b
         child_name,
         generated_by=meta["generated_by"],
         generated_at=meta["generated_at"],
+        db=db,
+        child_id=case.child_id,
     )
     safe = (report.month or "report").replace(" ", "_")[:40]
     return pdf, f"report_{safe}.pdf"

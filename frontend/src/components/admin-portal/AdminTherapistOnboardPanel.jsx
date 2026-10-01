@@ -83,6 +83,7 @@ export function AdminTherapistOnboardPanel({
 }) {
   const [serviceCategories, setServiceCategories] = useState([])
   const [caseManagers, setCaseManagers] = useState([])
+  const [mentors, setMentors] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
   const [form, setForm] = useState(() => buildEmptyForm(roleDefaults))
@@ -103,6 +104,9 @@ export function AdminTherapistOnboardPanel({
     apiFetch('/api/v1/admin/users/directory?roles=CASE_MANAGER,MODULE_ADMIN')
       .then((rows) => setCaseManagers(Array.isArray(rows) ? rows : []))
       .catch(() => setCaseManagers([]))
+    apiFetch('/api/v1/admin/users/directory?roles=CASE_MANAGER')
+      .then((rows) => setMentors(Array.isArray(rows) ? rows : []))
+      .catch(() => setMentors([]))
   }, [])
 
   function resetForm() {
@@ -385,7 +389,7 @@ export function AdminTherapistOnboardPanel({
                   onChange={(e) => setForm((f) => ({ ...f, mentor_user_id: e.target.value }))}
                 >
                   <option value="">None</option>
-                  {caseManagers.map((cm) => (
+                  {mentors.map((cm) => (
                     <option key={`m-${cm.id}`} value={cm.id}>
                       {cm.full_name}
                     </option>

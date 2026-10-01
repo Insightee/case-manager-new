@@ -17,6 +17,8 @@ export function IepApprovalPanel({
   onStakeholderApprove,
   onStakeholderRequestReview,
   onCmResend,
+  onRenewIep,
+  canRenewIep = false,
   busy = false,
 }) {
   const [comment, setComment] = useState('')
@@ -54,6 +56,12 @@ export function IepApprovalPanel({
             </div>
           ))}
         </div>
+      ) : null}
+
+      {isCm && canRenewIep && !readOnly ? (
+        <button type="button" className="cr-btn mb-3 mr-2" disabled={busy} onClick={onRenewIep}>
+          Renew IEP
+        </button>
       ) : null}
 
       {isCm && !approval.review_active && approval.phase === 'stakeholder' && !readOnly ? (

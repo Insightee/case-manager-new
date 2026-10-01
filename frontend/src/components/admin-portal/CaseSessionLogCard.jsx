@@ -3,6 +3,8 @@ import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { RejectWithComment, StatusBadge } from './ui/index.js'
 import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
 import { LogCommentCountPill, LogOpenParentCommentBadge } from '../shared/LogCommentCountBadge.jsx'
+import { MentorMarkReviewedButton } from '../shared/MentorMarkReviewedButton.jsx'
+import { MentorReviewedBadge } from '../shared/MentorReviewedBadge.jsx'
 import {
   caseSessionLogCardTone,
   formatCaseSessionLogCardMeta,
@@ -19,6 +21,7 @@ function SessionLogBadges({ session, log, attendanceOnly = false }) {
       {attendanceOnly ? null : (
         <>
           <TransitionLogBadge log={log} />
+          <MentorReviewedBadge log={log} />
           {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
           {log?.resubmitted_at ? (
             <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
@@ -46,6 +49,7 @@ function SessionLogExpandableContent({
   onToggleExpand,
   canReview,
   onReviewLog,
+  onMentorReviewLog,
   actingLogId,
   rejectingLogId,
   setRejectingLogId,
@@ -73,6 +77,15 @@ function SessionLogExpandableContent({
             hideTimesSummary
             onCommentCountChange={onCommentCountChange}
           />
+          {log.can_mark_mentor_reviewed && onMentorReviewLog ? (
+            <div className="case-session-log-card__review">
+              <MentorMarkReviewedButton
+                log={log}
+                disabled={actingLogId === log.id}
+                onMarked={(id) => onMentorReviewLog(id)}
+              />
+            </div>
+          ) : null}
           {log.approval_status === 'PENDING' && canReview ? (
             <div className="case-session-log-card__review">
               <RejectWithComment
@@ -132,6 +145,7 @@ export function CaseSessionLogCard({
   attendanceOnly = false,
   onToggleExpand,
   onReviewLog,
+  onMentorReviewLog,
   actingLogId,
   rejectingLogId,
   setRejectingLogId,
@@ -183,6 +197,7 @@ export function CaseSessionLogCard({
           onToggleExpand={onToggleExpand}
           canReview={canReview}
           onReviewLog={onReviewLog}
+          onMentorReviewLog={onMentorReviewLog}
           actingLogId={actingLogId}
           rejectingLogId={rejectingLogId}
           setRejectingLogId={setRejectingLogId}

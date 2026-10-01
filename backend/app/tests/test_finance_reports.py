@@ -35,3 +35,48 @@ def test_finance_report_csv():
     )
     assert r.status_code == 200
     assert "text/csv" in r.headers.get("content-type", "")
+
+
+def test_margin_by_case_includes_pct_and_low_flag():
+    from app.core.billing_validation import margin_pct_and_flag
+    from app.services.billing_period_snapshot_service import enrich_margin_row
+
+    ok = margin_pct_and_flag(client_total_inr=10000, therapist_total_inr=6000)
+    assert ok["marginPct"] == 40.0
+    assert ok["lowMargin"] is False
+    assert ok["marginFlag"] == ""
+
+    low = margin_pct_and_flag(client_total_inr=10000, therapist_total_inr=8000)
+    assert low["marginPct"] == 20.0
+    assert low["lowMargin"] is True
+    assert low["marginFlag"] == "LOW_MARGIN_BELOW_30"
+
+    row = enrich_margin_row(
+        {
+            "caseId": 1,
+            "clientTotalInr": 10000,
+            "therapistTotalInr": 7500,
+            "marginInr": 2500,
+            "sessionCount": 4,
+        }
+    )
+    assert row["marginPct"] == 25.0
+    assert row["lowMargin"] is True
+    assert "pay_share" not in row
+    assert "PERCENTAGE" not in str(row)
+
+    headers = _headers("finance@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/margin-by-case?billing_month=2026-06",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "rows" in body
+    if body["rows"]:
+        sample = body["rows"][0]
+        assert "marginPct" in sample
+        assert "lowMargin" in sample
+        assert "marginFlag" in sample
+        assert "Therapist Share" not in sample
+        assert "pay_share_pct" not in sample

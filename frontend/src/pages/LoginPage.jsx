@@ -77,6 +77,10 @@ const PORTALS = [
         title: 'People & HR',
         accounts: [{ email: 'hr@demo.com', label: 'HR', hint: 'People, leave, memos' }],
       },
+      {
+        title: 'SPOT School',
+        accounts: [{ email: 'spot@demo.com', label: 'SPOT Teacher', hint: 'Attendance & leave only' }],
+      },
     ],
   },
 ]
@@ -86,6 +90,21 @@ function flattenDemos(portal) {
     return portal.demoGroups.flatMap((g) => g.accounts)
   }
   return portal.demos ?? []
+}
+
+/** Map a demo account email to the portal it must sign in through. */
+function portalIdForDemoEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase()
+  if (!normalized) return null
+  const match = PORTALS.find((p) => flattenDemos(p).some((d) => d.email.toLowerCase() === normalized))
+  return match?.id ?? null
+}
+
+function resolveLoginPortal({ portalType, currentPortalId, tabPortal, email }) {
+  const fromDemo = portalIdForDemoEmail(email)
+  if (fromDemo) return fromDemo
+  if (portalType && portalType !== 'dev') return portalType
+  return tabPortal || currentPortalId || 'admin'
 }
 
 function InsighteLogo({ className = '' }) {
@@ -259,18 +278,20 @@ export function LoginPage({ portalType }) {
     setError('')
     setSubmitting(true)
     try {
-      if (portalType && portalType !== 'dev') {
-        updateLoginPortal(portalType)
-      } else {
-        updateLoginPortal(portal)
-      }
-      await login(
+      const loginPortal = resolveLoginPortal({
+        portalType,
+        currentPortalId,
+        tabPortal: portal,
+        email: demoEmail,
+      })
+      updateLoginPortal(loginPortal)
+      const data = await login(
         demoEmail.trim().toLowerCase(),
         DEMO_PASSWORD,
-        portalType === 'dev' ? null : currentPortalId,
+        loginPortal,
         rememberMe,
       )
-      navigate('/')
+      navigate(portalHomePath(data.user))
     } catch (err) {
       setError(formatLoginError(err))
     } finally {
@@ -283,18 +304,20 @@ export function LoginPage({ portalType }) {
     setError('')
     setSubmitting(true)
     try {
-      if (portalType && portalType !== 'dev') {
-        updateLoginPortal(portalType)
-      } else {
-        updateLoginPortal(portal)
-      }
-      await login(
+      const loginPortal = resolveLoginPortal({
+        portalType,
+        currentPortalId,
+        tabPortal: portal,
+        email,
+      })
+      updateLoginPortal(loginPortal)
+      const data = await login(
         email.trim().toLowerCase(),
         password,
-        portalType === 'dev' ? null : currentPortalId,
+        loginPortal,
         rememberMe,
       )
-      navigate('/')
+      navigate(portalHomePath(data.user))
     } catch (err) {
       setError(formatLoginError(err))
     } finally {

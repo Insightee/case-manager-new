@@ -19,6 +19,7 @@ class AdminCasePipelineCard(BaseModel):
     pipeline_column: str
     case_manager_user_id: Optional[int] = None
     case_manager_name: Optional[str] = None
+    is_mentor_case: bool = False
     therapist_user_id: Optional[int] = None
     therapist_name: Optional[str] = None
     assignment_end_date: Optional[str] = None

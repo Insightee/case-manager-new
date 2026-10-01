@@ -6,7 +6,13 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.billing_validation import apply_billing_payload, case_billing_dict
+from app.core.billing_validation import (
+    apply_billing_payload,
+    case_billing_dict,
+    is_margin_gated_product,
+    needs_low_insighte_margin_review,
+    resolve_therapist_pay,
+)
 from app.core.config import settings
 from app.models.billing_approval_request import BillingApprovalRequest, BillingApprovalStatus
 from app.models.case import BillingType, Case, CompensationMode
@@ -35,13 +41,7 @@ def projected_profit_inr(billing: dict) -> Decimal:
     else:
         return Decimal("0")
 
-    compensation_mode = billing.get("compensation_mode")
-    if hasattr(compensation_mode, "value"):
-        compensation_mode = compensation_mode.value
-    if compensation_mode == CompensationMode.FIXED_LUMP.value:
-        therapist_amount = _money(billing.get("therapist_fixed_pay_inr"))
-    else:
-        therapist_amount = _money(billing.get("pay_share_amount_inr"))
+    therapist_amount = _money(resolve_therapist_pay(billing))
     return (client_amount - therapist_amount).quantize(Decimal("0.01"))
 
 
@@ -49,6 +49,10 @@ def merged_billing(case: Case, proposed: dict) -> dict:
     merged = case_billing_dict(case)
     merged.pop("billing_updated_at", None)
     merged.update(proposed)
+    for key in ("client_billing_effective_from", "therapist_remuneration_effective_from"):
+        value = merged.get(key)
+        if hasattr(value, "isoformat") and not isinstance(value, str):
+            merged[key] = value.isoformat()
     return merged
 
 
@@ -80,6 +84,15 @@ def is_designated_approver(db: Session, user: User) -> bool:
 
 
 def requires_approval(billing: dict) -> bool:
+    """Product-scoped margin gates.
+
+    Homecare / counselling: Insighte margin below 30% → super-admin review.
+    Absolute ₹5k profit floor does **not** apply to those products.
+
+    Shadow (and other modules): keep the absolute ₹5k minimum-profit floor.
+    """
+    if is_margin_gated_product(billing):
+        return needs_low_insighte_margin_review(billing)
     return projected_profit_inr(billing) < Decimal(str(settings.billing_minimum_profit_inr))
 
 
@@ -101,10 +114,24 @@ def apply_or_request(
 ) -> BillingApprovalRequest | None:
     if not proposed or not any(value is not None for value in proposed.values()):
         return None
+    from app.services import billing_rate_history_service
+
+    previous = case_billing_dict(case)
     merged = validate_proposed_billing(case, proposed)
+    billing_rate_history_service.ensure_effective_dates_for_amount_change(
+        previous=previous, proposed=proposed, merged=merged
+    )
     if requires_approval(merged) and not is_designated_approver(db, requester):
         return request_approval(db, case=case, proposed=proposed, requester=requester)
     apply_billing_payload(case, proposed, requester.id)
+    billing_rate_history_service.record_rate_change(
+        db,
+        case=case,
+        previous=previous,
+        proposed=proposed,
+        changed_by_user_id=requester.id,
+        source="FORM",
+    )
     return None
 
 
@@ -190,8 +217,19 @@ def approve(db: Session, row: BillingApprovalRequest, approver: User) -> Case:
     if not case:
         raise ValueError("Case not found.")
 
+    from app.services import billing_rate_history_service
+
     now = datetime.now(timezone.utc)
+    previous = case_billing_dict(case)
     apply_billing_payload(case, row.proposed_billing, approver.id)
+    billing_rate_history_service.record_rate_change(
+        db,
+        case=case,
+        previous=previous,
+        proposed=row.proposed_billing or {},
+        changed_by_user_id=approver.id,
+        source="FORM",
+    )
     row.status = BillingApprovalStatus.APPROVED
     row.reviewed_by_user_id = approver.id
     row.reviewed_at = now

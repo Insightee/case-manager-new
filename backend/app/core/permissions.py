@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.module_access import case_product_module_allowed
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.services.case_portal_visibility import is_case_hidden_from_client_portals
 from app.models.user import User
 
@@ -26,6 +26,7 @@ class RoleName(str, Enum):
     HR = "HR"
     PARENT = "PARENT"
     SCHOOL_COORDINATOR = "SCHOOL_COORDINATOR"
+    SPOT = "SPOT"
 
 
 ALL_PERMISSIONS = [
@@ -66,6 +67,7 @@ ALL_PERMISSIONS = [
     "iep.manage",
     "case_document.create",
     "case_document.review",
+    "case_document.publish",
     "hr_report.export",
 ]
 
@@ -91,6 +93,7 @@ _ROLE_MODULE_ADMIN = [
     "iep.manage",
     "case_document.create",
     "case_document.review",
+    "case_document.publish",
     "hr_report.export",
 ]
 
@@ -99,11 +102,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     RoleName.MODULE_ADMIN: _ROLE_MODULE_ADMIN,
     RoleName.ADMIN: _ROLE_MODULE_ADMIN,
     # Team/region scope only — not case.read.all (see admin home scope tests).
+    # No case.assign / slot.book_any / invoice.approve — allotment and billing are admin/HR/finance.
     RoleName.CASE_MANAGER: [
         "case.read.team",
         "case.create",
         "case.update",
-        "case.assign",
         "therapist.read",
         "session.read",
         "session.create",
@@ -111,14 +114,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "monthly_report.approve",
         "iep.read",
         "iep.manage",
-        "invoice.approve",
         "attachment.manage",
         "ticket.manage",
         "incident.read_sensitive",
         "slot.read",
-        "slot.book_any",
         "case_document.create",
         "case_document.review",
+        "case_document.publish",
         "user.read",
         "leave.manage",
     ],
@@ -138,6 +140,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "incident.read_sensitive",
         "iep.read",
         "case_document.review",
+        "case_document.publish",
         "user.read",
     ],
     RoleName.THERAPIST: [
@@ -164,6 +167,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "case.read.all",
         "case.billing.update",
         "case.status_manage",
+        "case.assign",
         "session.read",
         "therapist.read",
         "leave.manage",
@@ -173,10 +177,63 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "attachment.manage",
         "slot.read",
         "user.manage",
+        "case_document.publish",
     ],
     RoleName.PARENT: ["parent.read", "slot.book_parent"],
     RoleName.SCHOOL_COORDINATOR: ["case.read.scoped", "session.read"],
+    RoleName.SPOT: [],
 }
+
+# Highest privilege first — used when a single "effective" role is required.
+ROLE_PRECEDENCE: tuple[RoleName, ...] = (
+    RoleName.SUPER_ADMIN,
+    RoleName.ADMIN,
+    RoleName.MODULE_ADMIN,
+    RoleName.SUPERVISOR,
+    RoleName.CASE_MANAGER,
+    RoleName.HR,
+    RoleName.FINANCE,
+    RoleName.THERAPIST,
+    RoleName.VIEWER,
+    RoleName.PARENT,
+    RoleName.SCHOOL_COORDINATOR,
+    RoleName.SPOT,
+)
+
+
+def user_role_names(user: User | None) -> set[str]:
+    if user is None:
+        return set()
+    names = getattr(user, "role_names", None)
+    if names is not None:
+        return {str(n) for n in names if n}
+    roles = getattr(user, "roles", None) or []
+    return {getattr(r, "name", str(r)) for r in roles if r}
+
+
+def has_role(user: User | None, role: RoleName | str) -> bool:
+    target = role.value if isinstance(role, RoleName) else str(role)
+    return target in user_role_names(user)
+
+
+def has_any_role(user: User | None, *roles: RoleName | str) -> bool:
+    names = user_role_names(user)
+    for role in roles:
+        target = role.value if isinstance(role, RoleName) else str(role)
+        if target in names:
+            return True
+    return False
+
+
+def effective_role(user: User | None) -> str | None:
+    """Single role by ROLE_PRECEDENCE. Prefer this over roles[0] for branching."""
+    names = user_role_names(user)
+    if not names:
+        return None
+    for role in ROLE_PRECEDENCE:
+        if role.value in names:
+            return role.value
+    return next(iter(names), None)
 
 
 def user_has_permission(user: User, permission: str) -> bool:
@@ -249,21 +306,28 @@ def get_active_assignment(
 
 
 def case_scope_check(db: Session, user: User, case: Case) -> bool:
-    if is_case_hidden_from_client_portals(case) and not (
-        user_has_permission(user, "admin.override")
-        or user_has_permission(user, "case.read.all")
-        or user_has_permission(user, "case.read.team")
-        or user_has_permission(user, "case.read.scoped")
-    ):
-        return False
     # Global case readers (admin/HR/finance) see all cases regardless of product module.
     if user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
         return True
-    if user_has_permission(user, "case.read.assigned"):
-        if get_active_assignment(db, case.id, user.id):
+    # Assigned therapists keep operational access on SUSPENDED cases (DEC-02): they must
+    # finish IN_PROGRESS visits and receive an explicit start gate — not a portal 403.
+    # Client-portal hide for parents/schools is enforced in parent/school list APIs.
+    if user_has_permission(user, "case.read.assigned") and get_active_assignment(db, case.id, user.id):
+        status = case.status.value if hasattr(case.status, "value") else str(case.status)
+        if status == CaseStatus.SUSPENDED.value or not is_case_hidden_from_client_portals(case):
             return True
+        return False
+    if is_case_hidden_from_client_portals(case) and not (
+        user_has_permission(user, "case.read.team")
+        or user_has_permission(user, "case.read.scoped")
+    ):
+        return False
     if user_has_permission(user, "case.read.team"):
         if case.case_manager_user_id == user.id:
+            return True
+        from app.services.mentor_scope_service import is_mentor_on_case
+
+        if is_mentor_on_case(db, user, case):
             return True
     if not case_product_module_allowed(user, case.product_module):
         return False
