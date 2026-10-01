@@ -225,6 +225,7 @@ def support_hub_capabilities(user: User, db: Session | None = None) -> dict:
         "scope": support_scope(user, db),
         "tabs": {
             "tickets": tickets_tab,
+            "ticket_report": tickets_tab,
             "incidents": incidents_tab,
             "memos": memos_tab,
             "history": history_tab,

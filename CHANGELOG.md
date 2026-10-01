@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Support hub **Ticket report** for staff who already handle tickets: read-only counts (status, category, module, who raised, who replied, first-reply hours, aging, repeating questions) and the open plus in-progress queue, with the same filters and an Excel download. POSH and CPP stay as counts. The page does not reply, close, or change a ticket. `GET /api/v1/admin/support/ticket-report` and `GET /api/v1/admin/support/ticket-report.xlsx`.
 - Month-end auto-submit raises therapist payout invoices still missing at 11:59 PM IST on the last day of the month (`scripts/auto_submit_month_end_invoices.py`, Railway cron `29 18 * * *`). A manual `--month YYYY-MM` backfill uses the same submit path.
 - Integration keys can grant every case (`all_cases`) and read receivables and ledger totals with `finance:read` on `/api/v1/integrations/v1/finance/*` and MCP tools `get_finance_receivables` / `get_finance_ledger`. An empty case list is zero access, not an empty month. Alembic `tp_qual_cards_1001` → `i2all3cases4fin`.
 - Integration keys can list and create therapist website profiles (`profiles:read` / `profiles:write`) from `GET/POST /api/v1/integrations/v1/therapist-profiles` and MCP tools `list_therapist_profiles` / `create_therapist_profile`. Listing fields only; create status is always `PENDING`.
