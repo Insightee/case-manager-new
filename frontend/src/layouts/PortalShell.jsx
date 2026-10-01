@@ -17,7 +17,7 @@ import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.js
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
-import { TherapistProfileCompletionModal } from '../components/therapist/TherapistProfileCompletionModal.jsx'
+import { TherapistProfileCompletionBanner } from '../components/therapist/TherapistProfileCompletionBanner.jsx'
 import '../components/shared/notification-bell.css'
 
 const THERAPIST_NAV = [
@@ -678,12 +678,12 @@ export function PortalShell({ portal }) {
           </div>
         ) : null}
         {isClientPortalDashboard ? <PortalModuleRolloutNotice portal={portal} /> : null}
+        {portal === 'therapist' ? (
+          <TherapistProfileCompletionBanner completion={user?.profile_completion} />
+        ) : null}
         <Outlet />
       </main>
       <PortalInstallBanner />
-      {portal === 'therapist' ? (
-        <TherapistProfileCompletionModal completion={user?.profile_completion} />
-      ) : null}
     </div>
     </PortalInstallProvider>
   )

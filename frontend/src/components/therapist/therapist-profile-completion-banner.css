@@ -1,0 +1,61 @@
+.therapist-profile-completion-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #dc2626;
+  border-radius: 6px;
+  color: #991b1b;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: 0 1px 2px rgb(220 38 38 / 8%);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.therapist-profile-completion-banner:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #7f1d1d;
+}
+
+.therapist-profile-completion-banner:focus-visible {
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+}
+
+.therapist-profile-completion-banner__label {
+  font-weight: 700;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #b91c1c;
+  flex-shrink: 0;
+}
+
+.therapist-profile-completion-banner__text {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.therapist-profile-completion-banner__chevron {
+  flex-shrink: 0;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+@media (max-width: 480px) {
+  .therapist-profile-completion-banner {
+    padding: 8px 12px;
+    font-size: 0.75rem;
+  }
+}
