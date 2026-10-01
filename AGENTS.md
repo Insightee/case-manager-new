@@ -122,9 +122,9 @@ Case Managers review exceptions, not manual data entries.
 #### 5. MOBILE-FIRST CLINICAL UX & WORKFLOWS
 Design explicitly for field work on touchscreen form factors.
 
-* **The Timing Caps**: Session Log Entry < 5 min; New Observation Entry < 15 min; Monthly Report Verification < 10 min.
+* **The Timing Caps**: Session Log Entry < 5 min; New Observation Entry < 15 min; Monthly Report Verification < 10 min. These are **usability targets**: record a baseline before claiming improvement; do not hide clinical fields to hit the number. See [docs/design/UI_CONTRACT.md](docs/design/UI_CONTRACT.md).
 * **Ergonomics & UI Layout**
-  * *Thumb Zone Binding*: Primary active targets (*Save*, *Complete*, *Submit*, *Voice Note Recording*, *Camera/Evidence Upload*) must be positioned within bottom-sheet sheets or sticky footer arrays accessible easily via single-hand operation.
+  * *Thumb Zone Binding*: Primary active targets (*Save*, *Complete*, *Submit*, *Voice Note Recording*, *Camera/Evidence Upload*) sit in a bottom **sheet** for short tasks or a full-screen **workspace** footer for long editors — not only the top-right of a tall form.
   * *Progressive Disclosure Directive*: Components must strictly bound view states to the current step context. Hide global profiles, extensive client timelines, or historic records into hidden tabs, exposing them only via deliberate action clicks.
 
 #### 6. REPORT GENERATION ENGINE

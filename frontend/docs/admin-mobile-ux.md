@@ -59,6 +59,14 @@ Admin portal pages share one mobile layout system. Desktop (≥901px) keeps exis
 />
 ```
 
+## Tables on mobile
+
+Default: `AdminDataList` cards. Card priority: identity → status → why this row is here → primary action.
+
+**Comparison exception** (invoice lines, finance margin, attendance matrices): horizontal scroll with a sticky identity column **and** a selected-row summary. Not the default for cases/people lists. See [UI_CONTRACT.md](../../docs/design/UI_CONTRACT.md) Layer 2.
+
+Short admin tasks use **sheets**. Do not put IEP/observation builders in a sheet.
+
 ## Colors (legacy admin mobile — unmigrated)
 
 These hexes describe **current** admin mobile chrome. Product primary after admin migration is Forest green in the UI contract, not teal.

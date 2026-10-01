@@ -14,9 +14,9 @@ Each item lists affected routes/components and an **observable** acceptance crit
 
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
-| TH-ST-01 | Therapist home uses indigo gradient CTAs and 118px multi-hue action tiles | `/therapist` `TherapistDashboardPage.jsx`, `index.css` `.therapist-dashboard__cta` | Forest page background `#F7F8F5` (after contrast gate), white cards, 12px radius, 1px `#DDE4DE` border, Manrope title, Inter body, no decorative gradient | At 375px and 1280px: no linear-gradient on tiles; primary action is a single 44px green (or Forest v1 black until token remap) button; KPI numerals ≤1.5rem |
+| TH-ST-01 | Therapist home uses indigo gradient CTAs and 118px multi-hue action tiles | `/therapist` `TherapistDashboardPage.jsx`, `index.css` `.therapist-dashboard__cta` | Task dashboard pattern: Forest surfaces, Title/Metric type steps, no decorative gradient | At 375px and 1280px: no linear-gradient on tiles; one primary 44px action; counts use Metric (1.25rem) not Display; 200% zoom does not clip the primary action |
 | TH-ST-02 | My Cases hardcodes `--ic-primary: #4f46e5` | `/therapist/cases` `my-cases.css` | Scope Forest tokens on `.ic-my-cases` when the page migrates; stop introducing new `#4f46e5` | Case cards and filters use contract spacing 8/12/16; primary controls match the migrated therapist primary; no indigo remaining on this route |
-| TH-ST-03 | Case overview is operational indigo, not Forest `cov-*` | `/therapist/cases/:caseId?tab=overview` `CaseDetailPage.jsx` | Implement Layer 4 overview using Stitch case-overview as reference; no `ClinicalCard`; no fake goal % | Overview shows strengths / support needs / environment / tasks without a fabricated progress ring; status is text + pill, not colour alone |
+| TH-ST-03 | Case overview is operational indigo, not Forest `cov-*` | `/therapist/cases/:caseId?tab=overview` `CaseDetailPage.jsx` | Case detail pattern + Forest foundations. Do **not** claim Stitch visual match until DESIGN.md is recovered or replaced | Overview shows strengths / support needs / environment / pending work without a fabricated progress ring; status is text + pill; PR does not check “matches Stitch PNG” unless the artefact exists |
 | TH-ST-04 | IEP section labels use system monospace | IEP builder `clinical-report-ui.css` `.cr-section__label` | `font-family: var(--font-mono)` (JetBrains) only on existing eyebrows | Computed font on section eyebrows is JetBrains Mono; goal titles and KV values remain Inter |
 | TH-ST-05 | IEP/observation primary is `#0b1c16` with inline `style={{ backgroundColor: '#0b1c16' }}` | `ClinicalBuilderShell.jsx`, `IepLandingPage.jsx` | Classes only; remap to `#166534` only in the token-remap PR for TH-06/TH-07 | No inline primary hex on builder chrome; buttons use a single primary class |
 | TH-ST-06 | Forest `@theme` is global while therapist chrome ignores it | `main.jsx`, `forest-light-theme.css`, `index.css` | Do not remap `:root --primary` in phase 1. Scope `.forest-light` / therapist shell when TH-01 migrates | Admin `/admin/cases` still uses existing indigo/teal after therapist home migrates |
@@ -27,10 +27,10 @@ Each item lists affected routes/components and an **observable** acceptance crit
 |----|---------|----------|--------------|----------------------|
 | TH-MO-01 | `--portal-bottom-nav-offset` is 76px, then 72px at 768px; IEP sticky footer is `bottom: 0` | `index.css`, `forest-light-iep.css` `.sticky-footer`, IEP/observation builders | One offset token from the real tab height; footer `bottom: var(--portal-bottom-nav-offset)` plus safe-area | On iPhone-width viewport, Submit/Save are fully visible above the bottom tabs and home indicator; they do not overlap tab labels |
 | TH-MO-02 | Double safe-area padding on `body` and `#root` | `index.css` | Apply inset on the shell only | Measuring padding-bottom of `body` + `#root` does not add two full `safe-area-inset-bottom` values |
-| TH-MO-03 | Goal modal hides the preview rail below 768px | `StudentGoalCreateModal.jsx`, `.sg-modal` | Bottom sheet ≤768px; preview as a collapsible section | On 375px: modal fits in `100dvh`; Preview can be opened; primary Add is 44px and not covered by the keyboard |
+| TH-MO-03 | Goal modal hides the preview rail below 768px | `StudentGoalCreateModal.jsx`, `.sg-modal` | Medium-form sheet (not a long-editor workspace); preview as a disclosure | On 375px: sheet ≤90dvh; Preview can be opened; primary Add is 44px and not covered by the keyboard |
 | TH-MO-04 | Case status / edit-times modal is tall; keyboard can cover fields | `/therapist/cases` `.ic-case-status-modal` | Sheet with sticky 44px actions; scroll the fields | Focused input remains visible while the virtual keyboard is open |
 | TH-MO-05 | Icon buttons at 38×38 | `/therapist/cases` `.cases-icon-btn` | 44×44 hit area | Every icon control’s clickable box is ≥44px on ≤900px |
-| TH-MO-06 | Builder header and footer both show Save / Preview / Submit | `ClinicalBuilderShell.jsx` | Header actions `display: none` ≤900px; footer remains | ≤900px: only one Submit for review control in the DOM-visible layout |
+| TH-MO-06 | Builder header and footer both show Save / Preview / Submit | `ClinicalBuilderShell.jsx` | Long-editor workspace: header actions hidden ≤900px; footer remains above portal nav | ≤900px: only one Submit for review control visible; it sits above bottom tabs (not `bottom: 0`) |
 
 ### Buttons
 
@@ -38,15 +38,15 @@ Each item lists affected routes/components and an **observable** acceptance crit
 |----|---------|----------|--------------|----------------------|
 | TH-BT-01 | Therapist dashboard uses `.admin-btn` | `TherapistDashboardPage.jsx` | Therapist button classes matching Layer 2 variants | No `.admin-btn` class on `/therapist` after migration |
 | TH-BT-02 | Duplicate submit not always announced | Session log submit, IEP submit | `aria-busy`, disable, label **Submitting…** | Double-click submit produces one network request; label reads Submitting… until response |
-| TH-BT-03 | Download PDF / Share rendered without API map entries | `ClinicalBuilderShell.jsx`, `IepBuilderPage.jsx` | Remove or hide until the API map lists an endpoint | IEP builder shows Save draft, Preview, Submit for CM review only — no Share, no Download PDF |
+| TH-BT-03 | Share / PDF / Duplicate treated as equally forbidden | `ClinicalBuilderShell.jsx`, `IepBuilderPage.jsx`, `useIepReport.js` | **No unsupported capability:** keep authorised IEP PDF (`GET …/iep/pdf`) and share-with-parent; remove Duplicate; label observation print as Print | Therapist/admin IEP: Duplicate absent. PDF works for authorised users. Share only if the user can call share-with-parent. Observation preview Print uses local print, not a fake export |
 | TH-BT-04 | `window.prompt('Environment name')` | `ObservationStitchBlocks.jsx` | Chip editor / labelled field | Adding an environment never opens a native prompt; value is kept on error |
 
 ### Navigation
 
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
-| TH-NAV-01 | Menu / drawer logic leaves the bottom **Menu** control unreachable (`useMenu` iff `showMobileDrawer`) | `PortalShell.jsx` | Bottom tabs (4) stay; a visible Menu (header or fifth pattern) opens the full `THERAPIST_NAV` list | On 375px, therapist can reach Invoices, Support, Meetings, Leave, Scheduling, Profile, Notifications without a desktop sidebar |
-| TH-NAV-02 | Bottom tab order (Today → Cases → Reports → Home) differs from sidebar | `THERAPIST_MOBILE_NAV` | Keep Today-first (task-focused). Document as intentional | Logs is the first tab; Home remains reachable; active state is selected surface + text, not colour only |
+| TH-NAV-01 | Overflow destinations look missing; bottom Menu branch is dead | `PortalShell.jsx` | Keep header ☰ as overflow; ensure drawer lists every `THERAPIST_NAV` item + profile + notifications; do not add a fifth tab without R-08 evidence | On 375px, therapist opens ☰ and reaches Invoices, Support, Meetings, Leave, Scheduling, Profile, Notifications |
+| TH-NAV-02 | Bottom tab **Today** is `/therapist/logs`, colliding with Home’s “today’s work” | `THERAPIST_MOBILE_NAV` | Rename tab to **Logs**. Home stays `/therapist` with `end: true` | Tab label reads Logs; Home is not active on `/therapist/logs`; selected state is selected surface + text + indicator, not colour only |
 | TH-NAV-03 | Case profile has no Reports tab; contract described `CaseReportsTab` | `CaseDetailPage.jsx` | Keep reports at `/therapist/reports` until Layer 4 is extended with a real tab | No empty Reports tab. From a case, user can open observation/IEP builders via existing target URLs |
 | TH-NAV-04 | Back from case file | `CaseDetailPage.jsx` | Back returns to `/therapist/cases` | Hardware/browser back and in-app back land on My Cases, not login |
 
@@ -54,18 +54,20 @@ Each item lists affected routes/components and an **observable** acceptance crit
 
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
-| TH-FF-01 | Saving vs saved not distinct on IEP | `ClinicalBuilderShell` “Saving…” vs no Saved | After success, show **Saved** for ~2s then restore Save draft | User can tell a draft save succeeded without a submit-for-review status change |
-| TH-FF-02 | Session log submit must wait for server | `SubmitSessionLogForm.jsx` `/therapist/logs` | Press feedback + disable; status Complete/submitted only after 2xx | Failed submit leaves fields intact and offers Try again; list does not show the log as submitted |
+| TH-FF-01 | Saving vs saved not revision-accurate | `ClinicalBuilderShell`, IEP `saveDraft` | Draft integrity: Saved only if response matches on-screen content; typing during save → Unsaved | User edits during Saving…; indicator does not show Saved for the stale payload; failed save keeps fields |
+| TH-FF-02 | Session log submit must wait for server; extra native confirm in places | `SubmitSessionLogForm.jsx`, `DailyLogsPage.jsx` `window.confirm` | Commit after 2xx. If the log form already reviews fields, no extra confirm dialog | Failed submit leaves fields intact; list does not show submitted; no `window.confirm` |
 | TH-FF-03 | Goal modal missing AI Assisted tab | `clinicalUiContract.js` `GOAL_MODAL_TABS` | Add tab; generate only on button click using `POST /reports/{id}/clinical/generate-goal-strategy-drafts` | Three tabs visible; no generate call on modal open; Add writes via existing IEP goal/strategy endpoints |
 | TH-FF-04 | Filter/status label “Missing” on logs | `FilterBar.jsx`, `StatusBadge.jsx` | Keep as data-state if needed; never “Missing Data” | UI does not contain the banned string `Missing Data` |
+| TH-FF-05 | No dirty-navigate / 401 / upload / conflict rules on editors | IEP, observation, session log | Implement Layer 2 draft integrity | Leaving a dirty IEP prompts stay/leave; 401 keeps fields and retries after sign-in; failed upload keeps the file; newer local edits survive an in-flight save |
 
 ### Accessibility
 
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
 | TH-A11Y-01 | Many inputs `outline: none` without `:focus-visible` | `index.css`, `my-cases.css` | Restore 2px ring | Keyboard tab through dashboard, cases, log form shows a visible ring on every control |
-| TH-A11Y-02 | Proposed palette not verified | Token remap PRs | Contrast check recorded in the PR | `#166534` / `#17211B` / `#526057` combinations meet WCAG 2.2 AA or hexes are adjusted |
-| TH-A11Y-03 | Dialogs without consistent labelling | Goal modal, case status modal | `role="dialog"`, labelled title, focus trap, restore focus | Escape closes; focus returns to the opener |
+| TH-A11Y-02 | Proposed palette not verified, including default control borders | Token remap PRs | Contrast check for text, **unfocused** control border, and focus ring | Recorded ratios; control border ≥3:1 on surface without focus; `#526057` adjusted if &lt; 4.5:1 |
+| TH-A11Y-03 | Dialogs without consistent labelling | Goal modal, case status modal | Sheets: `role="dialog"`; long editors are workspaces not dialogs | Escape closes sheets; focus returns to the opener; IEP is not announced as a dialog |
+| TH-A11Y-04 | No zoom/reflow check | Therapist home, logs, IEP | 200% zoom and 320px reflow | Primary Save/Submit remains tappable at 200%; logs/IEP read in one column at 320px |
 
 ---
 
@@ -84,8 +86,8 @@ Each item lists affected routes/components and an **observable** acceptance crit
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
 | PA-MO-01 | Parent bottom nav is indigo glass `blur(16px)` and may exceed offset | `index.css` `.app-mobile-tabs--app`, `PortalShell.jsx` | Solid surface, 44px items, offset matches height | Tabs do not overlay Billing/Reports content; no backdrop-filter |
-| PA-MO-02 | `/parent/book` not on bottom tabs | `PARENT_MOBILE_NAV` | Keep 4 tabs; Book must appear in the drawer | On 375px, Session schedule is reachable in two taps or fewer from Home |
-| PA-MO-03 | Parent reports modal is the good pattern — spread it | Other parent dialogs | Reuse bottom sheet + 44px close + safe-area | All parent dialogs fit `100dvh` and do not sit under the tab bar |
+| PA-MO-02 | `/parent/book` not on bottom tabs; Billing is | `PARENT_MOBILE_NAV` | Target tabs Home · Sessions · **Schedule** · Reports; Billing in ☰ + Home alerts. **Assumption R-01** — do not reverse without usage evidence | On 375px, Schedule is a bottom tab; Billing is in ☰; overdue Home alert still reaches `/parent/billing` in one tap |
+| PA-MO-03 | Parent reports modal is a good **short** sheet — not for long editors | Other parent dialogs vs IEP preview | Sheets for book/reschedule; IEP parent preview is a workspace | Book sheet fits `100dvh`; parent IEP preview is full-screen, not a 50% sheet |
 
 ### Buttons
 
@@ -99,7 +101,7 @@ Each item lists affected routes/components and an **observable** acceptance crit
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
 | PA-NAV-01 | Case hub not in global nav (intentional) | `/parent/cases/:caseId` | Deep links from notifications/home cards | Opening a case notification lands on the correct tab; Back returns to Home or the referring list |
-| PA-NAV-02 | Drawer must include support, meetings, profile, book | `PARENT_NAV` vs mobile tabs | Fix Menu reachability (same shell bug as TH-NAV-01) | All eight desktop destinations are reachable on 375px |
+| PA-NAV-02 | Drawer must include support, meetings, profile, and (until R-01) whatever is not a tab | `PARENT_NAV` vs mobile tabs | Header ☰ lists every authorised destination | All eight desktop destinations are reachable on 375px |
 
 ### Forms and feedback
 
@@ -123,7 +125,7 @@ Each item lists affected routes/components and an **observable** acceptance crit
 
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
-| AD-ST-01 | KPI values 30px and hover shadows | `index.css` `.kpi-value`, `.admin-stat` | Cap type at 1.25rem; 1px border, no hover lift | Admin home KPIs do not use 30px numerals or indigo shadow on hover |
+| AD-ST-01 | KPI values 30px and hover shadows | `index.css` `.kpi-value`, `.admin-stat` | Metric type step (1.25rem); 1px decorative border; no hover lift | Admin home KPIs use Metric size, not Display/30px; no indigo shadow on hover |
 | AD-ST-02 | Admin teal pills vs future Forest primary | `admin-portal-mobile.css` | Keep teal until this chrome migrates; then selected surface `#EAF3EC` + primary green | After admin token remap, active pill is not `#0d9488` gradient; tables still dense on desktop |
 | AD-ST-03 | Body/page stacked gradients | `index.css` body background | `#F7F8F5` (or current solid until remap) | No 155deg page gradient on `/admin` |
 
@@ -132,7 +134,7 @@ Each item lists affected routes/components and an **observable** acceptance crit
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
 | AD-MO-01 | `AdminDataList` skipped; tables `min-width: 560px` | `AdminUsersPage`, `AdminClientProfilesPage`, `AdminPlatformStatsPage`, `AdminProductRulesTab`, `AdminHrReportsPage`, `LeaveManagementPage`, `InvoiceComposerPreviewPanel` | Wrap in `AdminDataList` + `AdminTaskCard` | ≤900px: those pages show cards, not a sideways-only table |
-| AD-MO-02 | Admin drawers are side panels with 24px padding and no mobile override | `admin-drawer-backdrop` on People, assign, bulk assign, onboard | Full-width bottom sheet ≤900px, sticky 44px actions, `100dvh` | Drawer does not overflow the viewport; actions remain tappable above the home indicator |
+| AD-MO-02 | Admin drawers are side panels with 24px padding and no mobile override | `admin-drawer-backdrop` on People, assign, bulk assign, onboard | **Short/medium:** bottom sheet ≤900px. Not a clinical-editor workspace | Drawer does not overflow; 44px actions above the home indicator; People assign is a sheet, not a full-screen IEP-like workspace |
 | AD-MO-03 | `AdminMobilePillTabs` `overflowIds={[]}` so More is unused | Support, People, Invoices, IEP | Put secondary modules in More as documented | IEP mobile still exposes Status, Planner, Uploader; finance tools live under More, not a squashed pill row |
 | AD-MO-04 | Admin case mobile “Quick actions” repeats primary pills | `AdminCaseDetailMobileNav.jsx` | Secondary list excludes the four primaries | Overview/Timeline/Sessions/Reports appear once |
 
@@ -158,8 +160,8 @@ Each item lists affected routes/components and an **observable** acceptance crit
 | ID | Problem | Affected | Proposed fix | Acceptance criterion |
 |----|---------|----------|--------------|----------------------|
 | AD-FF-01 | “Invalid invoice.” | `AdminClientInvoicePage.jsx` | Supportive empty/error copy | Missing invoice shows guidance + back to invoice list; string `Invalid invoice` gone |
-| AD-FF-02 | Login punitive copy (public, but often hit by staff) | `portalLogin.js` | Layer 1 alternatives | UI does not show `Invalid Login` or `Invalid credentials` |
-| AD-FF-03 | Approvals must not optimistic-complete | log approve, report publish, payout send | Outcome after 2xx | Failed approve leaves the queue item in its prior state |
+| AD-FF-02 | Login punitive copy; mismatch used as a catch-all in product copy | `portalLogin.js`, `LoginPage.jsx` | Failure-specific Layer 1 table | Wrong password ≠ portal-mismatch sentence. Strings `Invalid Login` and `Invalid credentials` gone |
+| AD-FF-03 | Approvals and payouts mix native confirm with preview | log approve, report publish, `TherapistPayoutFinance.jsx`, invoice preview | Consequence policy: preview/review = no extra dialog; irreversible list actions = labelled dialog; outcome after 2xx | Invoice preview Submit has no second confirm. Deactivate user uses a labelled dialog. Failed approve leaves prior state |
 
 ### Accessibility
 
@@ -177,14 +179,17 @@ Each item lists affected routes/components and an **observable** acceptance crit
 |----|---------|-------|----------------------|
 | X-01 | Skip-link exists — keep it | All | `#main-content` remains the skip target on shell and login |
 | X-02 | `prefers-reduced-motion` exists — keep it | All | No new unbounded animation |
-| X-03 | Contrast gate for proposed palette | First token-using PR | Recorded ratios; secondary `#526057` adjusted if &lt; 4.5:1 |
+| X-03 | Contrast gate for proposed palette | First token-using PR | Recorded ratios for text, **unfocused control border**, focus ring; secondary `#526057` adjusted if &lt; 4.5:1 |
 | X-04 | No global stylesheet replacement | All | Therapist migration PR does not change parent/admin computed `--primary` |
+| X-05 | Usability targets without baselines | Session log, observation, monthly review PRs | PR records a pre-change walkthrough duration or median; no “faster” claim without it |
+| X-06 | Stitch visual-match without files | Case overview / reports tab / IEP PNG claims | Fail review if the PR cites missing `docs/design/stitch/` as accepted |
 
 ---
 
 ## Out of scope for implementation PRs until the contract is extended
 
-- New case-profile Reports tab (`CaseReportsTab`) — add to Layer 4 first.
+- New case-profile Reports tab (`CaseReportsTab`) — add to Layer 4 **and** recover or replace the Stitch artefact first.
 - Rebuilding `clinical-theme.css` / purple `ClinicalCard`.
 - Merging parent and therapist bottom-nav styles into one bar.
-- Enabling Share / Export PDF / Duplicate without an API map row.
+- Duplicate plan (unsupported capability).
+- Claiming visual compliance with missing Stitch files.

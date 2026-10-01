@@ -95,10 +95,10 @@ Design explicitly for field work on touchscreen form factors.
 * **Session Log Entry**: Under 5 minutes.
 * **New Observation Entry**: Under 15 minutes.
 * **Monthly Report Verification**: Under 10 minutes.
-* *Code generation that compromises this speed via deep nested views is a design failure.*
+* These are **usability targets** (record a baseline before claiming improvement). Do not hide clinical fields to hit the number. Canonical UI: `docs/design/UI_CONTRACT.md`.
 
 #### Ergonomics & UI Layout
-* **Thumb Zone Binding**: Primary active targets (*Save*, *Complete*, *Submit*, *Voice Note Recording*, *Camera/Evidence Upload*) must be positioned within bottom-sheet sheets or sticky footer arrays accessible easily via single-hand operation.
+* **Thumb Zone Binding**: Primary active targets (*Save*, *Complete*, *Submit*, *Voice Note Recording*, *Camera/Evidence Upload*) sit in a bottom sheet for short tasks or a full-screen workspace footer for long editors.
 * **Progressive Disclosure Directive**: Components must strictly bound view states to the current step context. Hide global profiles, extensive client timelines, or historic records into hidden tabs, exposing them only via deliberate action clicks.
 
 ---

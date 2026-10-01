@@ -5,7 +5,7 @@ Canonical fonts for Forest Light. **Colour, spacing, buttons, and layout live in
 Source tokens (shipped Forest v1): `frontend/src/styles/forest-light-theme.css`  
 Loaded in: `frontend/index.html` (Google Fonts)
 
-Do not expand this document into a competing visual spec. If type roles change, update Layer 2 of the UI contract in the same PR.
+**Type scale (canonical sizes — also in [UI_CONTRACT.md](./UI_CONTRACT.md) Layer 2):** Display 1.75rem (case header name only), Title 1.375rem, Metric 1.25rem, Body 1rem, Secondary 0.875rem, Eyebrow 0.75rem. Do not invent a larger KPI size.
 
 ## Font roles
 

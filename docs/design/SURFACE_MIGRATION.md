@@ -30,10 +30,12 @@ Do not start a restyle without this block in the PR:
 ### Migration packet
 - Routes:
 - Canonical components:
+- Page pattern (dashboard / list / case detail / clinical editor / queue):
 - Shared dependencies (CSS/components that other portals import):
-- Responsive behaviour (≤900px / ≥901px):
-- Required states (empty, loading, saving, saved, error, read-only):
-- Acceptance criteria (observable):
+- Responsive behaviour (sheet vs workspace; ≤900px / ≥901px):
+- Required states (empty, loading, saving, saved-revision, error, dirty, conflict, read-only):
+- Acceptance criteria (observable; Stitch visual-match only if the artefact exists):
+- Usability baseline (if claiming speed/ease improvement):
 - Rollback: revert the PR; no global token file left half-applied
 ```
 
@@ -59,13 +61,13 @@ Routes below are the live router. `frontend/src/routes/TherapistRoutes.jsx` is s
 
 | ID | Routes | Canonical UI | Current visual | Status | Target |
 |----|--------|--------------|----------------|--------|--------|
-| TH-01 | `/therapist` | `TherapistDashboardPage.jsx` | Indigo CTAs, 118px hue tiles, `.admin-btn` | Migration planned | Today’s work, unfinished tasks, Forest foundations, no oversized KPI tiles |
+| TH-01 | `/therapist` | `TherapistDashboardPage.jsx` | Indigo CTAs, 118px hue tiles, `.admin-btn` | Migration planned | Task dashboard. Home tab. Metric type step, not oversized numerals. Record time-to-first-task baseline if claiming speed. |
 | TH-02 | `/therapist/cases` | `MyCasesPage.jsx`, `my-cases.css` `--ic-primary: #4f46e5` | Operational indigo | Migration planned | Assigned cases; 44px controls; Forest tokens |
-| TH-03 | `/therapist/cases/:caseId` | `CaseDetailPage.jsx` tabs `overview`, `observation`, `sessions`, `documents` | Indigo operational | Migration planned | Case context + Forest overview. Stitch case-overview remains authoritative. No `CaseProfileShell` today. |
-| TH-04 | `/therapist/logs` | `DailyLogsPage.jsx` | Mixed portal CSS | Migration planned | Thumb-zone submit; saving vs saved; 5-minute cap |
+| TH-03 | `/therapist/cases/:caseId` | `CaseDetailPage.jsx` tabs `overview`, `observation`, `sessions`, `documents` | Indigo operational | Migration planned | Case detail pattern. Stitch case-overview is historical; visual-match blocked until recovery. |
+| TH-04 | `/therapist/logs` | `DailyLogsPage.jsx` | Mixed portal CSS | Migration planned | Clinical editor (long workspace). Draft integrity. Tab label **Logs** (not Today). |
 | TH-05 | `/therapist/reports` | `MonthlyReportsPage.jsx` | Operational | Migration planned | Unfinished reports list — not a metric dashboard |
-| TH-06 | `/therapist/reports/cases/:caseId/observation` | `TherapistClinicalReportPage` + observation engine | Forest v1 (`forest-light-observation.css`) | Migration planned | Keep stitch blocks; remap to proposed tokens in a dedicated PR; rail reachable on mobile |
-| TH-07 | `/therapist/reports/cases/:caseId/iep` | IEP engine + `ClinicalBuilderShell` | Forest v1 (`forest-light-iep.css`, `#0b1c16` buttons) | Migration planned | Seven sections; footer CTAs once on mobile; no PDF/Share without API |
+| TH-06 | `/therapist/reports/cases/:caseId/observation` | `TherapistClinicalReportPage` + observation engine | Forest v1 (`forest-light-observation.css`) | Migration planned | Clinical editor workspace; local print allowed; Stitch visual-match blocked |
+| TH-07 | `/therapist/reports/cases/:caseId/iep` | IEP engine + `ClinicalBuilderShell` | Forest v1 (`forest-light-iep.css`, `#0b1c16` buttons) | Migration planned | Seven sections; workspace footer once on mobile; PDF/share only if authorised; no Duplicate; no extra confirm after Preview |
 | TH-08 | `/therapist/reports/edit/:reportId` | `ReportEditPage.jsx` | Legacy editor | Legacy | Do not restyle until reports-engine absorbs it or it is removed |
 
 ### Therapist — remaining chrome (phase 1 follow-through)
@@ -80,9 +82,9 @@ Routes below are the live router. `frontend/src/routes/TherapistRoutes.jsx` is s
 | TH-14 | `/therapist/profile` | `TherapistProfilePage.jsx` | Migration planned | Footer / drawer, not a fourth bottom tab |
 | TH-15 | `/therapist/notifications` | `NotificationCenterPage.jsx` | Migration planned | Shared component; therapist chrome only |
 
-Therapist bottom tabs today: Today, Cases, Reports, Home. Desktop sidebar adds invoices, support, meetings, leave, scheduling. **Menu drawer must list every sidebar item.** Current `useMenu` / `showMobileDrawer` interaction is a defect (see UX_BACKLOG NAV-01).
+Therapist bottom tabs today: **Today** (logs), Cases, Reports, Home. Target labels: **Logs · Cases · Reports · Home**. Overflow is the **header ☰** drawer (`THERAPIST_NAV` + profile + notifications). Do not treat those destinations as missing; the backlog item is discoverability and renaming Today → Logs.
 
-Therapist case tabs do **not** include Reports. Clinical reports stay on TH-05–TH-07 until Layer 4 adds a case-profile reports tab and this register is updated.
+Therapist case tabs do **not** include Reports. Clinical reports stay on TH-05–TH-07 until Layer 4 adds a case-profile reports tab **and** a recovered/replaced visual reference.
 
 ### Client / parent (phase 2)
 
@@ -94,13 +96,13 @@ Therapist case tabs do **not** include Reports. Clinical reports stay on TH-05�
 | PA-04 | `/parent/reports` (`?type=`) | `ParentReportsPage.jsx` | Mix of `admin-btn` and `parent-reports__btn` | Migration planned | Monthly / IEP / observation / documents |
 | PA-05 | `/parent/iep` | Redirect → reports `type=iep` | — | Legacy (redirect) | Keep redirect |
 | PA-06 | `/parent/billing` | `ParentBillingPage.jsx` | Indigo parent-pay buttons | Migration planned | Plain-language statements |
-| PA-07 | `/parent/book` | `ClientBookAppointmentPage.jsx` | Operational | Migration planned | Desktop nav + mobile drawer (not a bottom tab today) |
+| PA-07 | `/parent/book` | `ClientBookAppointmentPage.jsx` | Operational | Migration planned | Target **Schedule** bottom tab (assumption: R-01 in UI contract). Medium-form sheet for book/reschedule. |
 | PA-08 | `/parent/profile` (`/parent/address` redirect) | `ParentProfilePage.jsx` | Operational | Migration planned | |
 | PA-09 | `/parent/support` (`/incidents` redirect) | `ClientSupportHubPage.jsx` | Operational | Migration planned | Communication |
 | PA-10 | `/parent/meetings` | `CaseManagerMeetingsPage` `portal="parent"` | Operational | Migration planned | Portal wrapper |
 | PA-11 | `/parent/notifications` | `NotificationCenterPage.jsx` | Shared | Migration planned | |
 
-Parent bottom tabs today: Home, Sessions, Reports, Billing. Book, profile, support, meetings **must remain in the drawer**.
+Parent bottom tabs today: Home, Sessions, Reports, Billing. Target: Home, Sessions, **Schedule**, Reports; Billing in ☰ plus Home alerts. Assumption pending parent research (UI_CONTRACT R-01).
 
 ### Admin — operations (phase 3)
 
