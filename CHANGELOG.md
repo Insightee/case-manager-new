@@ -53,6 +53,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Super-admin `/admin` home shows the period-aware leadership overview for `module_admin` and `legacy_admin` (SUPER_ADMIN maps to `module_admin`, not `operations`). HR on `/admin` keeps trimmed KPIs.
 - Collections totals use `client_payments.payment_status` (not a missing `status` field) and honour cash-period vs invoice-month cohort. Outstanding stays a current snapshot unless the caller asks for a billing-month cohort. Control tower matches therapist `Invoice.month` aliases including `May 2026`. Case status mix includes `PENDING_REPLACEMENT` and `DEACTIVATED`. Monthly/observation completed counts include `PUBLISHED` as well as `APPROVED`. Parent portal export columns say login, not activity.
 - CI Alembic head gates now match `tp_qual_level_2703` (academic qualification level) and register that revision in the Postgres migration proof.
 

@@ -43,6 +43,10 @@ const DASHBOARD_COPY = {
   },
 }
 
+// SUPER_ADMIN / MODULE_ADMIN map to module_admin; retired ADMIN is legacy_admin.
+// HR also lands on /admin and keeps the trimmed KPI strip.
+const LEADERSHIP_DASHBOARD_VARIANTS = new Set(['module_admin', 'legacy_admin', 'operations'])
+
 export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRole }) {
   const { user, can } = useAuth()
   const [summary, setSummary] = useState(null)
@@ -177,7 +181,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
 
       <AdminOpsKpiGrid kpis={kpis} loading={loading} />
 
-      {dashboardVariant === 'operations' && summary?.leadership ? (
+      {LEADERSHIP_DASHBOARD_VARIANTS.has(dashboardVariant) && summary?.leadership ? (
         <AdminLeadershipOverview leadership={summary.leadership} operations />
       ) : null}
 
