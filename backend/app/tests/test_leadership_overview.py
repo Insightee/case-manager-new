@@ -53,18 +53,21 @@ def test_dashboard_summary_includes_all_statuses_and_leadership():
     ):
         assert name in modules
         assert "ok" in modules[name]
+    finance = modules["finance"]
+    assert finance.get("ok") is True
+    assert not finance.get("unavailable")
+    assert finance.get("outstandingDateBasis") == "current"
+    assert "invoicedAmountInr" in finance
+    assert "recognised" not in str(finance).lower()
     queues = modules["queues"]
-    if queues.get("ok") and not queues.get("unavailable"):
-        keys = [item["key"] for item in queues.get("items") or []]
-        assert len(keys) == len(set(keys))
+    assert queues.get("ok") is True
+    assert not queues.get("unavailable")
+    keys = [item["key"] for item in queues.get("items") or []]
+    assert len(keys) == len(set(keys))
     attendance = modules["staffAttendance"]
     if attendance.get("ok") and not attendance.get("unavailable"):
         assert attendance.get("source") == "in_app_staff_attendance"
         assert "HRIS" not in (attendance.get("coverageNote") or "")
-    finance = modules["finance"]
-    if finance.get("ok") and not finance.get("unavailable"):
-        assert "recognised" not in str(finance).lower()
-        assert finance.get("outstandingDateBasis") == "current"
 
 
 def test_therapist_attention_and_exceptions_permissions():

@@ -432,7 +432,7 @@ def _finance_module(db: Session, user: User, period: dict, product_module: str |
 
     return _module_ok(
         {
-            "invoicedAmountInr": float(invoiced_stmt and db.scalar(invoiced_stmt) or 0),
+            "invoicedAmountInr": float(db.scalar(invoiced_stmt) or 0),
             "invoicedDateBasis": "billing_month",
             "confirmedCashInr": float(db.scalar(cash_stmt) or 0),
             "cashDateBasis": "during_period",
@@ -609,7 +609,7 @@ def _queues_module(db: Session, user: User, period: dict, product_module: str | 
 
     if user_has_permission(user, "monthly_report.approve") and user_has_feature(user, "reports"):
         monthly_stmt = (
-            select(func.count(), func.min(MonthlyReport.updated_at))
+            select(func.count(), func.min(MonthlyReport.submitted_for_review_at))
             .select_from(MonthlyReport)
             .join(Case, MonthlyReport.case_id == Case.id)
             .where(MonthlyReport.status == ReportStatus.UNDER_REVIEW)
@@ -625,11 +625,11 @@ def _queues_module(db: Session, user: User, period: dict, product_module: str | 
                 owner="Case manager",
                 date_basis="current",
                 oldest_age_days=_age_days(m_oldest, today),
-                age_field="updated_at",
+                age_field="submitted_for_review_at",
             )
         )
         obs_stmt = (
-            select(func.count(), func.min(ObservationReport.updated_at))
+            select(func.count(), func.min(ObservationReport.created_at))
             .select_from(ObservationReport)
             .join(Case, ObservationReport.case_id == Case.id)
             .where(ObservationReport.status == ReportStatus.UNDER_REVIEW)
@@ -645,7 +645,7 @@ def _queues_module(db: Session, user: User, period: dict, product_module: str | 
                 owner="Case manager",
                 date_basis="current",
                 oldest_age_days=_age_days(o_oldest, today),
-                age_field="updated_at",
+                age_field="created_at",
             )
         )
         chk_stmt = (
