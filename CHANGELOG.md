@@ -39,6 +39,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- CI Alembic head gates now match `tp_qual_level_2703` (academic qualification level) and register that revision in the Postgres migration proof.
 - Leave and child absence are unique per **case×day** (disjoint cases the same day stay allowed). Shadow leave counts only dates with a session or booked slot, so a Saturday without a session is not deducted. Paid/unpaid days recompute on approve from live monthly credits; invoice copy explains missing employment start date vs remaining credits.
 - Month-spanning leave applies paid credits to the earliest billable days and bills each month by that day’s real paid/unpaid status (no 50/50 rounding that zeroed mixed leave on both invoices).
 - Meetings: slot validation no longer blocks double-booking conflict messages; `min_notice_minutes=0` saves correctly; therapist slot picker respects assigned case manager availability windows.
