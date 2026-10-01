@@ -27,6 +27,9 @@ def test_therapist_me_includes_profile_completion():
     assert "missing_fields" in pc
     assert isinstance(pc["missing_fields"], list)
     assert 0 <= pc["percent"] <= 100
+    assert "total_steps" in pc
+    assert "completed_steps" in pc
+    assert pc["completed_steps"] + len(pc["missing_fields"]) == pc["total_steps"]
 
 
 def test_admin_me_has_no_profile_completion_block():

@@ -92,7 +92,13 @@ def compute_profile_completion(user: User, profile: TherapistProfile) -> dict:
     total = len(items)
     percent = round(100 * done / total) if total else 100
     complete = len(missing) == 0
-    return {"percent": percent, "complete": complete, "missing_fields": missing}
+    return {
+        "percent": percent,
+        "complete": complete,
+        "missing_fields": missing,
+        "total_steps": total,
+        "completed_steps": done,
+    }
 
 
 def completion_for_therapist_user(db: Session, user: User) -> dict | None:

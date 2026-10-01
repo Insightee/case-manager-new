@@ -42,7 +42,12 @@ function publishedFormFromRecord(prof) {
   }
 }
 
-export function TherapistServiceProfileSection({ onProfileUpdated }) {
+export function TherapistServiceProfileSection({
+  onProfileUpdated,
+  editRequestKey = null,
+  onEditRequestHandled,
+  sectionClassName = '',
+}) {
   const [editing, setEditing] = useState(false)
   const [categories, setCategories] = useState([])
   const [profile, setProfile] = useState(null)
@@ -74,6 +79,15 @@ export function TherapistServiceProfileSection({ onProfileUpdated }) {
   }, [])
 
   const paused = profile?.status === 'PAUSED'
+
+  useEffect(() => {
+    if (!editRequestKey || !profile || paused) return
+    setForm(profileFormFromRecord(profile))
+    setEditing(true)
+    setError('')
+    setSuccess('')
+    onEditRequestHandled?.()
+  }, [editRequestKey, profile, paused, onEditRequestHandled])
   const awaitingFirstApproval = profile?.status === 'PENDING' && !profile?.approved_snapshot
   const hasPendingChanges = Boolean(profile?.has_pending_changes)
   const statusKey = hasPendingChanges ? 'PENDING' : profile?.status
@@ -134,7 +148,7 @@ export function TherapistServiceProfileSection({ onProfileUpdated }) {
   const serviceNames = serviceLabels(categories, viewForm.services_offered)
 
   return (
-    <section className="therapist-profile__card">
+    <section id="therapist-profile-service" className={`therapist-profile__card${sectionClassName}`}>
       <div className="therapist-profile__card-head">
         <div>
           <h2>Service profile</h2>

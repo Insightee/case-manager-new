@@ -3,6 +3,11 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AddressFormFields, addressFromApi, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
 import { AvatarUpload } from '../shared/AvatarUpload.jsx'
+import {
+  PROFILE_COMPLETION_ACCOUNT_FIELDS,
+  PROFILE_COMPLETION_SERVICE_FIELDS,
+} from '../../lib/therapistQualificationLevels.js'
+import { TherapistProfileCompletionGuide } from './TherapistProfileCompletionGuide.jsx'
 import { TherapistServiceProfileSection } from './TherapistServiceProfileSection.jsx'
 import { TherapistReviewsSection } from './TherapistReviewsSection.jsx'
 import './therapist-profile.css'
@@ -48,6 +53,8 @@ export function TherapistProfilePage() {
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
+  const [focusSectionId, setFocusSectionId] = useState(null)
+  const [serviceEditRequestKey, setServiceEditRequestKey] = useState(null)
 
   useEffect(() => {
     if (user) {
@@ -101,6 +108,21 @@ export function TherapistProfilePage() {
   const statusStyle = STATUS_COLORS[form.employment_status] || STATUS_COLORS.ACTIVE
   const homeSummary = [user?.home_address?.city, user?.home_address?.state].filter(Boolean).join(', ')
 
+  function handleGoToCompletionField(fieldKey, sectionId) {
+    setFocusSectionId(sectionId)
+    window.setTimeout(() => setFocusSectionId(null), 2500)
+    if (PROFILE_COMPLETION_ACCOUNT_FIELDS.has(fieldKey)) {
+      setEditingAccount(true)
+    }
+    if (PROFILE_COMPLETION_SERVICE_FIELDS.has(fieldKey)) {
+      setServiceEditRequestKey(fieldKey)
+    }
+  }
+
+  function sectionFocusClass(id) {
+    return focusSectionId === id ? ' therapist-profile__section--focus' : ''
+  }
+
   return (
     <div className="therapist-profile">
       <header>
@@ -112,10 +134,15 @@ export function TherapistProfilePage() {
         </p>
       </header>
 
+      <TherapistProfileCompletionGuide
+        completion={user?.profile_completion}
+        onGoToField={handleGoToCompletionField}
+      />
+
       {error ? <p className="therapist-profile__alert therapist-profile__alert--error">{error}</p> : null}
       {success ? <p className="therapist-profile__alert therapist-profile__alert--success">{success}</p> : null}
 
-      <section className="therapist-profile__hero">
+      <section id="therapist-profile-avatar" className={`therapist-profile__hero${sectionFocusClass('therapist-profile-avatar')}`}>
         <AvatarUpload user={user} onUpdated={reload} size={80} />
         <div className="therapist-profile__hero-main">
           <h2 className="therapist-profile__hero-name">{user?.full_name || 'Therapist'}</h2>
@@ -139,7 +166,7 @@ export function TherapistProfilePage() {
         </div>
       </section>
 
-      <section className="therapist-profile__card">
+      <section id="therapist-profile-contact" className={`therapist-profile__card${sectionFocusClass('therapist-profile-contact')}`}>
         <div className="therapist-profile__card-head">
           <h2>Contact & account</h2>
           {!editingAccount ? (
@@ -228,7 +255,12 @@ export function TherapistProfilePage() {
         )}
       </section>
 
-      <TherapistServiceProfileSection onProfileUpdated={reload} />
+      <TherapistServiceProfileSection
+        onProfileUpdated={reload}
+        editRequestKey={serviceEditRequestKey}
+        onEditRequestHandled={() => setServiceEditRequestKey(null)}
+        sectionClassName={sectionFocusClass('therapist-profile-service')}
+      />
 
       <section className="therapist-profile__card">
         <h2 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 600 }}>Assigned services</h2>

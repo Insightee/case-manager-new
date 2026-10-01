@@ -53,6 +53,8 @@ class TherapistProfileCompletionRead(BaseModel):
     percent: int = 0
     complete: bool = False
     missing_fields: list[str] = Field(default_factory=list)
+    total_steps: int = 0
+    completed_steps: int = 0
 
 
 class UserMeResponse(BaseModel):
