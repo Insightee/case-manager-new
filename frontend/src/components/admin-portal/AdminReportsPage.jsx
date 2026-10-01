@@ -633,6 +633,7 @@ export function AdminReportsPage() {
       ) : null}
 
       {tab === 'library' ? null : (
+      <>
       <p
         className={`admin-reports__scope ${seesAllCases ? 'admin-reports__scope--all' : 'admin-reports__scope--team'}`}
         role="status"
@@ -1119,7 +1120,7 @@ export function AdminReportsPage() {
         </button>
       </div>
       ) : null}
-
+      </>
       )}
 
       {drawerId != null ? (
