@@ -1,9 +1,11 @@
 # Forest Light Typography
 
-Canonical fonts for therapist portal revamp (Stitch: Modern Therapist Case Dashboard and related screens).
+Canonical fonts for Forest Light. **Colour, spacing, buttons, and layout live in the product contract:** [UI_CONTRACT.md](./UI_CONTRACT.md). This file does not define a second palette.
 
-Source tokens: `frontend/src/styles/forest-light-theme.css`  
+Source tokens (shipped Forest v1): `frontend/src/styles/forest-light-theme.css`  
 Loaded in: `frontend/index.html` (Google Fonts)
+
+Do not expand this document into a competing visual spec. If type roles change, update Layer 2 of the UI contract in the same PR.
 
 ## Font roles
 
@@ -11,7 +13,7 @@ Loaded in: `frontend/index.html` (Google Fonts)
 |------|--------|--------------|-------------|
 | **Headline** | Manrope 600–700 | `--font-headline` | Client name, page titles, large emphasis |
 | **Body** | Inter 400–500 | `--font-body` | Paragraphs, KV values, list items, buttons, meta text |
-| **Label / section** | JetBrains Mono 500 | `--font-mono` | Card section titles (`PROFILE SNAPSHOT`), uppercase chips, pending action links |
+| **Label / section** | JetBrains Mono 500 | `--font-mono` | **Existing approved eyebrows only** (`PROFILE SNAPSHOT`, small uppercase action links already using mono) |
 
 ## Rules (mandatory)
 
@@ -19,10 +21,10 @@ Loaded in: `frontend/index.html` (Google Fonts)
 2. **Manrope** only for headlines (h1–h2 client name, dashboard title).
 3. **JetBrains Mono** only for:
    - Section card eyebrows (`cov-card__title`, uppercase tracking)
-   - Small uppercase action links (e.g. pending `Complete`)
+   - Small uppercase action links already in Forest v1 (e.g. pending `Complete`)
    - Interest tag text (optional; may use Inter semibold instead)
-4. **Never** use monospace for KV pair values, summary paragraphs, goal titles, or care team names.
-5. **Never** use legacy system monospace / Courier — always `var(--font-body)` or `var(--font-mono)` explicitly.
+4. **Do not expand** uppercase monospace styling to new surfaces, table headers, goal titles, care-team names, or KV values.
+5. **Never** use legacy system monospace / Courier / `ui-monospace` — always `var(--font-body)` or `var(--font-mono)` explicitly. `.cr-section__label` currently uses system monospace; that is a defect tracked in [UX_BACKLOG.md](./UX_BACKLOG.md) TH-ST-04.
 
 ## Examples
 
@@ -56,3 +58,5 @@ Single `clinical-case-header__profile-row`:
 Mobile: Change case `order: -1` at top-right; profile block below.
 
 Status must live inside `__info` / `__meta-row` — not a separate `__actions` column.
+
+This header structure remains the target for the therapist case profile migration ([SURFACE_MIGRATION.md](./SURFACE_MIGRATION.md) TH-03). It is not implemented as `CaseProfileShell` today.

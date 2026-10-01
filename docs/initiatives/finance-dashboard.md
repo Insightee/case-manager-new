@@ -35,7 +35,7 @@ A reliable monthly finance workflow covering therapist billing review, client-wi
 - No silent defaults for missing financial inputs.
 - No database migration without a separately reviewed work package.
 - No Railway deployment change without explicit approval.
-- Use Forest Light design standards ([docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md)).
+- Use Forest Light design standards ([docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md)). Finance chrome migrates in the **admin phase**; do not globally retoken the app in a finance PR ([SURFACE_MIGRATION.md](../design/SURFACE_MIGRATION.md)).
 - Do not weaken tests to obtain a pass.
 - **No loop runs on a dirty tree.** The engine currently exists as uncommitted work; the baseline gate (FIN-00) is human-executed and must record a `baseline_sha` on the plan board before any loop starts.
 - **Never infer a missing financial rule.** Ambiguity goes to the open-questions register and blocks the package.

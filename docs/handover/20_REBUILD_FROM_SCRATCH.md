@@ -16,6 +16,7 @@ Recreate these rules first:
 4. Production: Postgres + Redis + R2 + ZeptoMail + split Vercel/Railway deploy.  
 5. Billing money writes behind explicit flags and cutover runbooks.  
 6. Clinical data: neuro-affirmative structured fields, not diagnosis-first UX.
+7. UI: follow [docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md) — Forest Light product foundation, portal-specific shells, no global stylesheet swap.
 
 ---
 

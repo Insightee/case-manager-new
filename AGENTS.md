@@ -7,13 +7,14 @@
 - Assign module-based product access when creating admin/support users (homecare, shadow_support, billing, etc.).
 - Therapist access is scoped to own cases, session logs, invoices, tickets, and profile—not other therapists' data.
 - Incident reporting should be available across relevant service lines (e.g. shadow and homecare), not a single product only.
-- Use frontend/UI design skills when improving portal layouts (login sizing, admin dashboard density, therapist quick actions).
+- Use frontend/UI design skills when improving portal layouts (login sizing, admin dashboard density, therapist quick actions), following [docs/design/UI_CONTRACT.md](docs/design/UI_CONTRACT.md). Forest Light is the future product-wide foundation; do not globally replace stylesheets. Therapist first, then parent, then admin.
 - Invoice UX should support case-by-case preview, session review, late/extra sessions before submit, and admin breakdown review.
 - Prefer **Grok** (`cursor-grok-*`) and **Composer** (`composer-*`) models for subagents, parallel exploration, and browser/UI verification to manage token spend. Use heavier reasoning models (Opus, Sonnet thinking, GPT Sol xhigh, etc.) only when the user explicitly picks one or the task clearly needs deep multi-file reasoning.
 
 ## Documentation
 
 - [docs/README.md](docs/README.md) — full documentation index
+- [docs/design/UI_CONTRACT.md](docs/design/UI_CONTRACT.md) — **canonical UI/UX contract** (Forest Light product foundation, portal patterns, screen contracts). Companions: [SURFACE_MIGRATION.md](docs/design/SURFACE_MIGRATION.md), [UX_BACKLOG.md](docs/design/UX_BACKLOG.md). Do not invent a parallel design spec.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — team PR workflow, pre-push/release scripts, hooks
 - [CHANGELOG.md](CHANGELOG.md) — update `[Unreleased]` on every merge; date section before prod release
 - [docs/TEAM_OWNERSHIP.md](docs/TEAM_OWNERSHIP.md) — area owners and CODEOWNERS
@@ -66,7 +67,7 @@ We are not building forms. We are building the world's largest neuro-affirmative
     - *"Looks like we still need a few details before we can save this."*
     - *"Would you like to continue from where you left off?"*
     - *"Let's add one more observation."*
-  * *Code Implementation Guardrail*: Optimistic UI is the absolute default. Always update local state immediately on action and reconcile with backend asynchronously. Users must feel progress, not compliance.
+  * *Code Implementation Guardrail*: Show immediate interaction feedback (filters, chips, navigation, draft field edits). Reconcile with the backend asynchronously. **Clinical submissions, approvals, and financial outcomes confirm only after server success** — disable duplicate submit, keep the form, and do not mark complete locally. Users must feel progress, not compliance. Full rule: [docs/design/UI_CONTRACT.md](docs/design/UI_CONTRACT.md) Layer 1.
 * **Neuro-Affirmative First**
   * *Technical Rule*: Never frame children as deficits. Diagnostic-first architecture is strictly forbidden.
   * *Database Schema Hierarchy*: `Child` ──> `Environment` ──> `Support` (NOT `Diagnosis` ──> `Problem` ──> `Fix`).

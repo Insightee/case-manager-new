@@ -57,9 +57,11 @@ Subagent runs (tests, explore, CI fix) informed implementation but are not cited
 
 | Preference | Confidence | Rule for agents |
 |------------|------------|-----------------|
-| **Use design skills for portals** | Strong | Login sizing, admin dashboard density, therapist quick actions / modals. |
+| **Canonical contract** | Strong | Follow [docs/design/UI_CONTRACT.md](./design/UI_CONTRACT.md). Do not invent a parallel design spec. Migrate via [SURFACE_MIGRATION.md](./design/SURFACE_MIGRATION.md); implement from [UX_BACKLOG.md](./design/UX_BACKLOG.md). |
+| **Use design skills for portals** | Strong | Login sizing, admin dashboard density, therapist quick actions / modals — within the contract. Admin stays dense on desktop; Forest Light is the visual foundation, not fewer columns. |
 | **Role-aware login** | Strong | Admin, therapist, parent entry points visible—not therapist/client only. |
 | **Data-rich admin** | Medium | High-fidelity, operational dashboards (kanban, queues, filters). |
+| **No global restyle** | Strong | Do not replace `:root` tokens for all portals in one PR. Legacy indigo/teal stay until that surface migrates. |
 
 ### Email & deploy
 

@@ -11,7 +11,7 @@ We are not building forms. We are building the world's largest neuro-affirmative
   - *"Looks like we still need a few details before we can save this."*
   - *"Would you like to continue from where you left off?"*
   - *"Let's add one more observation."*
-* **Code Implementation Guardrail**: Optimistic UI is the absolute default. Always update local state immediately on action and reconcile with backend asynchronously. Users must feel progress, not compliance.
+* **Code Implementation Guardrail**: Show immediate interaction feedback (filters, chips, navigation, draft field edits). Reconcile with the backend asynchronously. **Clinical submissions, approvals, and financial outcomes confirm only after server success** — disable duplicate submit, keep the form, and do not mark complete locally. Users must feel progress, not compliance. Canonical UI rules: `docs/design/UI_CONTRACT.md`.
 
 #### Neuro-Affirmative First
 * **Technical Rule**: Never frame children as deficits. Diagnostic-first architecture is strictly forbidden.

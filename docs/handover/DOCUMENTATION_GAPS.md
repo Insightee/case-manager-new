@@ -193,5 +193,6 @@ Using **only** `docs/handover/*` plus linked repo docs:
 | Business rules? | Yes — 11 (not exhaustive) |
 | Known issues? | Yes — 18 |
 | Rebuild from scratch? | Yes — 20 |
+| Canonical UI/UX contract? | Yes — [docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md); Stitch `DESIGN.md` files cited there are still missing from the repo |
 
 **Partial answers** should be upgraded when gap owners supply facts — update the relevant handover file and remove or shrink entries here.

@@ -147,6 +147,7 @@ Legacy redirects: `/parent/iep` → reports; `/parent/address` → profile.
 
 - `RouteLoading`, `PortalRouteError` shared components  
 - API errors parsed in `parseApiErrorDetail` — map to user-friendly strings in components (inconsistent — some raw `detail` may show)  
+- Canonical copy, saving vs saved, and optimistic-UI rules: [docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md) Layer 1–2  
 
 ---
 
@@ -196,6 +197,8 @@ npm run preview    # static preview
 
 ## Related docs
 
+- [docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md) — canonical UI/UX contract  
+- [docs/design/SURFACE_MIGRATION.md](../design/SURFACE_MIGRATION.md) — live route register (prefer `AppRoutes.jsx` over this handover map if they drift)  
 - [docs/THERAPIST_PORTAL_GUIDE.md](../THERAPIST_PORTAL_GUIDE.md)  
 - [docs/PARENT_CLIENT_PORTAL_GUIDE.md](../PARENT_CLIENT_PORTAL_GUIDE.md)  
 - [frontend/docs/admin-mobile-ux.md](../../frontend/docs/admin-mobile-ux.md)  

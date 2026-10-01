@@ -5,6 +5,8 @@ description: Ensures InsighteCase features are designed and implemented across a
 
 # Cross-Portal Product Design (InsighteCase)
 
+Visual tokens, buttons, mobile rules, and Forest Light direction: [docs/design/UI_CONTRACT.md](../../design/UI_CONTRACT.md). This skill covers **role matrices and portal shells**, not a second palette.
+
 ## When to use
 
 Before designing or implementing any feature that appears in more than one portal, or when fixing "it only works for case managers."

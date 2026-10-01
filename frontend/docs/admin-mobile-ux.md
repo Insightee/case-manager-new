@@ -1,5 +1,9 @@
 # Admin portal — mobile UX (≤900px)
 
+**Canonical visual and interaction contract:** [docs/design/UI_CONTRACT.md](../../docs/design/UI_CONTRACT.md). This file is the **admin ≤900px layout pattern** (tabs, filters, card lists). It is not a second product palette.
+
+Forest Light is the future product-wide foundation. Admin teal pills (`#0d9488`) remain valid **only while this chrome is unmigrated**. Do not globally replace admin CSS when therapist surfaces migrate. See [docs/design/SURFACE_MIGRATION.md](../../docs/design/SURFACE_MIGRATION.md).
+
 Admin portal pages share one mobile layout system. Desktop (≥901px) keeps existing tables and full tab bars.
 
 ## Breakpoint
@@ -55,12 +59,16 @@ Admin portal pages share one mobile layout system. Desktop (≥901px) keeps exis
 />
 ```
 
-## Colors (align with InsighteCase)
+## Colors (legacy admin mobile — unmigrated)
 
-- Active pill: `#0d9488` / gradient `#0f766e` → `#0d9488`
-- Muted text: `#64748b`
-- Borders: `#e2e8f0`
-- Surface: `#fff` on `#f8fafc` page bg
+These hexes describe **current** admin mobile chrome. Product primary after admin migration is Forest green in the UI contract, not teal.
+
+- Active pill (current): `#0d9488` / gradient `#0f766e` → `#0d9488`
+- Muted text (current): `#64748b`
+- Borders (current): `#e2e8f0`
+- Surface (current): `#fff` on `#f8fafc` page bg
+
+Do not add new decorative gradients. New admin work should follow Layer 2 of the UI contract once that surface’s migration packet is open.
 
 ## CSS entry
 

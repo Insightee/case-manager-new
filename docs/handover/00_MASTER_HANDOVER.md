@@ -41,7 +41,8 @@
 
 ## Frontend
 
-→ [08_FRONTEND.md](./08_FRONTEND.md) — Vite/React portals, routing, API client.
+→ [08_FRONTEND.md](./08_FRONTEND.md) — Vite/React portals, routing, API client.  
+→ [docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md) — canonical UI/UX contract (Forest Light).
 
 ---
 

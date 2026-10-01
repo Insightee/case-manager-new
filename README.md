@@ -35,7 +35,7 @@ npm run test:e2e
 
 API-only smoke (backend must be on `:8000`): `python3 scripts/therapist_flow_smoke.py`
 
-See [backend/README.md](backend/README.md) for API details and role matrix. System architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). **Environment variables:** [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md). **Full doc index:** [docs/README.md](docs/README.md).
+See [backend/README.md](backend/README.md) for API details and role matrix. System architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). **UI/UX contract:** [docs/design/UI_CONTRACT.md](docs/design/UI_CONTRACT.md). **Environment variables:** [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md). **Full doc index:** [docs/README.md](docs/README.md).
 
 ## Contributing (team of 3+)
 

@@ -102,10 +102,14 @@ Executed as bounded work packages — see [LOOP_SYSTEM.md](./LOOP_SYSTEM.md).
 
 | Doc | Purpose |
 |-----|---------|
+| [design/UI_CONTRACT.md](./design/UI_CONTRACT.md) | **Canonical UI/UX contract** — principles, Forest Light foundations, portal patterns, screen contracts, conflict resolution |
+| [design/SURFACE_MIGRATION.md](./design/SURFACE_MIGRATION.md) | Surface register (legacy / migration planned / migrated) from live routes |
+| [design/UX_BACKLOG.md](./design/UX_BACKLOG.md) | Phased implementation backlog (therapist → parent → admin) |
+| [design/FOREST_LIGHT_TYPOGRAPHY.md](./design/FOREST_LIGHT_TYPOGRAPHY.md) | Forest Light type roles (defers colour/layout to the UI contract) |
 | [PARENT_CLIENT_PORTAL_GUIDE.md](./PARENT_CLIENT_PORTAL_GUIDE.md) | **Parent / guardian guide** — client portal navigation and features |
 | [THERAPIST_PORTAL_GUIDE.md](./THERAPIST_PORTAL_GUIDE.md) | **Therapist guide** (Markdown source) — portal navigation and daily workflows |
 | [THERAPIST_PORTAL_GUIDE.pdf](./THERAPIST_PORTAL_GUIDE.pdf) | **Therapist guide (PDF)** — share with therapists; regenerate via `scripts/generate-therapist-guide-pdf.sh` |
-| [../frontend/docs/admin-mobile-ux.md](../frontend/docs/admin-mobile-ux.md) | Admin portal mobile UX rules |
+| [../frontend/docs/admin-mobile-ux.md](../frontend/docs/admin-mobile-ux.md) | Admin portal mobile layout patterns (tokens defer to the UI contract) |
 
 ## Agent memory
 

@@ -120,7 +120,7 @@ Detail: [14_DEPLOYMENT.md](./14_DEPLOYMENT.md), [docs/RAILWAY_VERCEL.md](../RAIL
 
 From `.cursorrules` / `AGENTS.md` (institutional rules):
 
-- **Connection before correction** — UX must guide, not punish; optimistic UI default.  
+- **Connection before correction** — UX must guide, not punish; immediate interaction feedback, with clinical/finance outcomes confirmed after server success ([docs/design/UI_CONTRACT.md](../design/UI_CONTRACT.md)).  
 - **Neuro-affirmative clinical model** — strengths/support/environment, not deficit-first diagnosis architecture.  
 - **Case + assignment history** — do not rely on `case.therapist_id` alone.  
 - **Token economy** — no LLM calls on `onChange`/page load; explicit user actions only.  
