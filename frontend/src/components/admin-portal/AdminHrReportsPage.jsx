@@ -5,20 +5,20 @@ import { AdminPageHeader, AdminPanel, MultiSelect, ServiceFilterSelect } from '.
 import { ExpandableTextCell } from './ui/ExpandableTextCell.jsx'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
-import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
+import { formatApiDateIN, formatTimestampDateIN, todayIsoIST } from '../../lib/datetime.js'
 import './admin-hr-reports.css'
 
 function currentMonth() {
-  return new Date().toISOString().slice(0, 7)
+  return todayIsoIST().slice(0, 7)
 }
 
 function monthStartIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  const today = todayIsoIST()
+  return `${today.slice(0, 8)}01`
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return todayIsoIST()
 }
 
 /** IST calendar date for download filenames (matches backend export stamp). */

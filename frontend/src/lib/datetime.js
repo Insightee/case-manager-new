@@ -86,6 +86,11 @@ export function todayIsoIST() {
   return new Date().toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE })
 }
 
+/** Current billing month in IST (YYYY-MM). */
+export function currentBillingMonthIST() {
+  return todayIsoIST().slice(0, 7)
+}
+
 export function actualDurationMinsIST(startIso, endIso) {
   const start = parseApiDatetime(startIso)
   const end = parseApiDatetime(endIso)

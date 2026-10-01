@@ -7,7 +7,7 @@ export function AdminFinanceReportsPage() {
       <AdminPageHeader
         eyebrow="Finance"
         title="Reports"
-        subtitle="Case-level payout previews and finance exports for therapist compensation."
+        subtitle="Therapist payout preview for a billing month. Collections and receivables are separate views."
       />
       <AdminFinanceReportsTab />
     </div>

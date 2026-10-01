@@ -86,7 +86,10 @@ def test_therapist_reports_pipeline():
     headers = {"Authorization": f"Bearer {token}"}
     r = client.get("/api/v1/therapist/reports/pipeline", headers=headers)
     assert r.status_code == 200
-    assert "pipeline" in r.json()
+    pipeline = r.json()["pipeline"]
+    assert pipeline.get("overdueAvailable") is False
+    assert pipeline.get("overdue") is None
+    assert "notStarted" in pipeline
 
 
 def test_parent_home():

@@ -8,16 +8,25 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.billing_month import (
+    ist_month_utc_bounds,
+    month_date_bounds,
+    parse_billing_month,
+    therapist_invoice_month_keys,
+)
 from app.models.case import Case
 from app.models.client_billing import (
     ClientInvoice,
     ClientInvoiceLine,
     ClientInvoiceStatus,
     ClientPayment,
+    ClientPaymentStatus,
 )
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_manual_line import InvoiceManualLine
 from app.models.ledger_billing import BillableStatus, BillingLedger
+from app.models.session import Session as TherapySession
+from app.models.session import SessionStatus
 from app.models.user import User
 from app.services import billing_composer_service, client_billing_service, finance_payout_preview_service
 
@@ -40,13 +49,24 @@ REPORT_KEYS = frozenset(REPORT_LABELS.keys())
 
 
 def _ym(month: str | None) -> str:
-    return billing_composer_service.normalize_billing_month(month or date.today().strftime("%Y-%m"))
+    return parse_billing_month(month)
 
 
-def report_rows(db: Session, report_key: str, *, billing_month: str | None = None) -> list[dict]:
+def report_rows(
+    db: Session,
+    report_key: str,
+    *,
+    billing_month: str | None = None,
+    user=None,
+    product_module: str | None = None,
+    case_id: int | None = None,
+    therapist_user_id: int | None = None,
+    date_basis: str | None = None,
+) -> list[dict]:
     if report_key not in REPORT_KEYS:
         raise ValueError(f"Unknown report: {report_key}")
     ym = _ym(billing_month)
+    month_keys = therapist_invoice_month_keys(ym)
 
     if report_key == "monthly-billing":
         rows = db.scalars(
@@ -68,18 +88,17 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         ]
 
     if report_key == "outstanding":
-        rows = db.scalars(
-            select(ClientInvoice).where(
-                ClientInvoice.status.in_(
-                    [
-                        ClientInvoiceStatus.SENT,
-                        ClientInvoiceStatus.GENERATED,
-                        ClientInvoiceStatus.PARTIALLY_PAID,
-                        ClientInvoiceStatus.OVERDUE,
-                    ]
-                )
-            )
-        ).all()
+        open_statuses = [
+            ClientInvoiceStatus.SENT,
+            ClientInvoiceStatus.GENERATED,
+            ClientInvoiceStatus.ISSUED,
+            ClientInvoiceStatus.PARTIALLY_PAID,
+            ClientInvoiceStatus.OVERDUE,
+        ]
+        stmt = select(ClientInvoice).where(ClientInvoice.status.in_(open_statuses))
+        if billing_month:
+            stmt = stmt.where(ClientInvoice.billing_month == ym)
+        rows = db.scalars(stmt.order_by(ClientInvoice.id.desc())).all()
         return [
             {
                 "invoiceId": r.id,
@@ -89,25 +108,47 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
                 "status": r.status.value if r.status else "",
                 "totalInr": float(r.total_inr or 0),
                 "balanceInr": float(r.total_inr or 0) - float(r.amount_paid_inr or 0),
+                "dueDate": r.due_date.isoformat() if r.due_date else "",
+                "dateBasis": "current_snapshot_for_invoice_month" if billing_month else "current_snapshot",
             }
             for r in rows
         ]
 
     if report_key == "collections":
-        rows = db.scalars(select(ClientPayment).order_by(ClientPayment.id.desc()).limit(500)).all()
+        basis = (date_basis or "cash_period").strip().lower()
+        stmt = (
+            select(ClientPayment, ClientInvoice)
+            .join(ClientInvoice, ClientPayment.client_invoice_id == ClientInvoice.id)
+            .order_by(ClientPayment.id.desc())
+        )
+        if basis == "invoice_cohort":
+            stmt = stmt.where(ClientInvoice.billing_month == ym)
+        else:
+            start_utc, end_utc = ist_month_utc_bounds(ym)
+            stmt = stmt.where(ClientPayment.paid_at >= start_utc, ClientPayment.paid_at < end_utc)
+        pairs = db.execute(stmt).all()
         return [
             {
-                "paymentId": r.id,
-                "invoiceId": r.client_invoice_id,
-                "amountInr": float(r.amount_inr or 0),
-                "status": r.status.value if r.status else "",
-                "paidAt": r.paid_at.isoformat() if r.paid_at else "",
+                "paymentId": pay.id,
+                "invoiceId": pay.client_invoice_id,
+                "invoiceNumber": inv.invoice_number if inv else "",
+                "caseId": inv.case_id if inv else None,
+                "invoiceBillingMonth": inv.billing_month if inv else "",
+                "amountInr": float(pay.amount_inr or 0),
+                "paymentStatus": pay.payment_status.value if pay.payment_status else "",
+                "paidAt": pay.paid_at.isoformat() if pay.paid_at else "",
+                "confirmedAt": pay.confirmed_at.isoformat() if pay.confirmed_at else "",
+                "method": pay.method.value if pay.method else "",
+                "reference": pay.reference or "",
+                "dateBasis": "invoice_cohort" if basis == "invoice_cohort" else "cash_period",
             }
-            for r in rows
+            for pay, inv in pairs
         ]
 
     if report_key == "therapist-payouts":
-        rows = db.scalars(select(Invoice).order_by(Invoice.id.desc()).limit(500)).all()
+        rows = db.scalars(
+            select(Invoice).where(Invoice.month.in_(month_keys)).order_by(Invoice.id.desc())
+        ).all()
         return [
             {
                 "invoiceId": r.id,
@@ -115,6 +156,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
                 "month": r.month,
                 "status": r.status.value if r.status else "",
                 "amountInr": float(r.amount_inr or 0),
+                "paidAmountInr": float(r.paid_amount_inr or 0),
             }
             for r in rows
         ]
@@ -124,13 +166,25 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
 
         frozen = billing_period_snapshot_service.get_closed_payout_preview_rows(db, ym)
         if frozen is not None:
-            return finance_payout_preview_service.apply_therapist_total_column(frozen)
-        return finance_payout_preview_service.payout_preview_rows(db, ym)
+            rows = finance_payout_preview_service.apply_therapist_total_column(frozen)
+        else:
+            rows = finance_payout_preview_service.payout_preview_rows(
+                db,
+                ym,
+                user=user,
+                product_module=product_module,
+                case_id=case_id,
+                therapist_user_id=therapist_user_id,
+            )
+        if case_id:
+            rows = [r for r in rows if int(r.get("caseId") or 0) == int(case_id)]
+        return rows
 
     if report_key == "pending-payout-approvals":
-        rows = db.scalars(
-            select(Invoice).where(Invoice.status == InvoiceStatus.IN_REVIEW).order_by(Invoice.id)
-        ).all()
+        stmt = select(Invoice).where(Invoice.status == InvoiceStatus.IN_REVIEW)
+        if billing_month:
+            stmt = stmt.where(Invoice.month.in_(month_keys))
+        rows = db.scalars(stmt.order_by(Invoice.id)).all()
         return [
             {
                 "invoiceId": r.id,
@@ -142,30 +196,50 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         ]
 
     if report_key == "ledger-missing":
-        cases = billing_composer_service.list_composer_cases(
-            db, billing_month=ym, queue="not_invoiced_this_month", limit=200
+        start, end = month_date_bounds(ym)
+        completed = {
+            int(cid): int(n)
+            for cid, n in db.execute(
+                select(TherapySession.case_id, func.count(TherapySession.id))
+                .where(
+                    TherapySession.status == SessionStatus.COMPLETED,
+                    TherapySession.scheduled_date >= start,
+                    TherapySession.scheduled_date <= end,
+                )
+                .group_by(TherapySession.case_id)
+            ).all()
+        }
+        ledger_cases = set(
+            db.scalars(select(BillingLedger.case_id).where(BillingLedger.ledger_month == ym)).all()
         )
         out = []
-        for c in cases:
-            if (c.get("ledgerReadyCount") or 0) == 0 and (c.get("sessionsCompletedThisMonth") or 0) > 0:
-                out.append(
-                    {
-                        "caseId": c["caseId"],
-                        "caseCode": c.get("caseCode"),
-                        "childName": c.get("childName"),
-                        "sessionsCompleted": c.get("sessionsCompletedThisMonth"),
-                        "billingMonth": ym,
-                    }
-                )
+        for cid, sessions_completed in completed.items():
+            if cid in ledger_cases:
+                continue
+            case = db.get(Case, cid)
+            out.append(
+                {
+                    "caseId": cid,
+                    "caseCode": case.case_code if case else "",
+                    "childName": "",
+                    "sessionsCompleted": sessions_completed,
+                    "billingMonth": ym,
+                }
+            )
         return out
 
     if report_key == "manual-adjustments":
-        client_lines = db.scalars(
-            select(ClientInvoiceLine).where(
-                ClientInvoiceLine.line_item_type.in_(["MANUAL_FEE", "DISCOUNT", "TAX", "OTHER"])
-            ).limit(300)
-        ).all()
-        therapist_lines = db.scalars(select(InvoiceManualLine).limit(300)).all()
+        client_stmt = (
+            select(ClientInvoiceLine)
+            .join(ClientInvoice, ClientInvoiceLine.client_invoice_id == ClientInvoice.id)
+            .where(ClientInvoiceLine.line_item_type.in_(["MANUAL_FEE", "DISCOUNT", "TAX", "OTHER"]))
+        )
+        therapist_stmt = select(InvoiceManualLine).join(Invoice, InvoiceManualLine.invoice_id == Invoice.id)
+        if billing_month:
+            client_stmt = client_stmt.where(ClientInvoice.billing_month == ym)
+            therapist_stmt = therapist_stmt.where(Invoice.month.in_(month_keys))
+        client_lines = db.scalars(client_stmt).all()
+        therapist_lines = db.scalars(therapist_stmt).all()
         rows = []
         for ln in client_lines:
             rows.append(
@@ -215,12 +289,15 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         if frozen is not None:
             return frozen
 
-        from app.models.case import CaseStatus
         from app.services import billing_ledger_service
 
-        case_ids = db.scalars(
-            select(Case.id).where(Case.status == CaseStatus.ACTIVE).limit(100)
-        ).all()
+        ledger_ids = set(
+            db.scalars(select(BillingLedger.case_id).where(BillingLedger.ledger_month == ym)).all()
+        )
+        invoice_ids = set(
+            db.scalars(select(ClientInvoice.case_id).where(ClientInvoice.billing_month == ym)).all()
+        )
+        case_ids = sorted(ledger_ids | invoice_ids)
         out = []
         for cid in case_ids:
             rec = billing_ledger_service.reconcile_month(db, case_id=cid, billing_month=ym)

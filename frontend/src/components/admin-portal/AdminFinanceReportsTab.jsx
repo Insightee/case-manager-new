@@ -1,18 +1,42 @@
 import { useState } from 'react'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
-import { AdminPanel } from './ui/index.js'
+import { currentBillingMonthIST } from '../../lib/datetime.js'
+import { AdminPanel, ServiceFilterSelect } from './ui/index.js'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
 import './admin-hr-reports.css'
 
 const REPORT_KEY = 'therapist-payout-preview'
 const REPORT_LABEL = 'Therapist payout preview'
+const PREVIEW_PAGE_SIZE = 50
+
+function buildQuery(params) {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== '' && value != null) qs.set(key, String(value))
+  })
+  return qs.toString()
+}
 
 export function AdminFinanceReportsTab() {
-  const [billingMonth, setBillingMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [billingMonth, setBillingMonth] = useState(currentBillingMonthIST)
+  const [productModule, setProductModule] = useState('')
+  const [caseId, setCaseId] = useState('')
+  const [therapistUserId, setTherapistUserId] = useState('')
+  const [page, setPage] = useState(1)
   const [preview, setPreview] = useState(null)
   const [monthClose, setMonthClose] = useState(null)
   const { loading, error, successMessage, run, clearMessages } = useBillingAction()
+
+  function filterParams(extra = {}) {
+    return {
+      billing_month: billingMonth,
+      product_module: productModule,
+      case_id: caseId,
+      therapist_user_id: therapistUserId,
+      ...extra,
+    }
+  }
 
   async function loadMonthCloseStatus(ym) {
     try {
@@ -25,15 +49,20 @@ export function AdminFinanceReportsTab() {
     }
   }
 
-  async function loadPreview() {
+  async function loadPreview(nextPage = 1) {
     const data = await run(
       () =>
         apiFetch(
-          `/api/v1/admin/finance-reports/${REPORT_KEY}?billing_month=${encodeURIComponent(billingMonth)}`,
+          `/api/v1/admin/finance-reports/${REPORT_KEY}?${buildQuery({
+            ...filterParams({ page: nextPage, page_size: PREVIEW_PAGE_SIZE }),
+          })}`,
         ),
       { successMsg: 'Report loaded' },
     )
-    setPreview(data)
+    if (data) {
+      setPreview(data)
+      setPage(nextPage)
+    }
     await loadMonthCloseStatus(billingMonth)
   }
 
@@ -47,14 +76,16 @@ export function AdminFinanceReportsTab() {
       { successMsg: `Billing month ${billingMonth} closed and snapshotted` },
     )
     await loadMonthCloseStatus(billingMonth)
-    await loadPreview()
+    await loadPreview(1)
   }
 
   async function downloadCsv() {
     await run(
       () =>
         apiDownload(
-          `/api/v1/admin/finance-reports/${REPORT_KEY}?billing_month=${encodeURIComponent(billingMonth)}&format=csv`,
+          `/api/v1/admin/finance-reports/${REPORT_KEY}?${buildQuery({
+            ...filterParams({ format: 'csv' }),
+          })}`,
           `${REPORT_KEY}.csv`,
         ),
       { successMsg: 'CSV downloaded' },
@@ -65,20 +96,26 @@ export function AdminFinanceReportsTab() {
     await run(
       () =>
         apiDownload(
-          `/api/v1/admin/finance-reports/${REPORT_KEY}?billing_month=${encodeURIComponent(billingMonth)}&format=xlsx`,
+          `/api/v1/admin/finance-reports/${REPORT_KEY}?${buildQuery({
+            ...filterParams({ format: 'xlsx' }),
+          })}`,
           `${REPORT_KEY}.xlsx`,
         ),
       { successMsg: 'Excel downloaded' },
     )
   }
 
+  const total = preview?.count ?? 0
+  const pageRows = preview?.rows || []
+  const totalPages = Math.max(1, Math.ceil(total / PREVIEW_PAGE_SIZE))
+
   return (
     <div className="admin-hr-reports">
       <AdminPanel title={REPORT_LABEL} padded>
         <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
         <p className="admin-muted admin-hr-reports__hint">
-          Projected therapist payout before month close. Set the billing month, then preview or download. Close month
-          freezes payout preview snapshots.
+          Projected therapist payout for the billing month (Asia/Kolkata). Set filters, then generate a
+          preview. Close month freezes payout preview snapshots. This is not collections or receivables.
         </p>
         <div className="admin-hr-reports__filters">
           <label className="client-inv__filter-field">
@@ -90,15 +127,46 @@ export function AdminFinanceReportsTab() {
               onChange={(e) => setBillingMonth(e.target.value)}
             />
           </label>
+          <label className="client-inv__filter-field">
+            <span className="client-inv__filter-label">Service</span>
+            <ServiceFilterSelect
+              id="finance-payout-service"
+              value={productModule}
+              onChange={setProductModule}
+              className="client-inv__filter-input"
+            />
+          </label>
+          <label className="client-inv__filter-field">
+            <span className="client-inv__filter-label">Case ID (optional)</span>
+            <input
+              type="number"
+              className="client-inv__filter-input"
+              value={caseId}
+              onChange={(e) => setCaseId(e.target.value)}
+              placeholder="All cases"
+              min="1"
+            />
+          </label>
+          <label className="client-inv__filter-field">
+            <span className="client-inv__filter-label">Therapist user ID (optional)</span>
+            <input
+              type="number"
+              className="client-inv__filter-input"
+              value={therapistUserId}
+              onChange={(e) => setTherapistUserId(e.target.value)}
+              placeholder="All therapists"
+              min="1"
+            />
+          </label>
         </div>
         <div className="admin-hr-reports__actions admin-btn-group">
           <button
             type="button"
             className="admin-btn admin-btn--primary admin-btn--sm"
             disabled={loading}
-            onClick={loadPreview}
+            onClick={() => loadPreview(1)}
           >
-            {loading ? 'Loading…' : 'Preview'}
+            {loading ? 'Generating…' : 'Generate preview'}
           </button>
           <button
             type="button"
@@ -140,23 +208,27 @@ export function AdminFinanceReportsTab() {
         ) : null}
         {preview?.generatedAt ? (
           <p className="admin-muted" style={{ marginTop: 8 }}>
-            Generated by <strong>{preview.generatedBy}</strong> on {preview.generatedAt}
+            Generated by <strong>{preview.generatedBy}</strong> on {preview.generatedAt} (IST)
           </p>
         ) : null}
 
         {preview?.rows?.length ? (
           <div className="admin-table-wrap" style={{ marginTop: 16 }}>
+            <p className="admin-muted">
+              Showing {pageRows.length} of {total} matching rows
+              {preview.previewLimited ? ' — preview page, export includes the full generate.' : '.'}
+            </p>
             <table className="admin-table">
               <thead>
                 <tr>
-                  {Object.keys(preview.rows[0]).map((k) => (
+                  {Object.keys(pageRows[0]).map((k) => (
                     <th key={k}>{k}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {preview.rows.slice(0, 50).map((row, i) => (
-                  <tr key={i}>
+                {pageRows.map((row, i) => (
+                  <tr key={row.caseId ? `${row.caseId}-${i}` : i}>
                     {Object.values(row).map((v, j) => (
                       <td key={j}>{typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v ?? '')}</td>
                     ))}
@@ -164,15 +236,39 @@ export function AdminFinanceReportsTab() {
                 ))}
               </tbody>
             </table>
-            {preview.rows.length > 50 ? (
-              <p className="admin-muted">Showing first 50 of {preview.count} rows.</p>
+            {totalPages > 1 ? (
+              <div className="admin-btn-group" style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                  disabled={loading || page <= 1}
+                  onClick={() => loadPreview(page - 1)}
+                >
+                  Previous
+                </button>
+                <span className="admin-muted">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                  disabled={loading || page >= totalPages}
+                  onClick={() => loadPreview(page + 1)}
+                >
+                  Next
+                </button>
+              </div>
             ) : null}
           </div>
         ) : preview ? (
           <p className="admin-muted" style={{ marginTop: 12 }}>
-            No rows for this billing month. Try another month, or confirm billing data exists for these cases.
+            No rows for these filters. Try another month or confirm billing data exists for these cases.
           </p>
-        ) : null}
+        ) : (
+          <p className="admin-muted" style={{ marginTop: 12 }}>
+            Filters are ready. Generate a preview when you want to run the payout calculation.
+          </p>
+        )}
       </AdminPanel>
     </div>
   )

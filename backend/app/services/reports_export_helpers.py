@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.billing_month import default_billing_month, parse_billing_month
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.parent import ParentGuardian, parent_child_link
@@ -23,14 +24,11 @@ THERAPIST_LOG_COMPLIANCE_MIN_AGE_DAYS = 2
 
 
 def default_export_month() -> str:
-    return datetime.now(IST).strftime("%Y-%m")
+    return default_billing_month()
 
 
 def normalize_month(value: str | None) -> str:
-    raw = (value or default_export_month()).strip()
-    if len(raw) >= 7 and raw[4] == "-":
-        return raw[:7]
-    return default_export_month()
+    return parse_billing_month(value)
 
 
 def month_bounds(ym: str) -> tuple[date, date]:

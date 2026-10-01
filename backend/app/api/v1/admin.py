@@ -753,6 +753,8 @@ def admin_case_timeline(
 
 @router.get("/dashboard/summary")
 def dashboard_summary(
+    period_month: Optional[str] = Query(None),
+    product_module: Optional[str] = Query(None),
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
 ):
@@ -833,11 +835,15 @@ def dashboard_summary(
 
     ticket_rows = []
     open_tickets = 0
+    in_progress_tickets = 0
     if user_has_feature(user, "tickets"):
         ticket_rows = list(
             db.scalars(
                 select(SupportTicket)
-                .where(SupportTicket.status == TicketStatus.OPEN, *ticket_filters)
+                .where(
+                    SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]),
+                    *ticket_filters,
+                )
                 .order_by(SupportTicket.updated_at.desc())
                 .limit(6)
             ).all()
@@ -845,6 +851,14 @@ def dashboard_summary(
         open_tickets = (
             db.scalar(
                 select(func.count()).select_from(SupportTicket).where(SupportTicket.status == TicketStatus.OPEN, *ticket_filters)
+            )
+            or 0
+        )
+        in_progress_tickets = (
+            db.scalar(
+                select(func.count())
+                .select_from(SupportTicket)
+                .where(SupportTicket.status == TicketStatus.IN_PROGRESS, *ticket_filters)
             )
             or 0
         )
@@ -863,10 +877,14 @@ def dashboard_summary(
 
     from app.services import admin_case_pipeline_service as pipeline_svc
     from app.services import admin_workbench_service as wb_svc
+    from app.services import admin_leadership_overview_service as lead_svc
 
     ops_counts = wb_svc.build_ops_counts(db, user)
     pending_allotment_count = pipeline_svc.count_pending_therapist_assignments(db, user)
     pending_allotment_queue = pipeline_svc.list_pending_therapist_assignment_queue(db, user, limit=6)
+    leadership = lead_svc.build_leadership_overview(
+        db, user, period_month=period_month, product_module=product_module
+    )
 
     return {
         "open_cases": _count_case_status(CaseStatus.ACTIVE),
@@ -877,6 +895,8 @@ def dashboard_summary(
         "reports_in_review": reports_in_review,
         "invoices_pending": invoices_pending,
         "open_tickets": open_tickets,
+        "in_progress_tickets": in_progress_tickets,
+        "tickets_needing_action": open_tickets + in_progress_tickets,
         "observation_checklists_pending": ops_counts.get("observation_checklists_pending", 0),
         "observation_checklists_overdue": ops_counts.get("observation_checklists_overdue", 0),
         "observation_reports_in_review": ops_counts.get("observation_reports_in_review", 0),
@@ -888,6 +908,8 @@ def dashboard_summary(
             "ACTIVE": _count_case_status(CaseStatus.ACTIVE),
             "PENDING_ALLOTMENT": _count_case_status(CaseStatus.PENDING_ALLOTMENT),
             "SUSPENDED": _count_case_status(CaseStatus.SUSPENDED),
+            "PENDING_REPLACEMENT": _count_case_status(CaseStatus.PENDING_REPLACEMENT),
+            "DEACTIVATED": _count_case_status(CaseStatus.DEACTIVATED),
             "CLOSED": _count_case_status(CaseStatus.CLOSED),
         },
         "pending_allotment_queue": pending_allotment_queue,
@@ -921,6 +943,7 @@ def dashboard_summary(
             }
             for t in ticket_rows
         ],
+        "leadership": leadership,
     }
 
 

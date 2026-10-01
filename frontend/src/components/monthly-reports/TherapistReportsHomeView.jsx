@@ -108,7 +108,7 @@ export function TherapistReportsHomeView({
     attention: [],
     inProgress: [],
     published: [],
-    pipeline: { draft: 0, underReview: 0, published: 0, overdue: 0 },
+    pipeline: { draft: 0, underReview: 0, published: 0, notStarted: 0, overdue: null, overdueAvailable: false },
     monthLabel: '',
   })
   const [toast, setToast] = useState({ visible: false, message: '' })

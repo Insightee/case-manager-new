@@ -34,7 +34,7 @@ ACTIVE_REPORT_STATUSES = (
 
 
 def current_month_label() -> str:
-    return date.today().strftime("%b %Y")
+    return today_ist().strftime("%b %Y")
 
 
 def assigned_cases(db: Session, user: User) -> list[Case]:
