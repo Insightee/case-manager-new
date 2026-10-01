@@ -88,6 +88,20 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 | `iep:read` | IEP framework identifiers and counts |
 | `profiles:read` | Therapist listing fields (name, bio, qualifications, certificates, services, status). Login email is not included |
 | `profiles:write` | Create a Pending listing for an existing therapist. The key cannot approve, pause, or revive a deleted listing |
+| `finance:read` | Receivables and ledger totals for granted cases. No child names |
+
+`all_cases: true` grants every current and future case. An empty `case_ids` list is zero access, not “all cases”. Selecting every existing case id is stored as `all_cases`. The admin response includes `all_cases` and `granted_case_count`. `finance:read` is refused unless every case is granted or `case_ids` is non-empty.
+
+Integration tokens do not call admin receivables or ledger. They read:
+
+```http
+GET /api/v1/integrations/v1/finance/receivables?billing_month=2026-09
+GET /api/v1/integrations/v1/finance/ledger?billing_month=2026-09
+```
+
+Zero grants return forbidden. A granted client with no invoices in that month returns totals with `accessGap: false` and `grantedCaseCount` above zero.
+
+MCP tools: `get_finance_receivables`, `get_finance_ledger`.
 
 Reports, IEP, pending reporting, and operations stay read-only. A write never sets a report to complete. Profile create does not change leave, TDS, clinical notes, or report status.
 
@@ -134,5 +148,7 @@ Authorization: Bearer <access-token>
 - `list_iep_framework`
 - `list_therapist_profiles` (`profiles:read`)
 - `create_therapist_profile` (`profiles:write`)
+- `get_finance_receivables` (`finance:read`)
+- `get_finance_ledger` (`finance:read`)
 
 Clinical MCP tools stay read-only. `create_therapist_profile` is the profile-listing exception and still cannot complete a report. Turn **Allow MCP** off on a key to refuse these tools. Webhooks are configured in the super admin Integrations screen and store a signing secret once.

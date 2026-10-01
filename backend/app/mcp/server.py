@@ -168,6 +168,42 @@ def build_mcp_server():
         description="Anonymised operational counts across granted cases (no names or identifiers).",
     )
 
+    def _get_finance_receivables(billing_month: str, ctx: Context | None = None) -> str:
+        try:
+            principal = _principal_from_ctx(ctx)
+            return json.dumps(facade.get_finance_receivables(principal, billing_month))
+        except Exception as exc:
+            return mcp_public_error(exc)
+
+    _get_finance_receivables.__globals__["Context"] = Context
+    server.add_tool(
+        _get_finance_receivables,
+        name="get_finance_receivables",
+        description=(
+            "Client invoice totals for granted cases in YYYY-MM. "
+            "Requires finance:read and case grants or all_cases. "
+            "No child names. Refuses when the client has zero grants."
+        ),
+    )
+
+    def _get_finance_ledger(billing_month: str, ctx: Context | None = None) -> str:
+        try:
+            principal = _principal_from_ctx(ctx)
+            return json.dumps(facade.get_finance_ledger(principal, billing_month))
+        except Exception as exc:
+            return mcp_public_error(exc)
+
+    _get_finance_ledger.__globals__["Context"] = Context
+    server.add_tool(
+        _get_finance_ledger,
+        name="get_finance_ledger",
+        description=(
+            "Billing ledger totals by status for granted cases in YYYY-MM. "
+            "Requires finance:read and case grants or all_cases. "
+            "No notes or child names. Refuses when the client has zero grants."
+        ),
+    )
+
     def _list_goal_framework(page: int = 1, page_size: int = 25, ctx: Context | None = None) -> str:
         try:
             principal = _principal_from_ctx(ctx)

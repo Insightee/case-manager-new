@@ -31,7 +31,7 @@ def list_integration_clients(
     user: User = Depends(require_permission("admin.override")),
     db: Session = Depends(get_db),
 ):
-    return [IntegrationClientRead(**client_admin.client_to_admin_dict(c)) for c in client_admin.list_clients(db)]
+    return [IntegrationClientRead(**client_admin.client_to_admin_dict(c, db=db)) for c in client_admin.list_clients(db)]
 
 
 @router.post("", response_model=IntegrationClientCreated, status_code=201)
@@ -52,6 +52,7 @@ def create_integration_client(
             allow_read=payload.allow_read,
             allow_write=payload.allow_write,
             case_ids=payload.case_ids,
+            all_cases=payload.all_cases,
             rate_limit_per_minute=payload.rate_limit_per_minute,
             access_token_minutes=payload.access_token_minutes,
             key_ttl_days=payload.key_ttl_days,
@@ -61,7 +62,7 @@ def create_integration_client(
         )
         db.commit()
         client = client_admin.get_client(db, client.id)
-        body = client_admin.client_to_admin_dict(client)
+        body = client_admin.client_to_admin_dict(client, db=db)
         body["public_client_id"] = public_id
         return IntegrationClientCreated(**body, client_id=public_id, client_secret=secret)
     except IntegrationError as exc:
@@ -80,6 +81,7 @@ def get_integration_client(
         body = client_admin.client_to_admin_dict(
             client,
             signals=client_admin.recent_signals(db, client.id),
+            db=db,
         )
         return IntegrationClientRead(**body)
     except IntegrationError as exc:
@@ -106,6 +108,7 @@ def update_integration_client(
             allow_read=payload.allow_read,
             allow_write=payload.allow_write,
             case_ids=payload.case_ids,
+            all_cases=payload.all_cases,
             rate_limit_per_minute=payload.rate_limit_per_minute,
             access_token_minutes=payload.access_token_minutes,
             key_ttl_days=payload.key_ttl_days,
@@ -115,7 +118,7 @@ def update_integration_client(
         )
         db.commit()
         client = client_admin.get_client(db, client.id)
-        return IntegrationClientRead(**client_admin.client_to_admin_dict(client))
+        return IntegrationClientRead(**client_admin.client_to_admin_dict(client, db=db))
     except IntegrationError as exc:
         db.rollback()
         raise_integration_http(exc)
@@ -162,7 +165,7 @@ def revoke_integration_client(
         )
         db.commit()
         client = client_admin.get_client(db, client.id)
-        return IntegrationClientRead(**client_admin.client_to_admin_dict(client))
+        return IntegrationClientRead(**client_admin.client_to_admin_dict(client, db=db))
     except IntegrationError as exc:
         db.rollback()
         raise_integration_http(exc)

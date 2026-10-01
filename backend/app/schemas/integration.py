@@ -26,6 +26,7 @@ class IntegrationClientCreate(BaseModel):
     allow_read: Optional[bool] = None
     allow_write: Optional[bool] = None
     case_ids: list[int] = Field(default_factory=list)
+    all_cases: bool = False
     rate_limit_per_minute: Optional[int] = None
     access_token_minutes: Optional[int] = None
     key_ttl_days: Optional[int] = None
@@ -39,6 +40,7 @@ class IntegrationClientUpdate(BaseModel):
     allow_read: Optional[bool] = None
     allow_write: Optional[bool] = None
     case_ids: Optional[list[int]] = None
+    all_cases: Optional[bool] = None
     rate_limit_per_minute: Optional[int] = None
     access_token_minutes: Optional[int] = None
     key_ttl_days: Optional[int] = None
@@ -68,7 +70,9 @@ class IntegrationClientRead(BaseModel):
     mcp_enabled: bool = True
     public_client_id: Optional[str] = None
     key_expires_at: Optional[str] = None
+    all_cases: bool = False
     case_ids: list[int]
+    granted_case_count: Optional[int] = None
     rate_limit_per_minute: int
     active_credential_count: int
     recent_signals: list[IntegrationSignalRead] = Field(default_factory=list)

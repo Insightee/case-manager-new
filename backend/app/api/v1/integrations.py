@@ -20,6 +20,7 @@ from app.services.integration import (
     ops_summary,
     profile_directory,
     report_query,
+    finance_query,
     session_summary,
     signal_inbox,
 )
@@ -372,6 +373,52 @@ def submit_signal(
             "level": row.level,
             "status": row.status,
         }
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/finance/receivables")
+def finance_receivables(
+    request: Request,
+    billing_month: str = Query(..., min_length=7, max_length=7),
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        result = finance_query.receivables_summary(
+            db,
+            principal,
+            billing_month=billing_month,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/finance/ledger")
+def finance_ledger(
+    request: Request,
+    billing_month: str = Query(..., min_length=7, max_length=7),
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    meta = get_request_meta(request)
+    try:
+        result = finance_query.ledger_summary(
+            db,
+            principal,
+            billing_month=billing_month,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
     except IntegrationError as exc:
         db.rollback()
         raise_integration_http(exc)

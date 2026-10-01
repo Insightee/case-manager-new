@@ -14,7 +14,7 @@ function statusLabel(status) {
   return match?.label || String(status || '').replaceAll('_', ' ')
 }
 
-export function IntegrationCaseGrantPicker({ value, onChange }) {
+export function IntegrationCaseGrantPicker({ value, onChange, allCases = false, onGrantEvery, onChooseSpecific }) {
   const selectedIds = parseCaseIds(value).ids
   const [scope, setScope] = useState('all')
   const [status, setStatus] = useState('')
@@ -66,6 +66,11 @@ export function IntegrationCaseGrantPicker({ value, onChange }) {
   }
 
   function addVisible() {
+    const fullList = scope === 'all' && !query.trim() && !status && visible.length === source.length && source.length > 0
+    if (fullList && onGrantEvery) {
+      onGrantEvery()
+      return
+    }
     const next = [...selectedIds]
     for (const row of visible) {
       if (!next.includes(row.id)) next.push(row.id)
@@ -107,7 +112,7 @@ export function IntegrationCaseGrantPicker({ value, onChange }) {
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      {selectedIds.length ? (
+      {selectedIds.length && !allCases ? (
         <ul className="integrations-grant__selected">
           {selectedIds.map((id) => {
             const row = lookup.get(id)
@@ -121,18 +126,36 @@ export function IntegrationCaseGrantPicker({ value, onChange }) {
             )
           })}
         </ul>
+      ) : allCases ? (
+        <p className="integrations-note">Every current and future case is granted. This is not an empty list.</p>
       ) : (
-        <p className="integrations-note">No cases granted yet. Pick from the list below.</p>
+        <p className="integrations-note">No cases granted yet. Pick from the list below, or grant every case.</p>
       )}
       <div className="integrations-grant__toolbar">
         <p className="integrations-note" style={{ margin: 0 }}>
-          {loading ? 'Loading cases…' : `${visible.length} in this filter · ${selectedIds.length} granted`}
+          {allCases
+            ? 'Every case'
+            : loading
+              ? 'Loading cases…'
+              : `${visible.length} in this filter · ${selectedIds.length} granted`}
         </p>
-        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={addVisible} disabled={!visible.length}>
-          Add visible
-        </button>
+        {allCases ? (
+          <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={onChooseSpecific}>
+            Choose specific cases
+          </button>
+        ) : (
+          <>
+            <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={onGrantEvery}>
+              Grant every case
+            </button>
+            <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={addVisible} disabled={!visible.length}>
+              Add visible
+            </button>
+          </>
+        )}
       </div>
       {loadError ? <p className="integrations-guidance">{loadError}</p> : null}
+      {allCases ? null : (
       <ul className="integrations-grant__list">
         {visible.map((row) => {
           const checked = selectedIds.includes(row.id)
@@ -149,9 +172,10 @@ export function IntegrationCaseGrantPicker({ value, onChange }) {
           )
         })}
         {!loading && !visible.length ? (
-          <li className="integrations-note">No cases in this filter. Try All cases or another status.</li>
+          <li className="integrations-note">No cases in this filter. Try another status, or grant every case.</li>
         ) : null}
       </ul>
+      )}
     </div>
   )
 }
