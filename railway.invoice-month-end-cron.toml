@@ -1,0 +1,13 @@
+# Cron: auto-submit unsubmitted therapist invoices at 11:59 PM IST (18:29 UTC).
+# The script still checks that the IST calendar day is the last day of the month.
+# Service: invoice-month-end — Root Directory empty, this config file at repo root.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["backend/**"]
+
+[deploy]
+startCommand = "python scripts/auto_submit_month_end_invoices.py"
+cronSchedule = "29 18 * * *"
+restartPolicyType = "ON_FAILURE"
