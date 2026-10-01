@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { resolveCurrentLocationAddress } from '../../lib/geolocation.js'
+import { requestBrowserLocation, reverseGeocode } from '../../lib/geolocation.js'
 
 const EMPTY = {
   address_line1: '',
@@ -152,34 +152,47 @@ export function UseCurrentLocationButton({ value, onChange, disabled }) {
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', text: '' })
 
-  async function handleClick() {
+  function handleClick() {
     setLoading(true)
-    setFeedback({ type: '', text: '' })
-    try {
-      const resolved = await resolveCurrentLocationAddress()
-      const next = {
-        ...value,
-        latitude: String(resolved.latitude),
-        longitude: String(resolved.longitude),
-      }
-      if (resolved.address_line1) next.address_line1 = resolved.address_line1
-      if (resolved.address_line2) next.address_line2 = resolved.address_line2
-      if (resolved.city) next.city = resolved.city
-      if (resolved.state) next.state = resolved.state
-      if (resolved.pincode) next.pincode = resolved.pincode
-      if (resolved.landmark && !next.landmark) next.landmark = resolved.landmark
-      onChange(next)
-      setFeedback({
-        type: 'ok',
-        text: resolved.address_line1
-          ? 'Location applied. Review the address fields, then save.'
-          : 'GPS coordinates captured. Fill in address fields if needed, then save.',
+    setFeedback({
+      type: 'ok',
+      text: 'Your browser will ask to allow location. Choose Allow.',
+    })
+    // Start getCurrentPosition in this click turn so Chrome/Safari can show the prompt.
+    const positionPromise = requestBrowserLocation()
+    positionPromise
+      .then(async (coords) => {
+        let fields = {}
+        try {
+          fields = await reverseGeocode(coords.latitude, coords.longitude)
+        } catch {
+          // Coordinates still useful if reverse geocode fails
+        }
+        const next = {
+          ...value,
+          latitude: String(coords.latitude),
+          longitude: String(coords.longitude),
+        }
+        if (fields.address_line1) next.address_line1 = fields.address_line1
+        if (fields.address_line2) next.address_line2 = fields.address_line2
+        if (fields.city) next.city = fields.city
+        if (fields.state) next.state = fields.state
+        if (fields.pincode) next.pincode = fields.pincode
+        if (fields.landmark && !next.landmark) next.landmark = fields.landmark
+        onChange(next)
+        setFeedback({
+          type: 'ok',
+          text: fields.address_line1
+            ? 'Location applied. Review the address fields, then save.'
+            : 'GPS coordinates captured. Fill in address fields if needed, then save.',
+        })
       })
-    } catch (err) {
-      setFeedback({ type: 'err', text: err.message || 'Could not get location' })
-    } finally {
-      setLoading(false)
-    }
+      .catch((err) => {
+        setFeedback({ type: 'err', text: err.message || 'Could not get location' })
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }
 
   return (
@@ -200,7 +213,7 @@ export function UseCurrentLocationButton({ value, onChange, disabled }) {
           opacity: disabled ? 0.6 : 1,
         }}
       >
-        {loading ? 'Getting location…' : 'Use current location'}
+        {loading ? 'Waiting for browser permission…' : 'Use current location'}
       </button>
       {feedback.text ? (
         <p

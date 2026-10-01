@@ -5,7 +5,10 @@ from fastapi.testclient import TestClient
 
 from sqlalchemy import select
 
+from app.core.database import SessionLocal
 from app.main import app
+from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+from app.models.user import User
 from app.seed.demo_seed import run as seed_run
 
 client = TestClient(app)
@@ -33,9 +36,39 @@ def _profile_items(response) -> list[dict]:
     return body.get("items", [])
 
 
-def _submit_profile(token: str, payload: dict) -> dict:
-    r = client.post("/api/v1/therapist/profile/submit", headers=_headers(token), json=payload)
+def _ensure_reviewable_contact(token: str) -> None:
+    r = client.patch(
+        "/api/v1/auth/me",
+        headers=_headers(token),
+        json={
+            "phone": "9876543210",
+            "home_address_line1": "12 MG Road",
+            "home_city": "Bengaluru",
+            "home_pincode": "560001",
+        },
+    )
     assert r.status_code == 200
+
+
+def _set_avatar(email: str) -> None:
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        user.avatar_path = "avatars/quality-test.png"
+        db.commit()
+    finally:
+        db.close()
+
+
+def _submit_profile(token: str, payload: dict) -> dict:
+    _ensure_reviewable_contact(token)
+    body = {
+        "professional_qualification_entries": [{"kind": "degree", "title": "B.Ed", "year": 2018}],
+        **payload,
+    }
+    r = client.post("/api/v1/therapist/profile/submit", headers=_headers(token), json=body)
+    assert r.status_code == 200, r.text
     return r.json()
 
 
@@ -229,19 +262,15 @@ def test_invalid_service_category_rejected():
 
 def test_therapist_edit_start_date_approval_flow():
     therapist = _login("therapist@demo.com")
-    th = _headers(therapist)
 
-    r = client.post(
-        "/api/v1/therapist/profile/submit",
-        headers=th,
-        json={
+    body = _submit_profile(
+        therapist,
+        {
             "display_name": "Neha K.",
             "services_offered": ["homecare"],
             "employment_start_date": "2021-06-15",
         },
     )
-    assert r.status_code == 200
-    body = r.json()
     assert body["employment_start_date"] == "2021-06-15"
     assert body["status"] in ("PENDING", "APPROVED")
 
@@ -349,3 +378,128 @@ def test_approved_therapist_stays_allotment_eligible_with_pending_changes():
         match = next((t for t in therapists if t["therapist_user_id"] == user_id), None)
     assert match is not None
     assert match["profile_status"] == "APPROVED"
+
+
+FORTY_ONE_WORDS = " ".join(["support"] * 41)
+
+
+def test_submit_below_50_is_rejected():
+    token = _login("therapist@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.email == "therapist@demo.com"))
+        user.avatar_path = None
+        user.phone = None
+        db.commit()
+    finally:
+        db.close()
+    r = client.post(
+        "/api/v1/therapist/profile/submit",
+        headers=_headers(token),
+        json={
+            "display_name": "Low Score",
+            "services_offered": ["homecare"],
+            "short_bio": "Hi",
+            "professional_qualification_entries": [],
+        },
+    )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert "still need a few details" in (detail.get("message") if isinstance(detail, dict) else str(detail))
+
+
+def test_mid_quality_submit_goes_to_pending():
+    token = _login("therapist@demo.com")
+    body = _submit_profile(
+        token,
+        {"display_name": "Mid Score", "services_offered": ["homecare"], "short_bio": "Short listing bio."},
+    )
+    assert body["status"] in ("PENDING", "APPROVED")
+    if body["status"] == "APPROVED":
+        assert body["has_pending_changes"] is True
+    else:
+        assert body["quality"]["auto_pass"] is False
+        assert body["quality"]["can_submit"] is True
+
+
+def test_high_quality_submit_auto_approves():
+    _set_avatar("therapist@demo.com")
+    token = _login("therapist@demo.com")
+    body = _submit_profile(
+        token,
+        {
+            "display_name": "Auto Pass",
+            "short_bio": FORTY_ONE_WORDS,
+            "services_offered": ["homecare"],
+            "professional_qualification_entries": [{"kind": "degree", "title": "M.Sc. Psychology", "year": 2019}],
+        },
+    )
+    assert body["status"] == "APPROVED"
+    assert body["has_pending_changes"] is False
+    assert body["quality"]["auto_pass"] is True
+    assert "Auto-approved" in (body.get("admin_note") or "")
+
+
+def test_admin_request_changes_then_resubmit():
+    token = _login("therapist@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.email == "therapist@demo.com"))
+        profile = db.scalar(select(TherapistProfile).where(TherapistProfile.user_id == user.id))
+        user.avatar_path = None
+        profile.approved_snapshot = None
+        profile.pending_submission = None
+        profile.status = TherapistProfileStatus.DRAFT
+        profile.admin_note = None
+        db.commit()
+    finally:
+        db.close()
+    body = _submit_profile(
+        token,
+        {"display_name": "Needs Tweaks", "services_offered": ["homecare"], "short_bio": "Needs more work."},
+    )
+    assert body["status"] == "PENDING"
+    admin = _login("superadmin@demo.com")
+    profile = _pending_profile_for_therapist(admin, token)
+    r = client.post(
+        f"/api/v1/admin/therapist-profiles/{profile['id']}/request-changes",
+        headers=_headers(admin),
+        json={"admin_note": "Please add a fuller bio and check the photo."},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "CHANGES_REQUESTED"
+    assert "fuller bio" in (r.json().get("admin_note") or "")
+    resubmit = _submit_profile(
+        token,
+        {"display_name": "Needs Tweaks", "services_offered": ["homecare"], "short_bio": "Still short after updates."},
+    )
+    assert resubmit["status"] == "PENDING"
+    assert resubmit.get("admin_note") is None
+
+
+def test_resubmit_below_80_stages_pending_submission():
+    _set_avatar("therapist@demo.com")
+    token = _login("therapist@demo.com")
+    first = _submit_profile(
+        token,
+        {
+            "display_name": "Live Listing",
+            "short_bio": FORTY_ONE_WORDS,
+            "services_offered": ["homecare"],
+            "professional_qualification_entries": [{"kind": "degree", "title": "M.Sc. Psychology", "year": 2019}],
+        },
+    )
+    assert first["status"] == "APPROVED"
+    assert first["has_pending_changes"] is False
+    second = _submit_profile(
+        token,
+        {
+            "display_name": "Pending Edit",
+            "short_bio": "Shorter public bio.",
+            "services_offered": ["homecare"],
+        },
+    )
+    assert second["status"] == "APPROVED"
+    assert second["has_pending_changes"] is True
+    assert second["pending_submission"]["display_name"] == "Pending Edit"
+    assert second["quality"]["auto_pass"] is False

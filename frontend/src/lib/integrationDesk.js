@@ -108,6 +108,59 @@ export function emptyWebhookDraft() {
   }
 }
 
+export const CASE_GRANT_SCOPE_FILTERS = [
+  { id: 'all', label: 'All cases' },
+  { id: 'assigned', label: 'Assigned to me' },
+]
+
+export const CASE_GRANT_STATUS_FILTERS = [
+  { id: '', label: 'Any status' },
+  { id: 'ACTIVE', label: 'Active' },
+  { id: 'PENDING_ALLOTMENT', label: 'Pending allotment' },
+  { id: 'SUSPENDED', label: 'Suspended' },
+  { id: 'PENDING_REPLACEMENT', label: 'Pending replacement' },
+  { id: 'DEACTIVATED', label: 'Deactivated' },
+  { id: 'CLOSED', label: 'Closed' },
+]
+
+export function caseIdsToText(ids) {
+  return [...new Set((ids || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))].join(', ')
+}
+
+export function toggleGrantedCaseId(ids, id) {
+  const next = Number(id)
+  if (!Number.isInteger(next) || next <= 0) return [...(ids || [])]
+  const current = [...new Set((ids || []).map((value) => Number(value)))]
+  return current.includes(next) ? current.filter((value) => value !== next) : [...current, next]
+}
+
+export function filterGrantCases(cases, { query = '', status = '' } = {}) {
+  const wanted = String(status || '').toUpperCase()
+  return (cases || []).filter((row) => {
+    if (wanted && String(row.status || '').toUpperCase() !== wanted) return false
+    return caseMatchesGrantQuery(row, query)
+  })
+}
+
+function caseMatchesGrantQuery(row, query) {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return true
+  const hay = [
+    row.case_code,
+    row.child_name,
+    row.therapist_name,
+    row.case_manager_name,
+    row.product_module,
+    row.service_type,
+    row.status,
+    String(row.id || ''),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return q.split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok))
+}
+
 export function parseCaseIds(text) {
   const raw = String(text || '').trim()
   if (!raw) return { ids: [], error: '' }

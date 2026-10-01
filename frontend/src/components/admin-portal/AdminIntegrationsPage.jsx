@@ -22,6 +22,7 @@ import {
   validateKeyDraft,
   validateWebhookDraft,
 } from '../../lib/integrationDesk.js'
+import { IntegrationCaseGrantPicker } from './IntegrationCaseGrantPicker.jsx'
 import './admin-integrations.css'
 
 const TABS = [
@@ -649,14 +650,14 @@ export function AdminIntegrationsPage() {
                   />
                 ))}
                 <div className="integrations-field">
-                  <label htmlFor="integration-cases">Granted case IDs</label>
-                  <textarea
-                    id="integration-cases"
+                  <label htmlFor="integration-cases-search">Granted cases</label>
+                  <p className="integrations-note">
+                    Blank means this key cannot see any case. Filter the list, then tap cases to grant.
+                  </p>
+                  <IntegrationCaseGrantPicker
                     value={draft.caseIdsText}
-                    onChange={(event) => patchDraft({ caseIdsText: event.target.value })}
-                    placeholder="12, 48, 103"
+                    onChange={(caseIdsText) => patchDraft({ caseIdsText })}
                   />
-                  <p className="integrations-note">Leave blank only if you will add cases before the partner calls the API.</p>
                 </div>
                 <AccessSwitch
                   id="integration-mcp"

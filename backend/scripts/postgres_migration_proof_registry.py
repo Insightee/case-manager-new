@@ -1172,6 +1172,27 @@ register_head(
 )
 
 
+def _seed_tp_qual_cards_1001(db: Session) -> dict[str, Any]:
+    from app.models.therapist_profile import TherapistProfile
+
+    profile = db.scalar(select(TherapistProfile).limit(1))
+    if not profile:
+        raise RuntimeError("Need seeded therapist profile — run demo_seed first")
+    profile.professional_qualification_entries = [
+        {"kind": "degree", "title": "M.Sc. Psychology", "year": 2019},
+    ]
+    db.flush()
+    return {"profile_id": profile.id, "entries": 1}
+
+
+register_head(
+    "tp_qual_cards_1001",
+    tables_added=[],
+    columns_added=[("therapist_profiles", "professional_qualification_entries")],
+    seed=_seed_tp_qual_cards_1001,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

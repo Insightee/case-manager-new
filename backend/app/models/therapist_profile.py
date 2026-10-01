@@ -13,6 +13,7 @@ from app.core.database import Base
 class TherapistProfileStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     PENDING = "PENDING"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"
     APPROVED = "APPROVED"
     PAUSED = "PAUSED"
     DELETED = "DELETED"
@@ -28,6 +29,7 @@ class TherapistProfile(Base):
     academic_qualifications: Mapped[Optional[str]] = mapped_column(Text)
     academic_qualification_level: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     professional_certificates: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    professional_qualification_entries: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     services_offered: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     status: Mapped[TherapistProfileStatus] = mapped_column(
         Enum(TherapistProfileStatus), default=TherapistProfileStatus.DRAFT, nullable=False

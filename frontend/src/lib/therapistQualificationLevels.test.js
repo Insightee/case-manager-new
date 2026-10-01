@@ -16,5 +16,6 @@ describe('profile completion reminder', () => {
     assert.equal(isProfileCompletionIncomplete(null), false)
     assert.equal(isProfileCompletionIncomplete({ complete: true }), false)
     assert.equal(isProfileCompletionIncomplete({ complete: false, percent: 40 }), true)
+    assert.equal(isProfileCompletionIncomplete({ complete: false, needs_nudge: false }), false)
   })
 })

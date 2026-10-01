@@ -19,6 +19,11 @@ from app.models.therapist_profile import TherapistProfile, TherapistProfileStatu
 from app.models.user import User
 from app.services.reports_export_helpers import days_since
 from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
+from app.services.therapist_profile_quality import (
+    evaluate_profile_quality,
+    flatten_qualification_entries,
+    normalize_qualification_entries,
+)
 
 NO_SESSIONS_INACTIVITY_DAYS = 15
 NEEDS_LISTING_STATUS = "NEEDS_LISTING"
@@ -37,35 +42,82 @@ SNAPSHOT_FIELDS = (
     "academic_qualifications",
     "academic_qualification_level",
     "professional_certificates",
+    "professional_qualification_entries",
+    "services_offered",
+)
+
+_LIST_SNAPSHOT_FIELDS = (
+    "professional_certificates",
+    "professional_qualification_entries",
     "services_offered",
 )
 
 
+def _entries_from_payload(data: dict, profile: TherapistProfile | None = None) -> list[dict]:
+    if "professional_qualification_entries" in data:
+        return normalize_qualification_entries(data.get("professional_qualification_entries"))
+    if profile is not None and profile.professional_qualification_entries:
+        return normalize_qualification_entries(profile.professional_qualification_entries)
+    if "professional_certificates" in data:
+        return normalize_qualification_entries(data.get("professional_certificates"))
+    if profile is not None and profile.professional_certificates:
+        return normalize_qualification_entries(profile.professional_certificates)
+    return []
+
+
+def apply_qualification_entries(profile: TherapistProfile, entries: list[dict] | None) -> None:
+    normalized = normalize_qualification_entries(entries)
+    profile.professional_qualification_entries = normalized
+    academic, certs = flatten_qualification_entries(normalized)
+    profile.academic_qualifications = academic
+    profile.professional_certificates = certs
+
+
+def resolved_qualification_entries(profile: TherapistProfile, extra: dict | None = None) -> list[dict]:
+    pending = extra or profile.pending_submission or {}
+    if pending.get("professional_qualification_entries"):
+        return normalize_qualification_entries(pending["professional_qualification_entries"])
+    if profile.professional_qualification_entries:
+        return normalize_qualification_entries(profile.professional_qualification_entries)
+    if pending.get("professional_certificates"):
+        return normalize_qualification_entries(pending["professional_certificates"])
+    return normalize_qualification_entries(profile.professional_certificates)
+
+
 def build_profile_snapshot(profile: TherapistProfile) -> dict:
     """Capture the therapist-editable fields that were just approved."""
+    entries = resolved_qualification_entries(profile)
     return {
         "display_name": profile.display_name,
         "short_bio": profile.short_bio,
         "academic_qualifications": profile.academic_qualifications,
         "academic_qualification_level": profile.academic_qualification_level,
         "professional_certificates": list(profile.professional_certificates or []),
+        "professional_qualification_entries": entries,
         "services_offered": list(profile.services_offered or []),
     }
 
 
-def build_submission_snapshot(data: dict, db: Session | None = None) -> dict:
+def build_submission_snapshot(data: dict, db: Session | None = None, profile: TherapistProfile | None = None) -> dict:
     services = data.get("services_offered") or []
     if db is not None and services:
         try:
             services = validate_service_ids(services, db)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+    entries = _entries_from_payload(data, profile)
+    academic, certs = flatten_qualification_entries(entries)
+    if not academic:
+        academic = (data.get("academic_qualifications") or "").strip() or None
+    if not certs:
+        certs = _normalize_certs(data.get("professional_certificates"))
     return {
         "display_name": (data.get("display_name") or "").strip() or None,
         "short_bio": (data.get("short_bio") or "").strip() or None,
-        "academic_qualifications": (data.get("academic_qualifications") or "").strip() or None,
+        "academic_qualifications": academic,
         "academic_qualification_level": normalize_qualification_level(data.get("academic_qualification_level")),
-        "professional_certificates": _normalize_certs(data.get("professional_certificates")),
+        "professional_certificates": certs,
+        "professional_qualification_entries": entries,
         "services_offered": list(services),
     }
 
@@ -84,7 +136,9 @@ def apply_snapshot_to_profile(profile: TherapistProfile, snapshot: dict) -> None
         if key not in snapshot:
             continue
         value = snapshot[key]
-        if key in ("professional_certificates", "services_offered"):
+        if key == "professional_qualification_entries":
+            apply_qualification_entries(profile, value)
+        elif key in _LIST_SNAPSHOT_FIELDS:
             profile.__setattr__(key, list(value or []))
         else:
             profile.__setattr__(key, value)
@@ -165,7 +219,9 @@ def profile_to_dict(
         "academic_qualifications": profile.academic_qualifications,
         "academic_qualification_level": profile.academic_qualification_level,
         "professional_certificates": profile.professional_certificates or [],
+        "professional_qualification_entries": resolved_qualification_entries(profile),
         "services_offered": profile.services_offered or [],
+        "quality": evaluate_profile_quality(u, profile) if u else None,
         "status": status_value,
         "admin_note": profile.admin_note,
         "submitted_at": profile.submitted_at,
@@ -202,7 +258,9 @@ def needs_listing_to_dict(user: User) -> dict:
         "academic_qualifications": None,
         "academic_qualification_level": None,
         "professional_certificates": [],
+        "professional_qualification_entries": [],
         "services_offered": [],
+        "quality": evaluate_profile_quality(user, None),
         "status": NEEDS_LISTING_STATUS,
         "admin_note": None,
         "submitted_at": None,
@@ -273,8 +331,10 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         if level is not None and normalize_qualification_level(level) is None:
             raise HTTPException(status_code=400, detail="Select a valid qualification level")
         profile.academic_qualification_level = normalize_qualification_level(level)
-    if "professional_certificates" in data:
-        profile.professional_certificates = _normalize_certs(data["professional_certificates"])
+    if "professional_qualification_entries" in data:
+        apply_qualification_entries(profile, data.get("professional_qualification_entries"))
+    elif "professional_certificates" in data:
+        apply_qualification_entries(profile, data.get("professional_certificates"))
     if "services_offered" in data:
         try:
             profile.services_offered = validate_service_ids(data["services_offered"] or [], db)
@@ -334,12 +394,23 @@ def apply_leave_backfill(
     profile.leave_backfill_updated_by_user_id = actor_user_id
 
 
-def _validate_submission_payload(data: dict, user: User, db: Session) -> dict:
-    submission = build_submission_snapshot(data, db)
+def _validate_submission_payload(data: dict, user: User, db: Session, profile: TherapistProfile) -> dict:
+    submission = build_submission_snapshot(data, db, profile)
     if not submission["services_offered"]:
         raise HTTPException(status_code=400, detail="Select at least one service you offer")
     if not (submission["display_name"] or user.full_name):
         raise HTTPException(status_code=400, detail="Display name is required")
+    quality = evaluate_profile_quality(user, profile, listing=submission)
+    if not quality["can_submit"]:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Looks like we still need a few details before we can send this for review.",
+                "reminders": [row["message"] for row in quality["reminders"]],
+                "quality": quality,
+            },
+        )
+    submission["_quality"] = quality
     return submission
 
 
@@ -355,29 +426,52 @@ def therapist_submit_profile(db: Session, user: User, data: dict) -> TherapistPr
             detail="This service listing was removed. Contact your case manager to restore it.",
         )
 
-    submission = _validate_submission_payload(data, user, db)
+    submission = _validate_submission_payload(data, user, db, profile)
     if not submission["display_name"]:
         submission["display_name"] = user.full_name
+    quality = submission.pop("_quality")
 
     operational = {}
     if "employment_start_date" in data:
         operational["employment_start_date"] = data["employment_start_date"] or None
 
-    if profile.approved_snapshot:
+    if quality["auto_pass"]:
+        apply_profile_fields(profile, {**submission, **operational}, db)
+        profile.pending_submission = None
+        profile.status = TherapistProfileStatus.APPROVED
+        capture_approved_snapshot(profile)
+        profile.admin_note = f"Auto-approved: quality {quality['percent']}%"
+        profile.reviewed_at = datetime.now(timezone.utc)
+        profile.reviewed_by_user_id = None
+    elif profile.approved_snapshot:
         profile.pending_submission = submission
         apply_snapshot_to_profile(profile, profile.approved_snapshot)
         if operational:
             apply_profile_fields(profile, operational, db)
         profile.status = TherapistProfileStatus.APPROVED
+        profile.admin_note = None
     else:
         apply_profile_fields(profile, {**submission, **operational}, db)
         profile.status = TherapistProfileStatus.PENDING
         profile.pending_submission = None
+        profile.admin_note = None
 
     profile.submitted_at = datetime.now(timezone.utc)
-    profile.admin_note = None
     db.flush()
     return profile
+
+
+def admin_request_changes(profile: TherapistProfile, admin_note: str) -> None:
+    note = (admin_note or "").strip()
+    if len(note) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Add a short note so they know what to update.",
+        )
+    profile.admin_note = note
+    if profile.approved_snapshot:
+        return
+    profile.status = TherapistProfileStatus.CHANGES_REQUESTED
 
 
 def admin_approve_profile(profile: TherapistProfile, admin_note: str | None = None) -> None:
@@ -415,6 +509,7 @@ def _apply_profile_status_filter(stmt, status: TherapistProfileStatus | str | No
             TherapistProfile.status != TherapistProfileStatus.DELETED,
             or_(
                 TherapistProfile.status == TherapistProfileStatus.PENDING,
+                TherapistProfile.status == TherapistProfileStatus.CHANGES_REQUESTED,
                 TherapistProfile.pending_submission.isnot(None),
             ),
         )
@@ -572,12 +667,16 @@ def list_needs_listing_users(db: Session) -> list[User]:
 def profile_summary_counts(db: Session, profiles: list[TherapistProfile] | None = None) -> dict[str, int]:
     if profiles is None:
         profiles = list_active_profiles(db)
-    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0, "DELETED": 0}
+    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0, "DELETED": 0, "CHANGES_REQUESTED": 0}
     for profile in profiles:
         if has_pending_submission(profile):
             counts["PENDING"] += 1
             continue
         key = profile.status.value if hasattr(profile.status, "value") else str(profile.status)
+        if key == "CHANGES_REQUESTED":
+            counts["PENDING"] += 1
+            counts["CHANGES_REQUESTED"] += 1
+            continue
         if key in counts:
             counts[key] += 1
 
