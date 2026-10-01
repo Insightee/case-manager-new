@@ -71,6 +71,7 @@ export function AdminHrReportsPage() {
   const [dateTo, setDateTo] = useState(todayIso)
   const [productModule, setProductModule] = useState('')
   const [caseManagerUserIds, setCaseManagerUserIds] = useState([])
+  const [caseStatuses, setCaseStatuses] = useState('ACTIVE')
   const [preview, setPreview] = useState(null)
   const [cms, setCms] = useState([])
   const { loading, error, successMessage, run, clearMessages } = useBillingAction()
@@ -121,8 +122,11 @@ export function AdminHrReportsPage() {
     if (selectedReport?.filters?.includes('case_manager_user_id') && caseManagerUserIds.length) {
       params.case_manager_user_id = caseManagerUserIds.join(',')
     }
+    if (selectedReport?.filters?.includes('case_statuses') && caseStatuses.trim()) {
+      params.case_statuses = caseStatuses.trim()
+    }
     return params
-  }, [selectedReport, month, dateFrom, dateTo, productModule, caseManagerUserIds])
+  }, [selectedReport, month, dateFrom, dateTo, productModule, caseManagerUserIds, caseStatuses])
 
   const cmOptions = useMemo(
     () => cms.map((cm) => ({ value: String(cm.id), label: cm.full_name || cm.email || `CM #${cm.id}` })),
@@ -257,6 +261,18 @@ export function AdminHrReportsPage() {
               placeholder="All case managers"
               id="hr-report-case-managers"
             />
+          ) : null}
+          {selectedReport?.filters?.includes('case_statuses') ? (
+            <label className="client-inv__filter-field">
+              <span className="client-inv__filter-label">Case statuses</span>
+              <input
+                type="text"
+                className="client-inv__filter-input"
+                value={caseStatuses}
+                placeholder="ACTIVE"
+                onChange={(e) => setCaseStatuses(e.target.value)}
+              />
+            </label>
           ) : null}
         </div>
 
