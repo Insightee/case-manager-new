@@ -129,8 +129,23 @@ def run_report(
     case_manager_user_id: int | list[int] | None = None,
     therapist_user_id: int | None = None,
     case_id: int | None = None,
+    case_statuses: list[str] | None = None,
 ) -> dict[str, Any]:
     ym = normalize_month(month)
+    if report_key == "session-discrepancies":
+        from app.services.session_discrepancy_report_service import build_session_discrepancies_report
+
+        return build_session_discrepancies_report(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            user=user,
+            product_module=product_module,
+            case_manager_user_id=case_manager_user_id,
+            case_statuses=case_statuses,
+            therapist_user_id=therapist_user_id,
+            case_id=case_id,
+        )
     if report_key == "bulk-attendance":
         rows = bulk_attendance_rows(
             db,
