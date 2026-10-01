@@ -1150,6 +1150,28 @@ register_head(
 )
 
 
+def _seed_tp_qual_level_2703(db: Session) -> dict[str, Any]:
+    from app.models.therapist_profile import TherapistProfile
+
+    profile = db.scalar(select(TherapistProfile).limit(1))
+    if not profile:
+        raise RuntimeError("Need seeded therapist profile — run demo_seed first")
+    profile.academic_qualification_level = "PG"
+    db.flush()
+    return {
+        "profile_id": profile.id,
+        "academic_qualification_level": profile.academic_qualification_level,
+    }
+
+
+register_head(
+    "tp_qual_level_2703",
+    tables_added=[],
+    columns_added=[("therapist_profiles", "academic_qualification_level")],
+    seed=_seed_tp_qual_level_2703,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
