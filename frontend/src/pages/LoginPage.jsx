@@ -349,7 +349,7 @@ export function LoginPage({ portalType }) {
             <header className="login-header login-header--gateway">
               <InsighteLogo />
               <h1 className="login-title login-title--gateway">Welcome</h1>
-              <p className="login-sub login-sub--gateway">Please select your portal to sign in to your dashboard</p>
+              <p className="login-sub login-sub--gateway"> Please select your portal to continue to your dashboard</p>
             </header>
 
             <div className="portal-selection-grid">
