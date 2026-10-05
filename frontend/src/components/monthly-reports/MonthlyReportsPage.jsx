@@ -150,7 +150,7 @@ function MonthlyReportsPageContent() {
     attention: [],
     inProgress: [],
     published: [],
-    pipeline: { draft: 0, underReview: 0, published: 0, overdue: 0 },
+    pipeline: { draft: 0, underReview: 0, published: 0, notStarted: 0, overdue: null, overdueAvailable: false },
     monthLabel: '',
   })
   const [checklist, setChecklist] = useState(DEFAULT_CHECKLIST.map((c) => ({ ...c })))
@@ -254,6 +254,7 @@ function MonthlyReportsPageContent() {
 
   const filteredAttention = useMemo(() => {
     let list = workbench.attention.filter((a) => matchesSearch(a, q) && matchesCaseFilter(a, caseFilterId))
+    if (pipelineFilter === 'notStarted') list = list.filter((a) => a.attentionType === 'not_started')
     if (pipelineFilter === 'overdue') list = list.filter((a) => a.attentionType === 'overdue')
     return list
   }, [workbench.attention, q, pipelineFilter, caseFilterId])

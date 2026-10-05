@@ -11,6 +11,7 @@ from app.api.v1 import (
     admin_integration_clients,
     admin_integration_webhooks,
     admin_support,
+    admin_leadership,
     assignment_acceptance,
     assignments,
     billing_approvals,
@@ -85,6 +86,7 @@ api_router.include_router(
 )
 api_router.include_router(hr_ops.router)
 api_router.include_router(admin_support.router)
+api_router.include_router(admin_leadership.router)
 api_router.include_router(parent.router)
 api_router.include_router(
     client_billing.parent_router,

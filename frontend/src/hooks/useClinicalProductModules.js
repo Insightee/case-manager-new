@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
-const ALL_OPTION = { value: '', label: 'All services' }
+const ALL_OPTION = { value: '', label: 'All case types' }
 
 function modulesFromUser(user) {
   const mods = user?.modules || []
@@ -68,6 +68,6 @@ export function useClinicalProductModules() {
 }
 
 export function clinicalProductModuleLabel(value, labelByValue) {
-  if (!value) return labelByValue?.[''] || 'All services'
+  if (!value) return labelByValue?.[''] || 'All case types'
   return labelByValue?.[value] || value.replace(/_/g, ' ')
 }

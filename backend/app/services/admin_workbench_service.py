@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from app.core.timezone import today_ist
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -239,7 +239,7 @@ def _count_scoped(db: Session, user: User, stmt) -> int:
 def build_ops_counts(db: Session, user: User) -> dict:
     """Role-gated operational counts for dashboard KPIs."""
     counts: dict = {}
-    today = date.today()
+    today = today_ist()
 
     if user_has_permission(user, "monthly_report.approve"):
         obs_chk_stmt = (
@@ -329,7 +329,7 @@ def widget_section_observations(db: Session, user: User, *, limit: int = WIDGET_
         .where(ObservationChecklist.status == ObservationChecklistStatus.SUBMITTED.value)
     )
     count_stmt = apply_case_scope(count_stmt, user)
-    today = date.today()
+    today = today_ist()
     return {
         "count": int(db.scalar(count_stmt) or 0),
         "items": [
@@ -624,7 +624,7 @@ def build_workbench_summary(db: Session, user: User) -> dict:
             .outerjoin(Child, Case.child_id == Child.id)
             .where(
                 CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
-                CaseManagerMeeting.scheduled_date >= date.today(),
+                CaseManagerMeeting.scheduled_date >= today_ist(),
             )
             .order_by(CaseManagerMeeting.scheduled_date.asc())
             .limit(8)

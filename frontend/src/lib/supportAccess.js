@@ -3,6 +3,7 @@ export function tabsFromCapabilities(cap) {
   if (!cap?.tabs) return []
   const out = []
   if (cap.tabs.tickets) out.push({ id: 'tickets', label: 'Tickets' })
+  if (cap.tabs.ticket_report || cap.tabs.tickets) out.push({ id: 'ticket-report', label: 'Ticket report' })
   if (cap.tabs.incidents) out.push({ id: 'incidents', label: 'Incidents' })
   if (cap.tabs.memos) {
     out.push({

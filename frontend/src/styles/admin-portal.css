@@ -226,6 +226,19 @@ button.admin-stat--link {
   color: var(--text-muted);
 }
 
+.admin-stat__basis {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .admin-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
@@ -1550,6 +1563,8 @@ button.admin-stat--link {
   display: block;
 }
 
+.admin-input,
+.admin-select,
 .admin-filter-select__input {
   width: 100%;
   min-height: 44px;
@@ -1565,10 +1580,38 @@ button.admin-stat--link {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.admin-input {
+  padding-right: 12px;
+  cursor: text;
+}
+
+.admin-input[type='month'],
+.admin-input[type='date'],
+.admin-select[type='month'],
+.admin-filter-select__input--date,
+.admin-filter-select__input[type='month'],
+.admin-filter-select__input[type='date'] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  padding-right: 12px;
+  min-width: 11.5rem;
+  cursor: text;
+}
+
+.admin-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%2364748b' stroke-width='1.6' d='M1.5 1.5 6 6 10.5 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.admin-input:hover,
+.admin-select:hover,
 .admin-filter-select__input:hover {
   border-color: #94a3b8;
 }
 
+.admin-input:focus,
+.admin-select:focus,
 .admin-filter-select__input:focus {
   outline: none;
   border-color: #6366f1;

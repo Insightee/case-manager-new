@@ -1,15 +1,13 @@
-import { AdminPageHeader } from './ui/index.js'
-import { AdminFinanceReportsTab } from './AdminFinanceReportsTab.jsx'
+import { AdminReportLibrary } from './AdminReportLibrary.jsx'
 
 export function AdminFinanceReportsPage() {
   return (
-    <div className="admin-page">
-      <AdminPageHeader
-        eyebrow="Finance"
-        title="Reports"
-        subtitle="Case-level payout previews and finance exports for therapist compensation."
-      />
-      <AdminFinanceReportsTab />
-    </div>
+    <AdminReportLibrary
+      defaultCategory="finance"
+      defaultReportKey="therapist-payout-preview"
+      eyebrow="Finance"
+      title="Reports"
+      subtitle="One library for payouts, collections, outstanding, and billing. Set month, case type, period, and status, then generate or download."
+    />
   )
 }

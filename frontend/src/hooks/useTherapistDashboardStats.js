@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/apiClient.js'
-import { unwrapList } from '../lib/listApi.js'
 
+/** Use server aggregates from therapist home — never first-page list lengths. */
 export function useTherapistDashboardStats() {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -9,26 +9,14 @@ export function useTherapistDashboardStats() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [cases, sessions, logs, reports] = await Promise.all([
-        apiFetch('/api/v1/cases?assigned=true&page_size=100'),
-        apiFetch('/api/v1/sessions?page_size=100'),
-        apiFetch('/api/v1/daily-logs'),
-        apiFetch('/api/v1/reports/monthly?page_size=100'),
-      ])
-      const caseRows = unwrapList(cases)
-      const sessionRows = unwrapList(sessions)
-      const logRows = unwrapList(logs)
-      const reportRows = unwrapList(reports)
-      const needsLog = sessionRows.filter((s) => s.status === 'COMPLETED' && !s.has_daily_log).length
-      const pendingLogs = logRows.filter((l) => l.approval_status === 'PENDING').length
-      const draftReports = reportRows.filter((r) => r.status === 'DRAFT' || r.status === 'REJECTED').length
-      const underReview = reportRows.filter((r) => r.status === 'UNDER_REVIEW').length
+      const home = await apiFetch('/api/v1/therapist/home')
+      const s = home?.stats || {}
       setStats({
-        caseCount: caseRows.length,
-        needsLog,
-        pendingLogs,
-        draftReports,
-        underReview,
+        caseCount: s.case_count ?? 0,
+        needsLog: s.needs_log ?? 0,
+        pendingLogs: s.pending_logs ?? 0,
+        draftReports: s.draft_reports ?? 0,
+        underReview: s.under_review_reports ?? 0,
       })
     } catch {
       setStats(null)

@@ -6,6 +6,7 @@ import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
 import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
+import { AdminSupportTicketReportPage } from './AdminSupportTicketReportPage.jsx'
 import { AdminMemosPage } from './AdminMemosPage.jsx'
 import { ReceivedMemosPage } from '../support/ReceivedMemosPage.jsx'
 import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
@@ -36,14 +37,20 @@ export function AdminSupportHubPage() {
 
   const tabParam = normalizeSupportTab(searchParams.get('tab'))
   const defaultTab = visibleTabs[0]?.id || 'tickets'
-  const tab = visibleTabs.some((t) => t.id === tabParam) ? tabParam : defaultTab
+  const tabsReady = capabilities !== null || Boolean(capError)
+  const tab = !tabsReady
+    ? tabParam || 'tickets'
+    : visibleTabs.some((t) => t.id === tabParam)
+      ? tabParam
+      : defaultTab
 
   useEffect(() => {
+    if (!tabsReady) return
     if (!tabParam || tab === tabParam) return
     const next = new URLSearchParams(searchParams)
     next.set('tab', tab)
     setSearchParams(next, { replace: true })
-  }, [tab, tabParam, searchParams, setSearchParams])
+  }, [tabsReady, tab, tabParam, searchParams, setSearchParams])
 
   function setTab(id) {
     const next = new URLSearchParams(searchParams)
@@ -59,13 +66,13 @@ export function AdminSupportHubPage() {
       <AdminPageHeader
         eyebrow="Support"
         title="Support & incidents"
-        subtitle="Tickets, incident reports, and combined history."
+        subtitle="Tickets, a read-only ticket report, incident reports, and combined history."
         actions={<PoliciesBotButton />}
       />
 
       {capError ? <p className="admin-alert admin-alert--error">{capError}</p> : null}
 
-      {visibleTabs.length === 0 && !capError ? (
+      {tabsReady && visibleTabs.length === 0 && !capError ? (
         <p className="admin-muted">You do not have access to the support hub.</p>
       ) : null}
 
@@ -93,6 +100,11 @@ export function AdminSupportHubPage() {
       {tab === 'tickets' && visibleTabs.some((t) => t.id === 'tickets') ? (
         <div className="admin-hub-embedded">
           <AdminTicketsPage embedded />
+        </div>
+      ) : null}
+      {tab === 'ticket-report' && visibleTabs.some((t) => t.id === 'ticket-report') ? (
+        <div className="admin-hub-embedded">
+          <AdminSupportTicketReportPage embedded />
         </div>
       ) : null}
       {tab === 'incidents' && visibleTabs.some((t) => t.id === 'incidents') ? (

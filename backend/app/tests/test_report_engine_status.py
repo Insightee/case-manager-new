@@ -54,6 +54,10 @@ def test_report_engine_submit_approve_lock_flow():
     assert r.status_code == 200, r.text
     assert r.json()["status"] == ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value
 
+    denied = client.post(f"/api/v1/reports/{report_id}/approve", headers=headers, json={})
+    assert denied.status_code == 403
+    assert "reviewer role" in (denied.json().get("detail") or "").lower()
+
     r = client.post(f"/api/v1/reports/{report_id}/approve", headers=admin_headers, json={"share_with_parent": False})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == ClinicalReportStatus.LOCKED.value
@@ -66,7 +70,7 @@ def test_report_engine_submit_approve_lock_flow():
     assert r.status_code == 403
 
     r = client.post(f"/api/v1/reports/{report_id}/approve", headers=headers, json={})
-    assert r.status_code == 400
+    assert r.status_code == 403
 
 
 def test_report_engine_return_reopens_therapist_edit():

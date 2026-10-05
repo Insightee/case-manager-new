@@ -96,7 +96,9 @@ export function buildReportWorkbench({ reports = [], cases = [] }) {
     draft: inProgress.filter((r) => r.status === 'draft').length,
     underReview: inProgress.filter((r) => r.status === 'under_review').length,
     published: published.length,
-    overdue: attention.filter((a) => a.attentionType === 'overdue').length,
+    notStarted: attention.filter((a) => a.attentionType === 'not_started').length,
+    overdue: null,
+    overdueAvailable: false,
   }
 
   return { attention, inProgress, published, pipeline, monthLabel }
