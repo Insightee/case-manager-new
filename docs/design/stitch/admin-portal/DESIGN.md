@@ -16,7 +16,7 @@
 | Screen | Stitch screen ID | Route · component |
 |--------|------------------|-------------------|
 | Clinical reports workspace | `aa5fe4ed10794951a5022aaa6333d7b7` | `/admin/reports` · `AdminReportsPage.jsx` |
-| Leadership home | _(generate next)_ | `/admin` · `AdminDashboardPage.jsx` |
+| Leadership home | `1f626ef36a694d98a99a6ab6e75186ea` | `/admin` · `AdminDashboardPage.jsx` |
 
 Mobile card lists remain a **code** concern (`AdminDataList` / `AdminTaskCard` at ≤900px).
 
