@@ -37,6 +37,20 @@ API-only smoke (backend must be on `:8000`): `python3 scripts/therapist_flow_smo
 
 See [backend/README.md](backend/README.md) for API details and role matrix. System architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). **UI/UX contract:** [docs/design/UI_CONTRACT.md](docs/design/UI_CONTRACT.md). **Environment variables:** [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md). **Full doc index:** [docs/README.md](docs/README.md).
 
+### Google Stitch MCP (local IDE vs Cloud Agent)
+
+Stitch design tools are **not** the InsighteCase `/mcp` partner API ([docs/INTEGRATIONS_MCP.md](docs/INTEGRATIONS_MCP.md)).
+
+**Local Cursor:** `.cursor/mcp.json` points at `https://stitch.googleapis.com/mcp` and reads `STITCH_GOOG_API_KEY` from the environment (`${env:STITCH_GOOG_API_KEY}`). Copy [`.env.example`](.env.example) to `.env` (gitignored), set the key, then:
+
+```bash
+export STITCH_GOOG_API_KEY="your-key"
+```
+
+Launch Cursor from that shell (or set the var in your user environment). **Customize → MCPs** → enable **stitch**. Remote MCP does not load `.env` by itself.
+
+**Cloud Agents:** they ignore repo `mcp.json`. Add the same URL under [Dashboard → Plugins & MCPs](https://cursor.com/dashboard) (or the MCP menu when starting an agent), set header `X-Goog-Api-Key` as a **Secret**, and enable it for the session. Start a new agent after that.
+
 ## Contributing (team of 3+)
 
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — branch/PR workflow, pre-push checks, release steps

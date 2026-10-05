@@ -40,7 +40,10 @@ frontend/.playwright-browsers/
 .idea/
 .vscode/
 *.swp
-.cursor/
+# Cursor local state. Shared templates below are force-unignored.
+.cursor/*
+!.cursor/environment.json
+!.cursor/mcp.json
 
 # Uploads (local dev artifacts)
 backend/uploads/

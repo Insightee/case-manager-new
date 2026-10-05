@@ -16,6 +16,7 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 
 | File | Use |
 |------|-----|
+| [`.env.example`](../.env.example) | Repo-root local secrets template (Stitch MCP key for Cursor) |
 | [`backend/.env.example`](../backend/.env.example) | Local / Docker API |
 | [`backend/env.railway.example`](../backend/env.railway.example) | Railway production API |
 | [`frontend/.env.example`](../frontend/.env.example) | Local Vite |
@@ -33,6 +34,12 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 | `VITE_ENABLE_STRUCTURED_EVIDENCE` | no | unset/false | Frontend | IEP goal/strategy taps on `SubmitSessionLogForm`. Forced off on canonical production. Pair with backend `ENABLE_STRUCTURED_EVIDENCE`. |
 
 **Do not** set on Vercel: `DATABASE_URL`, `JWT_*`, `SMTP_*`, `R2_*`, or any backend-only var.
+
+### Cursor / local tooling (not the FastAPI app)
+
+| Variable | Required | Default | Where | Description |
+|----------|----------|---------|-------|-------------|
+| `STITCH_GOOG_API_KEY` | For Stitch MCP in Cursor | — | Developer machine or Cloud Agent MCP secret | Google Stitch API key interpolated by `.cursor/mcp.json` as `X-Goog-Api-Key`. Never commit. Cloud Agents need the dashboard MCP secret, not this repo file. |
 
 ---
 

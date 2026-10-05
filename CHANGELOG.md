@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Root `.env.example` + `.cursor/mcp.json` for Google Stitch MCP (`STITCH_GOOG_API_KEY`). The key is never stored in git. Cloud Agents still need Dashboard → Plugins & MCPs.
 - Month-end auto-submit raises therapist payout invoices still missing at 11:59 PM IST on the last day of the month (`scripts/auto_submit_month_end_invoices.py`, Railway cron `29 18 * * *`). A manual `--month YYYY-MM` backfill uses the same submit path.
 - Integration keys can grant every case (`all_cases`) and read receivables and ledger totals with `finance:read` on `/api/v1/integrations/v1/finance/*` and MCP tools `get_finance_receivables` / `get_finance_ledger`. An empty case list is zero access, not an empty month. Alembic `tp_qual_cards_1001` → `i2all3cases4fin`.
 - Integration keys can list and create therapist website profiles (`profiles:read` / `profiles:write`) from `GET/POST /api/v1/integrations/v1/therapist-profiles` and MCP tools `list_therapist_profiles` / `create_therapist_profile`. Listing fields only; create status is always `PENDING`.
