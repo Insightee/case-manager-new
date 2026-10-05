@@ -112,3 +112,5 @@ Executed as bounded work packages — see [LOOP_SYSTEM.md](./LOOP_SYSTEM.md).
 | Doc | Purpose |
 |-----|---------|
 | [../AGENTS.md](../AGENTS.md) | Learned preferences, deploy split, local dev facts |
+
+hello
