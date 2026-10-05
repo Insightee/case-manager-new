@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { mapParentBookedSlotToCalendarEvent } from '../../lib/googleCalendar.js'
@@ -38,6 +38,11 @@ export function ParentBookSessionForm({
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlotId, setSelectedSlotId] = useState('')
   const [bookingSuccess, setBookingSuccess] = useState(null)
+  const [nextSlotLoading, setNextSlotLoading] = useState(false)
+  const [noOpenSlotInHorizon, setNoOpenSlotInHorizon] = useState(false)
+  const [requestDate, setRequestDate] = useState(todayIso())
+  const [requestNote, setRequestNote] = useState('')
+  const autoSlotRef = useRef(null)
 
   const numericCaseId = useMemo(() => {
     const c = cases.find((x) => String(x.id) === caseId || String(x.caseId) === caseId)
@@ -75,6 +80,40 @@ export function ParentBookSessionForm({
     }
   }, [therapists, therapistId, rescheduleFrom])
 
+  useEffect(() => {
+    if (!numericCaseId || !therapistId || rescheduleFrom) {
+      setNoOpenSlotInHorizon(false)
+      return
+    }
+    let cancelled = false
+    setNextSlotLoading(true)
+    apiFetch(
+      `/api/v1/parent/booking/next-open-slot?case_id=${numericCaseId}&therapist_id=${therapistId}&horizon_days=7`,
+    )
+      .then((data) => {
+        if (cancelled) return
+        const slot = data?.next_slot
+        if (slot?.slot_date) {
+          setNoOpenSlotInHorizon(false)
+          autoSlotRef.current = slot.id != null ? String(slot.id) : null
+          setSelectedDate(slot.slot_date)
+        } else {
+          setNoOpenSlotInHorizon(true)
+          autoSlotRef.current = null
+          setRequestDate(todayIso())
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setNoOpenSlotInHorizon(false)
+      })
+      .finally(() => {
+        if (!cancelled) setNextSlotLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [numericCaseId, therapistId, rescheduleFrom])
+
   const loadSlots = useCallback(async () => {
     if (!therapistId || !selectedDate) {
       setSlots([])
@@ -83,9 +122,17 @@ export function ParentBookSessionForm({
     setSlotsLoading(true)
     setError('')
     try {
-      const rows = await apiFetch(
-        `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}`,
-      )
+      let rows = []
+      if (numericCaseId && !rescheduleFrom) {
+        const cal = await apiFetch(
+          `/api/v1/parent/booking/calendar?case_id=${numericCaseId}&therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}`,
+        )
+        rows = (cal?.slots || []).filter((s) => s.display_status === 'available')
+      } else {
+        rows = await apiFetch(
+          `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}`,
+        )
+      }
       setSlots(rows || [])
       setSelectedSlotId('')
     } catch (err) {
@@ -94,11 +141,21 @@ export function ParentBookSessionForm({
     } finally {
       setSlotsLoading(false)
     }
-  }, [therapistId, selectedDate, setError])
+  }, [therapistId, selectedDate, numericCaseId, rescheduleFrom, setError])
 
   useEffect(() => {
     loadSlots()
   }, [loadSlots])
+
+  useEffect(() => {
+    const targetId = autoSlotRef.current
+    if (!targetId || !slots.length) return
+    const match = slots.find((s) => String(s.id) === String(targetId))
+    if (match) {
+      setSelectedSlotId(String(match.id))
+      autoSlotRef.current = null
+    }
+  }, [slots])
 
   async function handleConfirm() {
     if (!selectedSlotId || !numericCaseId) return
@@ -140,7 +197,34 @@ export function ParentBookSessionForm({
     }
   }
 
+  async function handleRequestMeeting() {
+    if (!numericCaseId || !therapistId || !requestDate) return
+    setActing(true)
+    setError('')
+    try {
+      await apiFetch('/api/v1/parent/booking/meeting-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          case_id: numericCaseId,
+          therapist_user_id: Number(therapistId),
+          requested_date: requestDate,
+          note: requestNote.trim() || undefined,
+        }),
+      })
+      setMessage(
+        `We shared your preferred date (${formatDisplayDateLabel(requestDate)}) with your therapist. They will add a time when they can.`,
+      )
+      setRequestNote('')
+    } catch (err) {
+      setError(err.message || 'Could not send your meeting request')
+    } finally {
+      setActing(false)
+    }
+  }
+
   const isReschedule = !!rescheduleFrom
+  const showMeetingRequest = !isReschedule && noOpenSlotInHorizon && !nextSlotLoading
+  const slotsEmptyOnDay = !slotsLoading && slots.length === 0
 
   return (
     <div className="parent-book-form">
@@ -159,14 +243,13 @@ export function ParentBookSessionForm({
 
       {isReschedule ? (
         <p className="parent-book-form__help" style={{ marginTop: 0 }}>
-          You must pick a new slot with the <strong>same therapist</strong> ({rescheduleFrom.therapistName || 'assigned therapist'}).
+          Pick a new slot with {rescheduleFrom.therapistName || 'your therapist'}.
         </p>
       ) : null}
 
-      <p className="parent-book-form__help">
-        Your <strong>therapist</strong> is assigned for therapy sessions. Your <strong>case manager</strong> is assigned
-        separately by the clinic — they may schedule review meetings with you directly.
-      </p>
+      {!isReschedule && nextSlotLoading ? (
+        <p className="parent-book-form__help parent-book-form__help--muted">Finding the next open time…</p>
+      ) : null}
 
       <div className="parent-book-form__grid">
         <label className="parent-book-form__field">
@@ -217,7 +300,7 @@ export function ParentBookSessionForm({
           />
         </label>
 
-        <label className="parent-book-form__field">
+        <label className="parent-book-form__field parent-book-form__field--wide">
           Available time
           <select
             value={selectedSlotId}
@@ -239,6 +322,48 @@ export function ParentBookSessionForm({
           </select>
         </label>
       </div>
+
+      {showMeetingRequest ? (
+        <div className="parent-book-form__request" role="region" aria-label="Request a meeting">
+          <p className="parent-book-form__request-lead">
+            No open times in the next 7 days. Pick a date that works for you — your therapist will see the request on
+            their schedule and can add a slot that day.
+          </p>
+          <label className="parent-book-form__field">
+            Preferred date
+            <input
+              type="date"
+              min={todayIso()}
+              value={requestDate}
+              onChange={(e) => setRequestDate(e.target.value)}
+            />
+          </label>
+          <label className="parent-book-form__field parent-book-form__field--wide">
+            Note for therapist <span className="parent-book-form__optional">(optional)</span>
+            <textarea
+              rows={2}
+              maxLength={500}
+              value={requestNote}
+              onChange={(e) => setRequestNote(e.target.value)}
+              placeholder="Anything helpful about timing or context"
+            />
+          </label>
+          <button
+            type="button"
+            className="parent-book-form__primary"
+            disabled={acting || !requestDate}
+            onClick={handleRequestMeeting}
+          >
+            {acting ? 'Sending…' : 'Request a meeting'}
+          </button>
+        </div>
+      ) : null}
+
+      {!showMeetingRequest && slotsEmptyOnDay && !nextSlotLoading && !isReschedule ? (
+        <p className="parent-book-form__help parent-book-form__help--muted">
+          Try another date, or refresh slots after your therapist opens new times.
+        </p>
+      ) : null}
 
       <div className="parent-book-form__actions">
         <button

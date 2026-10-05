@@ -120,7 +120,7 @@ function CmMeetingCard({ meeting }) {
   const dateLabel = meeting.scheduled_date ? formatDisplayDateLabel(meeting.scheduled_date) : ''
 
   return (
-    <article className="session-card" style={{ borderLeft: '3px solid #7c3aed' }}>
+    <article className="session-card session-card--cm-highlight">
       <header className="session-card__head">
         <div>
           <h3 className="session-card__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -209,11 +209,8 @@ function TherapistLeaveCard({ entry, highlighted = false }) {
 
   return (
     <article
-      className="session-card"
-      style={{
-        borderLeft: '3px solid #94a3b8',
-        ...(highlighted ? { boxShadow: '0 0 0 2px #6366f1' } : {}),
-      }}
+      className={`session-card${highlighted ? ' session-card--highlighted' : ''}`}
+      style={{ borderLeft: '3px solid #94a3b8' }}
     >
       {pending ? (
         <div

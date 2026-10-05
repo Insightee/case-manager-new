@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient.js'
+import { todayIsoIST } from './datetime.js'
 
 export function mapParentCases(cases) {
   return (cases || []).map((c) => ({
@@ -56,21 +57,43 @@ export function mapParentAppointments(slots, meetings) {
     slotDate: m.scheduled_date,
     startTime: m.scheduled_time,
     endTime: null,
+    meetingStatus: m.status,
+    meetingTitle: m.title,
     approvalStatus: 'CONFIRMED',
     canCancel: false,
     canReschedule: false,
   }))
-  return [...slotItems, ...meetingItems].sort((a, b) => {
-    const da = (a.slotDate || '') + 'T' + (a.startTime || '00:00')
-    const db = (b.slotDate || '') + 'T' + (b.startTime || '00:00')
+  return sortAppointmentsByStart([...slotItems, ...meetingItems])
+}
+
+export function sortAppointmentsByStart(appointments) {
+  return [...(appointments || [])].sort((a, b) => {
+    const da = `${a.slotDate || ''}T${a.startTime || '00:00'}`
+    const db = `${b.slotDate || ''}T${b.startTime || '00:00'}`
     return da < db ? -1 : da > db ? 1 : 0
   })
+}
+
+/** Therapy slots + CM meetings from today onward (excludes completed/cancelled meetings). */
+export function filterUpcomingAppointments(appointments, todayIso = todayIsoIST()) {
+  return (appointments || []).filter((a) => {
+    if (!a?.slotDate || a.slotDate < todayIso) return false
+    if (a.isCmMeeting) {
+      const st = String(a.meetingStatus || 'SCHEDULED').toUpperCase()
+      return st === 'SCHEDULED'
+    }
+    return true
+  })
+}
+
+export function upcomingAppointmentsForDashboard(appointments, limit = 2) {
+  return sortAppointmentsByStart(filterUpcomingAppointments(appointments)).slice(0, limit)
 }
 
 export async function fetchParentAppointments() {
   const [slots, meetings] = await Promise.all([
     apiFetch('/api/v1/parent/appointments').catch(() => []),
-    apiFetch('/api/v1/parent/cm-meetings').catch(() => []),
+    apiFetch('/api/v1/parent/cm-meetings?status=SCHEDULED').catch(() => []),
   ])
   return mapParentAppointments(slots, meetings)
 }

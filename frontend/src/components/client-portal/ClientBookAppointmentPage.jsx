@@ -13,6 +13,7 @@ import { mapParentApptToCalendarEvent } from '../../lib/googleCalendar.js'
 import { formatDisplayDateLabel } from '../../lib/datetime.js'
 import { ParentBookSessionForm } from './ParentBookSessionForm.jsx'
 import './parent-book-form.css'
+import './parent-schedule-page.css'
 
 function ApptStatusBadge({ status }) {
   if (status === 'PENDING_THERAPIST') {
@@ -188,7 +189,7 @@ export function ClientBookAppointmentPage() {
   return (
     <ClientPortalLayout
       title="Session schedule"
-      subtitle="View upcoming therapy sessions and case manager meetings, or book a new therapy session."
+      subtitle="Upcoming visits and booking."
     >
       <div className="parent-schedule-page">
         <ErrorBanner
@@ -201,14 +202,18 @@ export function ClientBookAppointmentPage() {
 
         {message ? <p className="parent-schedule-page__msg parent-schedule-page__msg--ok">{message}</p> : null}
 
-        <section>
-          <h2 className="parent-schedule-page__section-title">Upcoming sessions</h2>
+        <section className="parent-schedule-page__tile" aria-labelledby="parent-schedule-upcoming">
+          <div className="parent-schedule-page__tile-head">
+            <h2 id="parent-schedule-upcoming" className="parent-schedule-page__section-title">
+              Upcoming
+            </h2>
+          </div>
           {apptLoading ? (
             <p className="parent-schedule-page__muted">Loading…</p>
           ) : appointments.length === 0 ? (
-            <p className="parent-schedule-page__muted">No upcoming sessions booked yet.</p>
+            <p className="parent-schedule-page__empty">Nothing booked yet — pick a time below.</p>
           ) : (
-            <div className="parent-schedule-page__strip">
+            <div className="parent-schedule-page__list">
               {appointments.map((appt) => (
                 <button
                   key={appt.id}
@@ -255,10 +260,17 @@ export function ClientBookAppointmentPage() {
           </p>
         ) : null}
 
-        <section>
-          <h2 className="parent-schedule-page__section-title">
-            {rescheduleFrom ? 'Pick a new time' : 'Book a new therapy session'}
-          </h2>
+        <section className="parent-schedule-page__tile" aria-labelledby="parent-schedule-book">
+          <div className="parent-schedule-page__tile-head">
+            <h2 id="parent-schedule-book" className="parent-schedule-page__section-title">
+              {rescheduleFrom ? 'New time' : 'Book session'}
+            </h2>
+          </div>
+          {!rescheduleFrom ? (
+            <p className="parent-schedule-page__hint">
+              Therapy sessions with your assigned therapist. Case manager meetings are scheduled by the clinic.
+            </p>
+          ) : null}
           <ParentBookSessionForm
             cases={cases}
             rescheduleFrom={rescheduleFrom}
@@ -296,45 +308,6 @@ export function ClientBookAppointmentPage() {
         ) : null}
       </div>
 
-      <style>{`
-        .parent-schedule-page { display: flex; flex-direction: column; gap: 16px; }
-        .parent-schedule-page__section-title { font-size: 0.9rem; font-weight: 700; color: #475569; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
-        .parent-schedule-page__msg { border-radius: 10px; padding: 8px 12px; font-size: 0.875rem; margin: 0; }
-        .parent-schedule-page__msg--ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
-        .parent-schedule-page__msg--err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
-        .parent-schedule-page__muted { font-size: 0.875rem; color: #94a3b8; }
-        .parent-schedule-page__strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
-        .parent-schedule-page__card { flex: 0 0 auto; min-width: 175px; max-width: 205px; min-height: 44px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 13px; text-align: left; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.05); -webkit-tap-highlight-color: transparent; }
-        .parent-schedule-page__card--cm { background: #faf5ff; border-color: #ddd6fe; }
-        .parent-schedule-page__card-date { font-size: 0.7rem; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
-        .parent-schedule-page__card--cm .parent-schedule-page__card-date { color: #7c3aed; }
-        .parent-schedule-page__card-time { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin: 0 0 4px; }
-        .parent-schedule-page__card-role { font-size: 0.78rem; color: #475569; margin: 0 0 2px; font-weight: 600; }
-        .parent-schedule-page__card-sub { font-size: 0.75rem; color: #94a3b8; margin: 0 0 6px; }
-        .parent-appt-badge { font-size: 0.7rem; font-weight: 700; border-radius: 99px; padding: 1px 8px; border: 1px solid; }
-        .parent-appt-badge--ok { background: #dcfce7; color: #14532d; border-color: #bbf7d0; }
-        .parent-appt-badge--pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
-        .parent-appt-badge--cancelled { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-        .parent-appt-badge--cm { background: #ede9fe; color: #4c1d95; border-color: #c4b5fd; }
-        .parent-appt-sheet { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); pointer-events: none; }
-        @media (min-width: 640px) { .parent-appt-sheet { align-items: center; } }
-        .parent-appt-sheet__backdrop { position: absolute; inset: 0; margin: 0; padding: 0; border: none; background: rgba(15,23,42,0.4); cursor: default; pointer-events: auto; }
-        .parent-appt-sheet__panel { position: relative; z-index: 1; width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); pointer-events: auto; }
-        .parent-appt-sheet__eyebrow { font-size: 0.7rem; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-        .parent-appt-sheet__eyebrow--cm { color: #7c3aed; }
-        .parent-appt-sheet__title { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
-        .parent-appt-sheet__time { font-size: 0.875rem; color: #475569; margin: 0 0 4px; }
-        .parent-appt-sheet__child { font-size: 0.8rem; color: #64748b; margin: 0 0 2px; }
-        .parent-appt-sheet__with { font-size: 0.8rem; color: #94a3b8; margin: 0 0 16px; }
-        .parent-appt-sheet__hint { font-size: 0.8rem; color: #94a3b8; margin: 0 0 16px; }
-        .parent-appt-sheet__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-        .parent-appt-sheet__reschedule { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 10px 0; font-weight: 600; font-size: 0.875rem; color: #3730a3; cursor: pointer; }
-        .parent-appt-sheet__reschedule:disabled { opacity: 0.45; cursor: not-allowed; }
-        .parent-appt-sheet__cancel { background: #fff; border: 1px solid #fca5a5; border-radius: 12px; padding: 10px 0; font-weight: 600; font-size: 0.875rem; color: #dc2626; cursor: pointer; }
-        .parent-appt-sheet__cancel:disabled { opacity: 0.45; cursor: not-allowed; }
-        .parent-appt-sheet__ghost, .parent-appt-sheet__close-only { background: none; border: none; font-size: 0.875rem; color: #94a3b8; cursor: pointer; padding: 6px 0; }
-        .parent-appt-sheet__close-only { width: 100%; background: #f1f5f9; border-radius: 12px; padding: 10px 0; font-weight: 600; color: #475569; }
-      `}</style>
     </ClientPortalLayout>
   )
 }

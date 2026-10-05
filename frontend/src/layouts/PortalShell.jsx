@@ -371,7 +371,11 @@ export function PortalShell({ portal }) {
 
   const showNavIcons = portal === 'admin'
   const shellClass = [
-    portal === 'admin' ? 'app-shell app-shell--admin' : 'app-shell',
+    portal === 'admin'
+      ? 'app-shell app-shell--admin'
+      : portal === 'parent'
+        ? 'app-shell app-shell--parent forest-light'
+        : 'app-shell',
     financeRoute ? 'app-shell--finance-workspace' : '',
     financeRoute && sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
   ]

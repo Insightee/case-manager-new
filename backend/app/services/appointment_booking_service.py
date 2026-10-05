@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -233,6 +233,32 @@ def parent_calendar_view(
         "day_overlays": leave_days,
         "slots": visible,
         "reschedules_left": policy.reschedules_remaining(db, case_id, from_date),
+    }
+
+
+def find_next_open_parent_slot(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    parent_user_id: int,
+    *,
+    horizon_days: int = 7,
+) -> dict[str, Any] | None:
+    from app.core.timezone import today_ist
+
+    today = today_ist()
+    to_date = today + timedelta(days=horizon_days)
+    view = parent_calendar_view(db, case_id, therapist_user_id, today, to_date, parent_user_id)
+    available = [s for s in view["slots"] if s.get("display_status") == "available"]
+    available.sort(key=lambda s: (s["slot_date"], s["start_time"]))
+    if not available:
+        return None
+    s = available[0]
+    return {
+        "id": s["id"],
+        "slot_date": s["slot_date"],
+        "start_time": s["start_time"],
+        "end_time": s["end_time"],
     }
 
 

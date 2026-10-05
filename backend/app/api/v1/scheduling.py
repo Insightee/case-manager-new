@@ -118,6 +118,18 @@ def get_calendar(
     return cal
 
 
+@router.get("/parent-meeting-requests")
+def therapist_parent_meeting_requests(
+    therapist_id: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tid = _resolve_therapist_id(user, therapist_id)
+    from app.services import parent_meeting_request_service as pmr
+
+    return pmr.list_pending_for_therapist(db, tid)
+
+
 @router.post("/slots", status_code=status.HTTP_201_CREATED)
 def create_slot(
     payload: SlotCreate,

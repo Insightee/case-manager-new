@@ -1,0 +1,248 @@
+.parent-therapist-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: min(72vh, 640px);
+  margin-top: 8px;
+}
+
+.parent-therapist-chat__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.parent-therapist-chat__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--parent-text-primary, #1a2e22);
+}
+
+.parent-therapist-chat__subtitle {
+  margin: 4px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--parent-text-secondary, #526057);
+}
+
+.parent-therapist-chat__subtitle a {
+  color: var(--parent-primary, #166534);
+  font-weight: 600;
+}
+
+.parent-therapist-chat__case-pill,
+.parent-therapist-chat__case-pick select {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--parent-border-decorative, #dde4de);
+  background: #fff;
+  color: var(--parent-text-primary, #1a2e22);
+}
+
+.parent-therapist-chat__thread {
+  flex: 1;
+  min-height: min(48vh, 420px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 12px;
+  border-radius: var(--parent-radius-card, 12px);
+  border: 1px solid var(--parent-border-decorative, #dde4de);
+  background: linear-gradient(180deg, #eef4f0 0%, #f8faf9 100%);
+  -webkit-overflow-scrolling: touch;
+}
+
+.parent-therapist-chat__thread--empty {
+  min-height: 0;
+  flex: 0;
+  justify-content: center;
+  align-items: center;
+  padding: 28px 16px;
+  background: var(--parent-surface-muted, #f4f7f5);
+}
+
+.parent-therapist-chat__hello {
+  min-height: 44px;
+  padding: 12px 28px;
+  border: none;
+  border-radius: 999px;
+  background: var(--parent-primary, #166534);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(22, 101, 52, 0.2);
+}
+
+.parent-therapist-chat__hello:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.parent-therapist-chat__loading,
+.parent-therapist-chat__empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--parent-text-secondary, #526057);
+  line-height: 1.5;
+}
+
+.parent-therapist-chat__msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 88%;
+}
+
+.parent-therapist-chat__msg--mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.parent-therapist-chat__time {
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 0.6875rem;
+  color: var(--parent-text-tertiary, #6b7c72);
+}
+
+.parent-therapist-chat__error {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #b91c1c;
+}
+
+.parent-therapist-chat__bubble {
+  padding: 10px 14px;
+  border-radius: 18px 18px 18px 6px;
+  background: #fff;
+  border: 1px solid var(--parent-border, #d0dad3);
+  box-shadow: 0 1px 2px rgba(23, 33, 27, 0.06);
+}
+
+.parent-therapist-chat__bubble--mine {
+  border-radius: 18px 18px 6px 18px;
+  background: var(--parent-primary, #166534);
+  border-color: var(--parent-primary, #166534);
+  color: #fff;
+}
+
+.parent-therapist-chat__bubble--mine .parent-therapist-chat__bubble-body {
+  color: #fff;
+}
+
+.parent-therapist-chat__bubble-body {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.parent-therapist-chat__compose {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--parent-bg, #f8faf9) 85%, transparent);
+}
+
+.parent-therapist-chat__input-wrap textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 1rem;
+  border-radius: var(--parent-radius-control, 8px);
+  border: 1px solid var(--parent-border, #d0dad3);
+  resize: none;
+  background: #fff;
+}
+
+.parent-therapist-chat__compose-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.parent-therapist-chat__send,
+.parent-therapist-chat__secondary {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+}
+
+.parent-therapist-chat__send {
+  flex: 1;
+  background: var(--parent-primary, #166534);
+  color: #fff;
+}
+
+.parent-therapist-chat__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.parent-therapist-chat__secondary {
+  background: #fff;
+  color: var(--parent-primary-hover, #14532d);
+  border: 1px solid var(--parent-border-decorative, #dde4de);
+}
+
+.parent-therapist-chat__loop-in {
+  padding: 12px;
+  border-radius: var(--parent-radius-card, 12px);
+  border: 1px dashed var(--parent-border-decorative, #dde4de);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parent-therapist-chat__loop-in-lead {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--parent-text-secondary, #526057);
+}
+
+.parent-therapist-chat__loop-in textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  border-radius: var(--parent-radius-control, 8px);
+  border: 1px solid var(--parent-border, #d0dad3);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@media (min-width: 640px) {
+  .parent-therapist-chat__compose-actions {
+    justify-content: flex-end;
+  }
+
+  .parent-therapist-chat__send {
+    flex: 0 1 auto;
+    min-width: 120px;
+  }
+}

@@ -116,6 +116,15 @@ class ResetPasswordRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ChangePasswordResponse(BaseModel):
+    message: str = "Password updated."
+
+
 class MeUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None

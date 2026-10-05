@@ -13,7 +13,7 @@ async function fetchParentBootstrap() {
     apiFetch('/api/v1/parent/billing/dashboard').catch(() => ({ invoices: [], packages: [], summary: null })),
     apiFetch('/api/v1/parent/notifications'),
     apiFetch('/api/v1/parent/appointments').catch(() => []),
-    apiFetch('/api/v1/parent/cm-meetings').catch(() => []),
+    apiFetch('/api/v1/parent/cm-meetings?status=SCHEDULED').catch(() => []),
   ])
   const hub = hubOrReports?.monthly ? hubOrReports : { monthly: hubOrReports || [], iep: [] }
   return {
@@ -57,9 +57,9 @@ export function ParentDashboardRoute() {
   }
 
   return (
-    <ClientPortalLayout title="Family dashboard" subtitle="">
+    <ClientPortalLayout hidePageHead>
       <ErrorBanner message={error?.message} onRetry={() => refetch()} />
-      {isLoading && !data ? <p className="muted">Loading your family dashboard…</p> : null}
+      {isLoading && !data ? <p className="muted">Loading your home…</p> : null}
       <ClientDashboardPage
         cases={bootstrap.cases}
         reports={bootstrap.reports}

@@ -9,9 +9,12 @@
 | System | Scope | Tokens / CSS | Components |
 |--------|--------|--------------|------------|
 | **Forest Light** | Therapist portal revamp (dashboard, my cases, case profile tabs, documents drive, case overview) | `forest-light-theme.css`, `docs/design/FOREST_LIGHT_TYPOGRAPHY.md`, surface `*-v2.css` | `cov-*`, `mc-*`, `td-*`, Material Symbols |
+| **Parent Forest Light** | Client / parent portal (`/parent/*`) | `parent-portal-theme.css` on `.app-shell--parent`, `docs/design/stitch/parent-portal/DESIGN.md` | Existing `parent-*` / `Client*` components — no `ClinicalCard` |
 | **Legacy clinical** | Admin clinical dashboards, older purple surfaces | `clinical-theme.css`, `clinical-components.css` | `ClinicalCard`, `ClinicalMetricCard`, `ClinicalStatusBadge` |
 
 **Conflict rule:** Forest surfaces must **not** import or render legacy `ClinicalCard` / metric grids. If a Stitch mock exists, implement with Forest tokens and the screen’s `cov-*` / `td-*` / `mc-*` prefix — not purple clinical cards.
+
+**Parent portal rule:** Shell class `app-shell--parent forest-light`. Primary UI colour is forest green (`#166534`), not indigo/purple dashboard gradients. Stitch project `5257107495041753907` is the visual reference for home, session updates, and reports; see `docs/design/stitch/parent-portal/DESIGN.md`. Therapist reuse of `parent-support.css` keeps legacy accent until that surface migrates separately.
 
 ## Shared surfaces (one implementation each)
 

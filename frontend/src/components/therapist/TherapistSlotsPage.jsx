@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDateLabel } from '../../lib/datetime.js'
 import { BookSlotModal } from './BookSlotModal.jsx'
 import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
@@ -20,8 +22,16 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
   const [bookSlot, setBookSlot] = useState(null)
   const [detailSlot, setDetailSlot] = useState(null)
   const [editState, setEditState] = useState(null)
+  const [meetingRequests, setMeetingRequests] = useState([])
 
   const weekEnd = addDays(scheduleWeekStart, 6)
+
+  useEffect(() => {
+    if (therapistIdProp) return
+    apiFetch('/api/v1/scheduling/parent-meeting-requests')
+      .then((rows) => setMeetingRequests(Array.isArray(rows) ? rows : []))
+      .catch(() => setMeetingRequests([]))
+  }, [therapistIdProp, refreshKey])
 
   function bumpRefresh() {
     clearScheduleCache()
@@ -65,6 +75,29 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
           </button>
         </div>
       </div>
+
+      {meetingRequests.length > 0 ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Parent meeting requests</p>
+          <ul className="mt-2 space-y-2">
+            {meetingRequests.map((req) => (
+              <li key={req.id} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  {req.child_name || req.case_code || 'Case'} · {formatDisplayDateLabel(req.requested_date)}
+                  {req.parent_name ? ` · ${req.parent_name}` : ''}
+                  {req.note ? ` — “${req.note}”` : ''}
+                </span>
+                <Link
+                  to={`/therapist/slots?date=${req.requested_date}`}
+                  className="font-semibold text-indigo-700 hover:text-indigo-900"
+                >
+                  Open {formatDisplayDateLabel(req.requested_date)} →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <TherapistCalendar
         therapistId={therapistIdProp}

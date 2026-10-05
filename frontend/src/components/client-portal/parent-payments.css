@@ -343,7 +343,7 @@
   padding: 10px 14px;
   border-radius: 10px;
   border: none;
-  background: #4f46e5;
+  background: var(--parent-primary, #166534);
   color: #fff;
   font-weight: 600;
   font-size: 0.875rem;
@@ -451,7 +451,7 @@
   background: none;
   border: none;
   padding: 0;
-  color: #4f46e5;
+  color: var(--parent-primary, #166534);
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
@@ -465,7 +465,7 @@
   font-weight: 600;
   font-size: 0.8125rem;
   cursor: pointer;
-  color: #4f46e5;
+  color: var(--parent-primary, #166534);
 }
 
 .parent-pay__table-card button:hover {
@@ -640,7 +640,7 @@
 }
 
 .parent-pay__btn--primary {
-  background: #4f46e5;
+  background: var(--parent-primary, #166534);
   color: #fff;
   border-color: #4338ca;
 }
@@ -721,7 +721,7 @@
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  accent-color: #4f46e5;
+  accent-color: var(--parent-primary, #166534);
   cursor: pointer;
 }
 

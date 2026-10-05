@@ -17,15 +17,15 @@ def _user(**prefs) -> SimpleNamespace:
     return SimpleNamespace(notification_preferences=prefs, role_names=["PARENT"])
 
 
-def test_parent_email_prefs_default_all_on():
+def test_parent_email_prefs_default_care_and_billing_on():
     user = _user()
     prefs = read_parent_email_preferences(user)
     assert prefs == {
         "session_logs": True,
         "therapist_leave": True,
-        "appointments": True,
+        "appointments": False,
         "billing": True,
-        "reports": True,
+        "reports": False,
         "meetings": True,
     }
     assert read_parent_log_leave_emails(user) is True
@@ -35,7 +35,7 @@ def test_legacy_log_leave_off_disables_logs_and_leave_only():
     user = _user(**{PARENT_LOG_LEAVE_EMAILS_KEY: False})
     assert parent_wants_email(user, "session_logs") is False
     assert parent_wants_email(user, "therapist_leave") is False
-    assert parent_wants_email(user, "appointments") is True
+    assert parent_wants_email(user, "appointments") is False
 
 
 def test_granular_email_preferences_can_be_updated():

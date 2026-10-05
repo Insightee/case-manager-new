@@ -276,11 +276,43 @@ def test_parent_profile_secondary_contact():
     assert body["secondary_contact_email"] == "spouse@example.com"
 
 
+def test_parent_change_password():
+    headers = _login("parent@demo.com")
+    bad = client.post(
+        "/api/v1/auth/change-password",
+        headers=headers,
+        json={"current_password": "wrong", "new_password": "newpass789"},
+    )
+    assert bad.status_code == 400
+
+    ok = client.post(
+        "/api/v1/auth/change-password",
+        headers=headers,
+        json={"current_password": "demo123", "new_password": "newpass789"},
+    )
+    assert ok.status_code == 200, ok.text
+
+    login_new = client.post(
+        "/api/v1/auth/login",
+        json={"email": "parent@demo.com", "password": "newpass789"},
+    )
+    assert login_new.status_code == 200, login_new.text
+
+    restore = client.post(
+        "/api/v1/auth/change-password",
+        headers={"Authorization": f"Bearer {login_new.json()['access_token']}"},
+        json={"current_password": "newpass789", "new_password": "demo123"},
+    )
+    assert restore.status_code == 200, restore.text
+
+
 def test_parent_profile_email_preferences():
     headers = _login("parent@demo.com")
     profile = client.get("/api/v1/parent/profile", headers=headers).json()
     prefs = profile.get("email_preferences") or {}
-    assert prefs.get("appointments") is True
+    assert prefs.get("session_logs") is True
+    assert prefs.get("billing") is True
+    assert prefs.get("meetings") is True
     assert profile.get("receive_log_leave_emails") is True
 
     off = client.patch(

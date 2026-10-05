@@ -835,10 +835,10 @@ function ParentReportsPageFull() {
         }
         .parent-reports__case-card { display: block; padding: 14px 16px; border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; text-decoration: none; color: inherit; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: border-color 0.15s, box-shadow 0.15s; }
         .parent-reports__case-card:hover { border-color: #c7d2fe; box-shadow: 0 4px 12px rgba(99,102,241,0.12); }
-        .parent-reports__case-code { font-size: 0.7rem; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
+        .parent-reports__case-code { font-size: 0.7rem; font-weight: 700; color: var(--parent-primary, #166534); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
         .parent-reports__case-name { font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
         .parent-reports__case-meta { font-size: 0.8rem; color: #64748b; margin: 0 0 8px; }
-        .parent-reports__case-cta { font-size: 0.75rem; font-weight: 600; color: #4f46e5; }
+        .parent-reports__case-cta { font-size: 0.75rem; font-weight: 600; color: var(--parent-primary, #166534); }
       `}</style>
     </div>
     </ClientPortalLayout>

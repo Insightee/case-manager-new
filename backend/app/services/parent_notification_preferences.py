@@ -35,6 +35,11 @@ CATEGORY_STORAGE_KEYS: dict[ParentEmailCategory, str] = {
     "meetings": "email_meetings",
 }
 
+# New parents: email on for care + billing + meetings; scheduling/report digests opt-in.
+DEFAULT_EMAIL_ON: frozenset[ParentEmailCategory] = frozenset(
+    {"session_logs", "therapist_leave", "billing", "meetings"}
+)
+
 
 def _coerce_enabled(value: object | None, *, default: bool = True) -> bool:
     if value is True:
@@ -59,11 +64,12 @@ def _legacy_log_leave_disabled(prefs: dict) -> bool:
 
 def _category_default(prefs: dict, category: ParentEmailCategory) -> bool:
     storage_key = CATEGORY_STORAGE_KEYS[category]
+    default_on = category in DEFAULT_EMAIL_ON
     if storage_key in prefs:
-        return _coerce_enabled(prefs.get(storage_key), default=True)
+        return _coerce_enabled(prefs.get(storage_key), default=default_on)
     if category in ("session_logs", "therapist_leave") and _legacy_log_leave_disabled(prefs):
         return False
-    return True
+    return default_on
 
 
 def parent_wants_email(user: User | None, category: ParentEmailCategory) -> bool:

@@ -4,6 +4,7 @@ import { registerSW } from 'virtual:pwa-register'
 import { setPwaUpdateHandler } from './lib/pwaUpdate.js'
 import './index.css'
 import './styles/forest-light-theme.css'
+import './styles/parent-portal-theme.css'
 import App from './App.jsx'
 
 // Stale production service workers on localhost cause blank screens — clear in dev only.
