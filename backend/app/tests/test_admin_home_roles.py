@@ -250,6 +250,8 @@ def test_admin_home_includes_dashboard_variant():
     home = _home("finance@demo.com")
     assert home.get("dashboard_variant") == "finance"
     assert _home("moduleadmin@demo.com").get("dashboard_variant") == "module_admin"
+    # SUPER_ADMIN uses the same /admin home as module admin — not "operations".
+    assert _home("superadmin@demo.com").get("dashboard_variant") == "module_admin"
 
 
 # TODO(product): If SCHOOL_COORDINATOR is enabled on /admin/home, scope widgets to

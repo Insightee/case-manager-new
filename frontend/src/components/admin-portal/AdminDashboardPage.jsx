@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { currentBillingMonthIST } from '../../lib/datetime.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminHome } from '../../hooks/useAdminHome.js'
 import { AdminOpsKpiGrid, buildAdminKpis } from './AdminOpsKpiGrid.jsx'
+import { AdminLeadershipOverview } from './AdminLeadershipOverview.jsx'
 import {
   AdminPageHeader,
   AdminPanel,
@@ -41,14 +43,22 @@ const DASHBOARD_COPY = {
   },
 }
 
+// SUPER_ADMIN / MODULE_ADMIN map to module_admin; retired ADMIN is legacy_admin.
+// HR also lands on /admin and keeps the trimmed KPI strip.
+const LEADERSHIP_DASHBOARD_VARIANTS = new Set(['module_admin', 'legacy_admin', 'operations'])
+
 export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRole }) {
   const { user, can } = useAuth()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [periodMonth, setPeriodMonth] = useState(currentBillingMonthIST)
 
   useEffect(() => {
-    apiFetch('/api/v1/admin/dashboard/summary')
+    setLoading(true)
+    const qs = new URLSearchParams()
+    if (periodMonth) qs.set('period_month', periodMonth)
+    apiFetch(`/api/v1/admin/dashboard/summary?${qs.toString()}`)
       .then((data) => {
         setSummary(data)
         setError('')
@@ -58,7 +68,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
         setError(err.message || 'Could not load dashboard')
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [periodMonth])
 
   const breakdown = summary?.status_breakdown ?? {}
   const totalForBars = useMemo(() => {
@@ -82,7 +92,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
       reschedules: '/admin/workbench?section=reschedules',
       reports: '/admin/reports?tab=queue',
       logs: '/admin/workbench?section=logs',
-      tickets: '/admin/support?tab=tickets',
+      tickets: '/admin/support?tab=ticket-report',
       leave: '/admin/leave',
       memos: '/admin/memos',
       therapist_hr: '/admin/therapist-profiles',
@@ -108,18 +118,29 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
         title={`Welcome back${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
         subtitle={copy.subtitle}
         actions={
-          canNavigate ? (
-            <div className="admin-btn-group">
-              {can('case.create') ? (
-                <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary">
-                  Allot new case
+          <div className="admin-btn-group">
+            <label className="client-inv__filter-field">
+              <span className="client-inv__filter-label">Period month (IST)</span>
+              <input
+                type="month"
+                className="client-inv__filter-input"
+                value={periodMonth}
+                onChange={(e) => setPeriodMonth(e.target.value)}
+              />
+            </label>
+            {canNavigate ? (
+              <>
+                {can('case.create') ? (
+                  <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary">
+                    Allot new case
+                  </Link>
+                ) : null}
+                <Link to="/admin/cases" className="admin-btn admin-btn--secondary">
+                  Manage cases
                 </Link>
-              ) : null}
-              <Link to="/admin/cases" className="admin-btn admin-btn--secondary">
-                Manage cases
-              </Link>
-            </div>
-          ) : null
+              </>
+            ) : null}
+          </div>
         }
       />
 
@@ -159,6 +180,10 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
       <AdminOpsKpiGrid kpis={kpis} loading={loading} />
+
+      {LEADERSHIP_DASHBOARD_VARIANTS.has(dashboardVariant) && summary?.leadership ? (
+        <AdminLeadershipOverview leadership={summary.leadership} operations />
+      ) : null}
 
       <div className="admin-layout">
         <div className="admin-layout admin-layout--stack" style={{ gap: 16 }}>
@@ -229,14 +254,16 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
         </div>
 
         <div className="admin-layout admin-layout--stack" style={{ gap: 16 }}>
-          <AdminPanel title="Case status mix" subtitle="Distribution across lifecycle">
+          <AdminPanel title="Case status mix" subtitle="Current snapshot across every status">
             <div className="admin-breakdown">
               {[
-                ['Active', breakdown.ACTIVE, 0],
-                ['Pending', breakdown.PENDING_ALLOTMENT, 1],
-                ['Suspended', breakdown.SUSPENDED, 2],
-                ['Closed', breakdown.CLOSED, 3],
-              ].map(([label, count]) => (
+                ['Active', breakdown.ACTIVE, '/admin/cases?status=ACTIVE'],
+                ['Pending allotment', breakdown.PENDING_ALLOTMENT, '/admin/cases?status=PENDING_ALLOTMENT'],
+                ['Pending replacement', breakdown.PENDING_REPLACEMENT, '/admin/cases?status=PENDING_REPLACEMENT'],
+                ['Suspended', breakdown.SUSPENDED, '/admin/cases?status=SUSPENDED'],
+                ['Deactivated', breakdown.DEACTIVATED, '/admin/cases?status=DEACTIVATED'],
+                ['Closed', breakdown.CLOSED, '/admin/cases?status=CLOSED'],
+              ].map(([label, count, href]) => (
                 <div key={label} className="admin-breakdown__row">
                   <span className="admin-breakdown__label">{label}</span>
                   <div className="admin-breakdown__bar">
@@ -245,7 +272,13 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
                       style={{ width: `${((count || 0) / totalForBars) * 100}%` }}
                     />
                   </div>
-                  <span className="admin-breakdown__value">{count ?? 0}</span>
+                  {canNavigate ? (
+                    <Link to={href} className="admin-breakdown__value">
+                      {count ?? 0}
+                    </Link>
+                  ) : (
+                    <span className="admin-breakdown__value">{count ?? 0}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -279,8 +312,8 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
           <AdminPanel
             title="Open support tickets"
             actions={
-              <Link to="/admin/tickets" className="admin-btn admin-btn--ghost admin-btn--sm">
-                Tickets
+              <Link to="/admin/support?tab=ticket-report" className="admin-btn admin-btn--ghost admin-btn--sm">
+                Ticket report
               </Link>
             }
           >

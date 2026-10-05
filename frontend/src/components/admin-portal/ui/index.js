@@ -3,7 +3,7 @@ export { AdminStatCard } from './AdminStatCard.jsx'
 export { AdminPanel } from './AdminPanel.jsx'
 export { AdminEmptyState } from './AdminEmptyState.jsx'
 export { AdminToolbar, AdminSearchInput } from './AdminToolbar.jsx'
-export { FilterSelect, FilterDateRange } from './FilterSelect.jsx'
+export { FilterSelect, FilterMonth, FilterDateRange } from './FilterSelect.jsx'
 export { MultiSelect } from './MultiSelect.jsx'
 export {
   StaffCategoryPeopleFilter,

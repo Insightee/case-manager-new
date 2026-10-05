@@ -7,6 +7,7 @@ from typing import Any, Optional
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.billing_month import default_billing_month, therapist_invoice_month_keys
 from app.core.config import settings
 from app.models.billing_step6 import BillingCalcException, BillingCalcExceptionCode
 from app.models.case import BillingType, Case, CaseStatus
@@ -184,9 +185,8 @@ def _missing_package_cases(db: Session) -> list[Case]:
 
 
 def control_tower_summary(db: Session, *, billing_month: str | None = None) -> dict[str, Any]:
-    ym = billing_composer_service.normalize_billing_month(
-        billing_month or date.today().strftime("%Y-%m")
-    )
+    ym = billing_composer_service.normalize_billing_month(billing_month or default_billing_month())
+    month_keys = therapist_invoice_month_keys(ym)
     cutover = _cutover_complete()
     engine_available = bool(settings.enable_billing)
     ledger_writes = bool(settings.billing_ledger_writes)
@@ -250,7 +250,7 @@ def control_tower_summary(db: Session, *, billing_month: str | None = None) -> d
     payouts_held = int(
         db.scalar(
             select(func.count(Invoice.id)).where(
-                Invoice.month == ym,
+                Invoice.month.in_(month_keys),
                 Invoice.status.in_([InvoiceStatus.DRAFT, InvoiceStatus.QUERIED, InvoiceStatus.REJECTED]),
             )
         )
@@ -259,7 +259,7 @@ def control_tower_summary(db: Session, *, billing_month: str | None = None) -> d
     payouts_in_review = int(
         db.scalar(
             select(func.count(Invoice.id)).where(
-                Invoice.month == ym,
+                Invoice.month.in_(month_keys),
                 Invoice.status == InvoiceStatus.IN_REVIEW,
             )
         )
@@ -287,7 +287,7 @@ def control_tower_summary(db: Session, *, billing_month: str | None = None) -> d
     therapist_payable = float(
         db.scalar(
             select(func.coalesce(func.sum(Invoice.amount_inr), 0)).where(
-                Invoice.month == ym,
+                Invoice.month.in_(month_keys),
                 Invoice.status.in_(
                     [InvoiceStatus.DRAFT, InvoiceStatus.IN_REVIEW, InvoiceStatus.APPROVED]
                 ),
@@ -298,7 +298,7 @@ def control_tower_summary(db: Session, *, billing_month: str | None = None) -> d
     therapist_payable_n = int(
         db.scalar(
             select(func.count(Invoice.id)).where(
-                Invoice.month == ym,
+                Invoice.month.in_(month_keys),
                 Invoice.status.in_(
                     [InvoiceStatus.DRAFT, InvoiceStatus.IN_REVIEW, InvoiceStatus.APPROVED]
                 ),
@@ -793,14 +793,13 @@ def list_payout_readiness(
     billing_month: str | None = None,
     limit: int = 100,
 ) -> dict[str, Any]:
-    ym = billing_composer_service.normalize_billing_month(
-        billing_month or date.today().strftime("%Y-%m")
-    )
+    ym = billing_composer_service.normalize_billing_month(billing_month or default_billing_month())
+    month_keys = therapist_invoice_month_keys(ym)
     limit = max(1, min(int(limit or 100), 500))
     invoices = list(
         db.scalars(
             select(Invoice)
-            .where(Invoice.month == ym)
+            .where(Invoice.month.in_(month_keys))
             .order_by(Invoice.id.desc())
             .limit(limit)
         ).all()

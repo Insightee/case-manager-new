@@ -6,6 +6,7 @@ from fastapi import BackgroundTasks
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.billing_month import try_parse_billing_month, therapist_invoice_month_keys
 from app.core.config import settings
 from app.core.module_access import get_allowed_case_product_modules
 from app.core.pagination import paginate_query, paginated_response
@@ -340,7 +341,12 @@ def list_monthly_reports(
     if case_id is not None:
         stmt = stmt.where(MonthlyReport.case_id == case_id)
     if month:
-        stmt = stmt.where(MonthlyReport.month.ilike(f"%{month.strip()}%"))
+        parsed = try_parse_billing_month(month)
+        if parsed:
+            keys = therapist_invoice_month_keys(parsed)
+            stmt = stmt.where(or_(*[MonthlyReport.month.ilike(f"%{k}%") for k in keys]))
+        else:
+            stmt = stmt.where(MonthlyReport.month.ilike(f"%{month.strip()}%"))
     if search:
         q = f"%{search.strip()}%"
         stmt = stmt.join(Child, Case.child_id == Child.id).where(

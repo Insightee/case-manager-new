@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import {
   AdminCollapsibleFilters,
@@ -100,12 +100,13 @@ function dash(value) {
 }
 
 export function AdminSupportTicketReportPage({ embedded = false }) {
-  const [status, setStatus] = useState('')
-  const [category, setCategory] = useState('')
-  const [productModule, setProductModule] = useState('')
-  const [assignedTo, setAssignedTo] = useState('')
-  const [dateFrom, setDateFrom] = useState(currentMonthStart)
-  const [dateTo, setDateTo] = useState(istToday)
+  const [searchParams] = useSearchParams()
+  const [status, setStatus] = useState(() => searchParams.get('status') || '')
+  const [category, setCategory] = useState(() => searchParams.get('category') || '')
+  const [productModule, setProductModule] = useState(() => searchParams.get('product_module') || '')
+  const [assignedTo, setAssignedTo] = useState(() => searchParams.get('assigned_to') || '')
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get('date_from') || currentMonthStart())
+  const [dateTo, setDateTo] = useState(() => searchParams.get('date_to') || istToday())
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')

@@ -21,6 +21,7 @@ from app.models.client_billing import (
 )
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine
+from app.core.billing_month import parse_billing_month, therapist_invoice_month_keys
 from app.core.config import settings
 from app.models.billing_step6 import BillingCalcException
 from app.models.ledger_billing import BillableStatus, BillingLedger, LedgerSourceType, ProductBillingRule
@@ -58,20 +59,7 @@ COMPOSER_QUEUES = (
 
 
 def normalize_billing_month(billing_month: str) -> str:
-    raw = (billing_month or "").strip()
-    if len(raw) == 7 and raw[4] == "-":
-        return raw
-    try:
-        parsed = datetime.strptime(raw, "%b %Y")
-        return parsed.strftime("%Y-%m")
-    except ValueError:
-        pass
-    try:
-        parsed = datetime.strptime(raw, "%B %Y")
-        return parsed.strftime("%Y-%m")
-    except ValueError:
-        pass
-    return date.today().strftime("%Y-%m")
+    return parse_billing_month(billing_month)
 
 
 def _month_bounds(ym: str) -> tuple[date, date]:
@@ -196,9 +184,7 @@ def _ledger_ready_count(db: Session, case_id: int, ym: str) -> int:
 
 def _therapist_invoice_month_keys(ym: str) -> tuple[str, ...]:
     """Therapist invoices store 'May 2026'; composer filters use '2026-05'."""
-    y, m = int(ym[:4]), int(ym[5:7])
-    start = date(y, m, 1)
-    return (ym, start.strftime("%b %Y"), start.strftime("%B %Y"))
+    return therapist_invoice_month_keys(ym)
 
 
 def _therapist_submitted_for_case_month(db: Session, case_id: int, ym: str) -> bool:

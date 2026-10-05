@@ -62,15 +62,16 @@ def get_anonymised_ops_summary(
                 ObservationReport.status == ReportStatus.UNDER_REVIEW,
             )
         ) or 0
+        completed_statuses = (ReportStatus.APPROVED, ReportStatus.PUBLISHED)
         ap_m = db.scalar(
             select(func.count())
             .select_from(MonthlyReport)
-            .where(MonthlyReport.case_id.in_(allowed), MonthlyReport.status == ReportStatus.APPROVED)
+            .where(MonthlyReport.case_id.in_(allowed), MonthlyReport.status.in_(completed_statuses))
         ) or 0
         ap_o = db.scalar(
             select(func.count())
             .select_from(ObservationReport)
-            .where(ObservationReport.case_id.in_(allowed), ObservationReport.status == ReportStatus.APPROVED)
+            .where(ObservationReport.case_id.in_(allowed), ObservationReport.status.in_(completed_statuses))
         ) or 0
         payload = {
             "granted_case_count": len(allowed),

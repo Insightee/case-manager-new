@@ -24,12 +24,12 @@ const CARDS = [
     text: 'text-emerald-950',
   },
   {
-    key: 'overdue',
-    label: 'Overdue',
-    emoji: '🔴',
-    bg: 'bg-red-50/90',
-    ring: 'ring-red-200/80',
-    text: 'text-red-950',
+    key: 'notStarted',
+    label: 'Not started',
+    emoji: '⚪',
+    bg: 'bg-slate-50/90',
+    ring: 'ring-slate-200/80',
+    text: 'text-slate-950',
   },
 ]
 
@@ -37,7 +37,7 @@ export function PipelineStats({ counts, activeFilter, onFilter }) {
   return (
     <section aria-label="Report pipeline overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {CARDS.map((c) => {
-        const value = counts[c.key] ?? 0
+        const value = c.key === 'overdue' && counts.overdueAvailable === false ? '—' : counts[c.key] ?? 0
         const isActive = activeFilter === c.key
         return (
           <button
