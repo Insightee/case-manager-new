@@ -539,6 +539,46 @@ def test_apply_therapist_total_column_first_row_only():
     assert list(result[0].keys())[-1] == "Therapist Total"
 
 
+def test_finance_report_keeps_cases_stopped_the_following_month():
+    from app.models.case import CaseStatus
+    from app.services.finance_payout_preview_service import case_on_finance_report
+
+    start = date(2026, 9, 1)
+    next_end = date(2026, 10, 31)
+    assert case_on_finance_report(
+        CaseStatus.ACTIVE,
+        None,
+        month_start=start,
+        next_month_end=next_end,
+        had_session=False,
+        had_assignment=False,
+    )
+    assert case_on_finance_report(
+        CaseStatus.SUSPENDED,
+        date(2026, 10, 6),
+        month_start=start,
+        next_month_end=next_end,
+        had_session=False,
+        had_assignment=False,
+    )
+    assert not case_on_finance_report(
+        CaseStatus.CLOSED,
+        date(2026, 8, 1),
+        month_start=start,
+        next_month_end=next_end,
+        had_session=False,
+        had_assignment=False,
+    )
+    assert case_on_finance_report(
+        CaseStatus.CLOSED,
+        date(2026, 8, 1),
+        month_start=start,
+        next_month_end=next_end,
+        had_session=True,
+        had_assignment=False,
+    )
+
+
 def test_normalize_legacy_share_column_headers():
     from app.services.finance_payout_preview_service import normalize_payout_preview_row
 
@@ -558,6 +598,30 @@ def test_normalize_legacy_share_column_headers():
     assert "Per Session Share" not in row
     assert "Lumpsum Amount" not in row
     assert "Per Session Pay (INR)" not in row
+
+
+def test_shadow_preview_includes_active_assignment_before_month_logs():
+    """Calendar-day cases still project the billing month before any logs are approved."""
+    from app.models.case import CaseStatus
+    from app.services.finance_payout_preview_service import (
+        build_cycle_segments,
+        uses_calendar_day_pay,
+    )
+
+    db = SessionLocal()
+    try:
+        cases = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE)).all()
+        shadow = next((c for c in cases if uses_calendar_day_pay(c)), None)
+        homecare = next((c for c in cases if not uses_calendar_day_pay(c)), None)
+        assert shadow is not None
+        segments = build_cycle_segments(db, shadow, "2026-10")
+        assert segments
+        assert any(segment.calendar_days > 0 for segment in segments)
+        if homecare is not None:
+            home_segments = build_cycle_segments(db, homecare, "2026-10")
+            assert isinstance(home_segments, list)
+    finally:
+        db.close()
 
 
 def test_finance_payout_preview_report_json():

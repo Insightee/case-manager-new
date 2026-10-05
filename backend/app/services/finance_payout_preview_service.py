@@ -16,15 +16,17 @@ from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
+from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
-from app.services import case_service, leave_policy_service
+from app.services import case_service, finance_payout_month_index, leave_policy_service
 from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
     case_people_export_fields,
     is_homecare_case,
     is_shadow_case,
     leave_days_in_month_for_case,
+    leave_applies_to_case,
     month_bounds,
     month_long_label,
     parent_by_child,
@@ -379,6 +381,9 @@ class CycleSegment:
     is_outgoing_replacement: bool
     # Frozen remun from CaseAssignment.billing_snapshot (outgoing / ended).
     locked_therapist_share_inr: float | None = None
+    logged_sessions: int = 0
+    payable_sessions: int = 0
+    child_absence: int = 0
 
     def _therapist_share(
         self, case: Case, *, db: Session | None = None, as_of: date | None = None
@@ -387,11 +392,16 @@ class CycleSegment:
             return float(self.locked_therapist_share_inr)
         return therapist_share_inr(case, db=db, as_of=as_of)
 
+    def _sessions_for_pay(self) -> int:
+        if self.payable_sessions > 0:
+            return self.payable_sessions
+        return self.approved_sessions
+
     def therapist_subtotal(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
         return predicted_amount_inr(
             case,
             share=self._therapist_share(case, db=db, as_of=as_of),
-            approved_sessions=self.approved_sessions,
+            approved_sessions=self._sessions_for_pay(),
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
         )
@@ -402,7 +412,7 @@ class CycleSegment:
     def client_amount(self, case: Case, *, db: Session | None = None, as_of: date | None = None) -> float:
         return predicted_client_amount_inr(
             case,
-            approved_sessions=self.approved_sessions,
+            approved_sessions=self._sessions_for_pay(),
             calendar_days=self.calendar_days,
             unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
             db=db,
@@ -414,10 +424,15 @@ class CycleSegment:
 def _therapists_with_hours_in_month(
     db: Session, case_id: int, start: date, end: date
 ) -> set[int]:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return {
+            therapist_id
+            for (row_case, therapist_id), sessions in index.sessions_by_pair.items()
+            if row_case == case_id and any(session.status == SessionStatus.COMPLETED for session in sessions)
+        }
     rows = db.execute(
-        select(TherapySession.therapist_user_id)
-        .distinct()
-        .where(
+        select(TherapySession.therapist_user_id.distinct()).where(
             TherapySession.case_id == case_id,
             TherapySession.status == SessionStatus.COMPLETED,
             TherapySession.scheduled_date >= start,
@@ -434,6 +449,9 @@ def _assignment_for_month(
     month_start: date,
     month_end: date,
 ) -> CaseAssignment | None:
+    index = finance_payout_month_index.active(month_start, month_end)
+    if index is not None:
+        return index.assignment_for_month(case_id, therapist_user_id)
     return db.scalars(
         select(CaseAssignment)
         .where(
@@ -457,6 +475,9 @@ def _is_incoming_replacement(
     month_start: date,
     month_end: date,
 ) -> bool:
+    index = finance_payout_month_index.active(month_start, month_end)
+    if index is not None:
+        return index.is_incoming(case_id, therapist_user_id)
     assignment = _assignment_for_month(
         db, case_id, therapist_user_id, month_start, month_end
     )
@@ -481,6 +502,9 @@ def _is_outgoing_replacement(
     month_start: date,
     month_end: date,
 ) -> bool:
+    index = finance_payout_month_index.active(month_start, month_end)
+    if index is not None:
+        return index.is_outgoing(case_id, therapist_user_id)
     assignment = _assignment_for_month(
         db, case_id, therapist_user_id, month_start, month_end
     )
@@ -503,9 +527,75 @@ def _is_outgoing_replacement(
     return successor is not None
 
 
+def _segments_from_index(index, case_id: int, start: date, end: date) -> list[TherapistCaseSegment]:
+    approved_dates: dict[int, list[date]] = {}
+    clock_dates: dict[int, list[date]] = {}
+    hour_therapists: set[int] = set()
+    transition_therapists: set[int] = set()
+    for (row_case, therapist_id), sessions in index.sessions_by_pair.items():
+        if row_case != case_id:
+            continue
+        for session in sessions:
+            if session.status == SessionStatus.COMPLETED:
+                hour_therapists.add(therapist_id)
+            if (
+                session.actual_start_at is not None
+                and session.actual_end_at is not None
+                and session.status not in _NOT_A_DELIVERED_VISIT
+            ):
+                clock_dates.setdefault(therapist_id, []).append(session.scheduled_date)
+            for approval, transition_id in session.logs:
+                if approval != LogApprovalStatus.APPROVED.value:
+                    continue
+                if transition_id is None:
+                    approved_dates.setdefault(therapist_id, []).append(session.scheduled_date)
+                else:
+                    transition_therapists.add(therapist_id)
+    segments: list[TherapistCaseSegment] = []
+    covered: set[int] = set()
+    for therapist_id, dates in approved_dates.items():
+        covered.add(therapist_id)
+        segments.append(
+            TherapistCaseSegment(
+                therapist_user_id=therapist_id,
+                first_log=min(dates),
+                last_log=max(dates),
+                is_incoming_replacement=index.is_incoming(case_id, therapist_id),
+                is_outgoing_replacement=index.is_outgoing(case_id, therapist_id),
+            )
+        )
+    for therapist_id, dates in clock_dates.items():
+        if therapist_id in covered:
+            continue
+        covered.add(therapist_id)
+        segments.append(
+            TherapistCaseSegment(
+                therapist_user_id=therapist_id,
+                first_log=min(dates),
+                last_log=max(dates),
+                is_incoming_replacement=index.is_incoming(case_id, therapist_id),
+                is_outgoing_replacement=index.is_outgoing(case_id, therapist_id),
+            )
+        )
+    for therapist_id in (hour_therapists - covered) | (transition_therapists - covered):
+        segments.append(
+            TherapistCaseSegment(
+                therapist_user_id=therapist_id,
+                first_log=None,
+                last_log=None,
+                is_incoming_replacement=index.is_incoming(case_id, therapist_id),
+                is_outgoing_replacement=index.is_outgoing(case_id, therapist_id),
+            )
+        )
+    return segments
+
+
 def _therapist_segments_for_case(
     db: Session, case_id: int, start: date, end: date
 ) -> list[TherapistCaseSegment]:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return _segments_from_index(index, case_id, start, end)
     # In-month first/last log: approved non-transition session scheduled_date only.
     log_rows = db.execute(
         select(
@@ -520,6 +610,23 @@ def _therapist_segments_for_case(
             TherapySession.scheduled_date <= end,
             DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
             DailyLog.transition_id.is_(None),
+        )
+        .group_by(TherapySession.therapist_user_id)
+    ).all()
+
+    clock_rows = db.execute(
+        select(
+            TherapySession.therapist_user_id,
+            func.min(TherapySession.scheduled_date),
+            func.max(TherapySession.scheduled_date),
+        )
+        .where(
+            TherapySession.case_id == case_id,
+            TherapySession.scheduled_date >= start,
+            TherapySession.scheduled_date <= end,
+            TherapySession.actual_start_at.is_not(None),
+            TherapySession.actual_end_at.is_not(None),
+            TherapySession.status.notin_(_NOT_A_DELIVERED_VISIT),
         )
         .group_by(TherapySession.therapist_user_id)
     ).all()
@@ -558,6 +665,24 @@ def _therapist_segments_for_case(
             )
         )
 
+    for therapist_id, first_clock, last_clock in clock_rows:
+        if int(therapist_id) in therapist_ids:
+            continue
+        therapist_ids.add(int(therapist_id))
+        segments.append(
+            TherapistCaseSegment(
+                therapist_user_id=int(therapist_id),
+                first_log=first_clock,
+                last_log=last_clock,
+                is_incoming_replacement=_is_incoming_replacement(
+                    db, case_id, int(therapist_id), start, end
+                ),
+                is_outgoing_replacement=_is_outgoing_replacement(
+                    db, case_id, int(therapist_id), start, end
+                ),
+            )
+        )
+
     for therapist_id in hour_only | (transition_therapist_ids - therapist_ids):
         segments.append(
             TherapistCaseSegment(
@@ -586,6 +711,9 @@ def _assignment_start_for_therapist(
     reference_date: date | None = None,
 ) -> date | None:
     """Portal assignment start for the stint active in the billing month."""
+    index = finance_payout_month_index.active(month_start, month_end)
+    if index is not None:
+        return index.assignment_start(case_id, therapist_user_id, reference_date)
     assignment = _assignment_for_month(
         db, case_id, therapist_user_id, month_start, month_end
     )
@@ -610,6 +738,9 @@ def _first_session_ever_for_therapist(
     db: Session, case_id: int, therapist_user_id: int
 ) -> date | None:
     """Earliest session on the case for this therapist (includes manual / forgot-to-log)."""
+    index = finance_payout_month_index.current()
+    if index is not None:
+        return index.first_session.get((case_id, therapist_user_id))
     return db.scalar(
         select(func.min(TherapySession.scheduled_date)).where(
             TherapySession.case_id == case_id,
@@ -621,6 +752,9 @@ def _first_session_ever_for_therapist(
 def _first_approved_normal_log_for_therapist(
     db: Session, case_id: int, therapist_user_id: int
 ) -> date | None:
+    index = finance_payout_month_index.current()
+    if index is not None:
+        return index.first_approved.get((case_id, therapist_user_id))
     return db.scalar(
         select(func.min(TherapySession.scheduled_date))
         .join(DailyLog, DailyLog.session_id == TherapySession.id)
@@ -640,6 +774,9 @@ def _last_approved_log_for_therapist(
 
     Same evidence type as in-month ``last_log``, not completed-clock or attendance.
     """
+    index = finance_payout_month_index.current()
+    if index is not None:
+        return index.last_approved.get((case_id, therapist_user_id))
     return db.scalar(
         select(func.max(TherapySession.scheduled_date))
         .join(DailyLog, DailyLog.session_id == TherapySession.id)
@@ -660,6 +797,9 @@ def _transition_pay_for_therapist(
     start: date,
     end: date,
 ) -> tuple[int, str, float]:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.transition_pay(case_id, therapist_user_id)
     rows = db.execute(
         select(
             CaseTherapistTransitionDay.id,
@@ -691,6 +831,9 @@ def _transition_pay_for_therapist(
 
 
 def _employment_start(db: Session, therapist_user_id: int) -> date | None:
+    index = finance_payout_month_index.current()
+    if index is not None:
+        return index.employment_start.get(therapist_user_id)
     return db.scalars(
         select(TherapistProfile.employment_start_date).where(
             TherapistProfile.user_id == therapist_user_id
@@ -698,9 +841,106 @@ def _employment_start(db: Session, therapist_user_id: int) -> date | None:
     ).first()
 
 
+STOPPED_CASE_STATUSES = frozenset(
+    {
+        CaseStatus.SUSPENDED,
+        CaseStatus.CLOSED,
+        CaseStatus.DEACTIVATED,
+        CaseStatus.PENDING_REPLACEMENT,
+    }
+)
+
+_NOT_A_DELIVERED_VISIT = (
+    SessionStatus.CANCELLED,
+    SessionStatus.RESCHEDULED,
+    SessionStatus.NO_SHOW,
+)
+
+
+def following_month(ym: str) -> str:
+    start, _end = month_bounds(ym)
+    if start.month == 12:
+        return f"{start.year + 1}-01"
+    return f"{start.year}-{start.month + 1:02d}"
+
+
+def case_on_finance_report(
+    status: CaseStatus,
+    status_effective_date: date | None,
+    *,
+    month_start: date,
+    next_month_end: date,
+    had_session: bool,
+    had_assignment: bool,
+) -> bool:
+    """Active cases, plus cases suspended or stopped in this month or the next."""
+    if status == CaseStatus.ACTIVE:
+        return True
+    if had_session:
+        return True
+    if status not in STOPPED_CASE_STATUSES:
+        return False
+    if status_effective_date is not None and month_start <= status_effective_date <= next_month_end:
+        return True
+    if had_assignment and (status_effective_date is None or status_effective_date >= month_start):
+        return True
+    return False
+
+
+def finance_report_cases(
+    db: Session,
+    ym: str,
+    *,
+    user: User | None = None,
+    product_module: str | None = None,
+) -> list[Case]:
+    """Cases that belong on the finance sheet for ``ym``.
+
+    Includes every active case, cases with a session in the month, and cases
+    suspended, closed, or deactivated during the month or the following month.
+    """
+    start, end = month_bounds(ym)
+    _next_start, next_end = month_bounds(following_month(ym))
+    session_case_ids = set(
+        db.scalars(
+            select(TherapySession.case_id)
+            .where(
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+            )
+            .distinct()
+        ).all()
+    )
+    assignment_case_ids = set(
+        db.scalars(
+            select(CaseAssignment.case_id)
+            .where(
+                CaseAssignment.start_date <= end,
+                or_(CaseAssignment.end_date.is_(None), CaseAssignment.end_date >= start),
+            )
+            .distinct()
+        ).all()
+    )
+    chosen: list[Case] = []
+    for case in scoped_cases(db, user, product_module=product_module, active_only=False):
+        if case_on_finance_report(
+            case.status,
+            case.status_effective_date,
+            month_start=start,
+            next_month_end=next_end,
+            had_session=case.id in session_case_ids,
+            had_assignment=case.id in assignment_case_ids,
+        ):
+            chosen.append(case)
+    return chosen
+
+
 def _approved_sessions_for_therapist(
     db: Session, case_id: int, therapist_user_id: int, start: date, end: date
 ) -> int:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.approved_sessions(case_id, therapist_user_id)
     return int(
         db.scalar(
             select(func.count())
@@ -720,9 +960,93 @@ def _approved_sessions_for_therapist(
     )
 
 
-def _pending_sessions_for_therapist(
+def _logged_sessions_for_therapist(
     db: Session, case_id: int, therapist_user_id: int, start: date, end: date
 ) -> int:
+    """Visits with a clock-in and clock-out, whether or not the log is approved."""
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.logged_sessions(case_id, therapist_user_id)
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(TherapySession)
+            .where(
+                TherapySession.case_id == case_id,
+                TherapySession.therapist_user_id == therapist_user_id,
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+                TherapySession.actual_start_at.is_not(None),
+                TherapySession.actual_end_at.is_not(None),
+                TherapySession.status.notin_(_NOT_A_DELIVERED_VISIT),
+            )
+        )
+        or 0
+    )
+
+
+def _payable_sessions_for_therapist(
+    db: Session, case_id: int, therapist_user_id: int, start: date, end: date
+) -> int:
+    """Approved logs plus clocked visits whose log is still pending or missing."""
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.payable_sessions(case_id, therapist_user_id)
+    approved_ids = (
+        select(TherapySession.id)
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.case_id == case_id,
+            TherapySession.therapist_user_id == therapist_user_id,
+            TherapySession.status == SessionStatus.COMPLETED,
+            TherapySession.scheduled_date >= start,
+            TherapySession.scheduled_date <= end,
+            DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+            DailyLog.transition_id.is_(None),
+        )
+    )
+    clocked_ids = select(TherapySession.id).where(
+        TherapySession.case_id == case_id,
+        TherapySession.therapist_user_id == therapist_user_id,
+        TherapySession.scheduled_date >= start,
+        TherapySession.scheduled_date <= end,
+        TherapySession.actual_start_at.is_not(None),
+        TherapySession.actual_end_at.is_not(None),
+        TherapySession.status.notin_(_NOT_A_DELIVERED_VISIT),
+    )
+    union_ids = approved_ids.union(clocked_ids).subquery()
+    return int(db.scalar(select(func.count()).select_from(union_ids)) or 0)
+
+
+def _child_absence_for_therapist(
+    db: Session, case_id: int, therapist_user_id: int, start: date, end: date
+) -> int:
+    """Child-absent visits in the month, including ones still waiting on approval."""
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.child_absence(case_id, therapist_user_id)
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(TherapySession)
+            .where(
+                TherapySession.case_id == case_id,
+                TherapySession.therapist_user_id == therapist_user_id,
+                TherapySession.status == SessionStatus.CLIENT_ABSENT,
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+            )
+        )
+        or 0
+    )
+
+
+def _pending_sessions_for_therapist(
+    db: Session, case_id: int,     therapist_user_id: int, start: date, end: date
+) -> int:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.pending_sessions(case_id, therapist_user_id)
     return int(
         db.scalar(
             select(func.count())
@@ -744,6 +1068,9 @@ def _pending_sessions_for_therapist(
 def _pending_absence_for_therapist(
     db: Session, case_id: int, therapist_user_id: int, start: date, end: date
 ) -> int:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.pending_absence(case_id, therapist_user_id)
     return int(
         db.scalar(
             select(func.count())
@@ -765,6 +1092,9 @@ def _pending_absence_for_therapist(
 def _approved_absence_for_therapist(
     db: Session, case_id: int, therapist_user_id: int, start: date, end: date
 ) -> int:
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        return index.approved_absence(case_id, therapist_user_id)
     return int(
         db.scalar(
             select(func.count())
@@ -790,6 +1120,11 @@ def _approved_absence_for_therapist(
 def _hours_for_therapist(
     db: Session, case_id: int, therapist_user_id: int, ym: str
 ) -> float:
+    index = finance_payout_month_index.current()
+    if index is not None:
+        year_s, month_s = ym.split("-")[:2]
+        if index.start.year == int(year_s) and index.start.month == int(month_s):
+            return index.hours(case_id, therapist_user_id)
     year_s, month_s = ym.split("-")[:2]
     y, m = int(year_s), int(month_s)
     sessions = db.scalars(
@@ -829,16 +1164,107 @@ def _leave_for_case_row(db: Session, therapist_id: int, case: Case, ym: str) -> 
     return {"paid": 0, "unpaid": 0, "carry_forward": 0}
 
 
+def _assignment_segments_for_case(
+    db: Session,
+    case: Case,
+    start: date,
+    end: date,
+    existing: list[TherapistCaseSegment],
+) -> list[TherapistCaseSegment]:
+    """Therapists assigned during the month who have no log or clock segment yet."""
+    covered = {segment.therapist_user_id for segment in existing}
+    index = finance_payout_month_index.active(start, end)
+    if index is not None:
+        assignments = index.overlapping_assignments(case.id)
+    else:
+        assignments = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case.id,
+            CaseAssignment.start_date <= end,
+            or_(CaseAssignment.end_date.is_(None), CaseAssignment.end_date >= start),
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).all()
+    extra: list[TherapistCaseSegment] = []
+    for assignment in assignments:
+        therapist_id = int(assignment.therapist_user_id)
+        if therapist_id in covered:
+            continue
+        covered.add(therapist_id)
+        extra.append(
+            TherapistCaseSegment(
+                therapist_user_id=therapist_id,
+                first_log=None,
+                last_log=None,
+                is_incoming_replacement=_is_incoming_replacement(
+                    db, case.id, therapist_id, start, end
+                ),
+                is_outgoing_replacement=_is_outgoing_replacement(
+                    db, case.id, therapist_id, start, end
+                ),
+            )
+        )
+    return extra
+
+
+def _calendar_day_assignment_segment(
+    db: Session,
+    case: Case,
+    start: date,
+    end: date,
+    existing: list[TherapistCaseSegment],
+) -> TherapistCaseSegment | None:
+    """Ongoing shadow/B2B pay is calendar-day, so the month still projects before logs exist."""
+    if not uses_calendar_day_pay(case):
+        return None
+    covered = {segment.therapist_user_id for segment in existing}
+    assignment = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            CaseAssignment.start_date <= end,
+            or_(CaseAssignment.end_date.is_(None), CaseAssignment.end_date >= start),
+        )
+        .order_by(CaseAssignment.id.desc())
+        .limit(1)
+    ).first()
+    if not assignment or int(assignment.therapist_user_id) in covered:
+        return None
+    return TherapistCaseSegment(
+        therapist_user_id=int(assignment.therapist_user_id),
+        first_log=None,
+        last_log=None,
+        is_incoming_replacement=False,
+        is_outgoing_replacement=False,
+    )
+
+
 def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]:
     """Payout-report segments for one case in a billing month (therapist × case)."""
     start, end = month_bounds(ym)
     year = int(ym.split("-")[0])
     segments: list[CycleSegment] = []
-    for segment in _therapist_segments_for_case(db, case.id, start, end):
+    raw_segments = _therapist_segments_for_case(db, case.id, start, end)
+    assignment_segment = _calendar_day_assignment_segment(db, case, start, end, raw_segments)
+    if assignment_segment is not None:
+        raw_segments.append(assignment_segment)
+    raw_segments.extend(_assignment_segments_for_case(db, case, start, end, raw_segments))
+    for segment in raw_segments:
         therapist = db.get(User, segment.therapist_user_id)
         if not therapist:
             continue
         approved = _approved_sessions_for_therapist(
+            db, case.id, segment.therapist_user_id, start, end
+        )
+        logged = _logged_sessions_for_therapist(
+            db, case.id, segment.therapist_user_id, start, end
+        )
+        payable = _payable_sessions_for_therapist(
+            db, case.id, segment.therapist_user_id, start, end
+        )
+        child_absence = _child_absence_for_therapist(
             db, case.id, segment.therapist_user_id, start, end
         )
         approved_absence = _approved_absence_for_therapist(
@@ -852,7 +1278,16 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
             start=start,
             end=end,
         )
-        if approved == 0 and hours <= 0 and transition_days == 0:
+        # Homecare with no clocked visit and no assignment window is omitted.
+        # Assigned homecare still appears so active and recently stopped cases stay on the sheet.
+        if (
+            approved == 0
+            and logged == 0
+            and hours <= 0
+            and transition_days == 0
+            and not uses_calendar_day_pay(case)
+            and _assignment_for_month(db, case.id, segment.therapist_user_id, start, end) is None
+        ):
             continue
         assignment_start = _assignment_start_for_therapist(
             db,
@@ -938,6 +1373,9 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
                 is_incoming_replacement=segment.is_incoming_replacement,
                 is_outgoing_replacement=segment.is_outgoing_replacement,
                 locked_therapist_share_inr=locked_share,
+                logged_sessions=logged,
+                payable_sessions=payable,
+                child_absence=child_absence,
             )
         )
     return segments
@@ -1009,6 +1447,9 @@ def payout_preview_row(
     pending_sessions: int = 0,
     pending_absence: int = 0,
     leave_taken: int | None = None,
+    logged_sessions: int = 0,
+    payable_sessions: int | None = None,
+    child_absence: int = 0,
     parent_info: dict[str, Any] | None = None,
     db: Session | None = None,
 ) -> dict[str, Any]:
@@ -1017,10 +1458,11 @@ def payout_preview_row(
     lumpsum = client_lumpsum_inr(case)
     per_sess = per_unit_from_share(case, share)
     unpaid = int(leave.get("unpaid", 0))
+    sessions_for_pay = approved_sessions if payable_sessions is None else max(payable_sessions, approved_sessions)
     subtotal = predicted_amount_inr(
         case,
         share=share,
-        approved_sessions=approved_sessions,
+        approved_sessions=sessions_for_pay,
         calendar_days=calendar_days,
         unpaid_leaves=unpaid if uses_calendar_day_pay(case) else 0,
     )
@@ -1029,11 +1471,20 @@ def payout_preview_row(
         gross_before = predicted_amount_inr(
             case,
             share=share,
-            approved_sessions=approved_sessions,
+            approved_sessions=sessions_for_pay,
             calendar_days=calendar_days,
             unpaid_leaves=0,
         )
         leave_deduction = round(max(gross_before - subtotal, 0), 2)
+
+    calculated_client = predicted_client_amount_inr(
+        case,
+        approved_sessions=sessions_for_pay,
+        calendar_days=calendar_days,
+        unpaid_leaves=unpaid if uses_calendar_day_pay(case) else 0,
+        db=db,
+        as_of=month_end,
+    )
 
     row: dict[str, Any] = {
         "caseId": case.id,
@@ -1045,20 +1496,24 @@ def payout_preview_row(
         )["Parent Name"],
         "Therapist Name": user_display_name(therapist),
         "Therapist ID": export_therapist_id(therapist),
+        "therapistUserId": therapist.id,
         "Service Type": case.service_type or case.product_module or "",
+        "Case Status": case.status.value if getattr(case.status, "value", None) else (case.status or ""),
         "Therapist Start Date": therapist_start_date.isoformat() if therapist_start_date else "",
         "Case Start Date": case_start_date.isoformat() if case_start_date else "",
         "Case End Date": case_end_date.isoformat() if case_end_date else "",
         "Calendar Days": calendar_days,
+        "Logged Sessions": logged_sessions,
         "Approved Sessions": approved_sessions,
         "Pending Sessions": pending_sessions,
+        "Child Absence": child_absence,
         "Approved Absence": approved_absence,
         "Pending Absence": pending_absence,
-        "Billable Absence": approved_absence,
-        "Paid Leaves": int(leave.get("paid", 0)) if uses_calendar_day_pay(case) else "",
-        "Unpaid Leaves": unpaid if uses_calendar_day_pay(case) else "",
+        "Billable Absence": child_absence,
+        "Paid Leaves": int(leave.get("paid", 0)),
+        "Unpaid Leaves": unpaid,
         "Leave deduction": leave_deduction if uses_calendar_day_pay(case) else "",
-        "Leave taken": leave_taken if not uses_calendar_day_pay(case) and leave_taken is not None else "",
+        "Leave taken": int(leave.get("paid", 0)) + unpaid if leave_taken is None else leave_taken,
         "Leave Credits": leave_credits,
         "Total Hours": round(hours, 2),
         "Billable Sessions": billable_sessions,
@@ -1067,6 +1522,7 @@ def payout_preview_row(
         ),
         # Aligned to case billing model: client charge + therapist lumpsum (no %).
         "Client Amount (INR)": lumpsum if lumpsum is not None else "",
+        "Calculated Client (INR)": calculated_client,
         "Therapist Pay (INR)": round(share, 2) if share else "",
         "Therapist Unit Pay (INR)": per_sess if per_sess else "",
         "Predicted Subtotal": subtotal if subtotal else "",
@@ -1085,10 +1541,28 @@ def payout_preview_rows(
     user: User | None = None,
     product_module: str | None = None,
 ) -> list[dict[str, Any]]:
-    cases = scoped_cases(db, user, product_module=product_module, active_only=True)
+    cases = finance_report_cases(db, ym, user=user, product_module=product_module)
     if not cases:
         return []
 
+    start, end = month_bounds(ym)
+    index = finance_payout_month_index.load_month_index(
+        db, start=start, end=end, case_ids=[case.id for case in cases]
+    )
+    token = finance_payout_month_index.activate(index)
+    try:
+        return _payout_preview_rows_loaded(db, ym, cases, start, end)
+    finally:
+        finance_payout_month_index.reset(token)
+
+
+def _payout_preview_rows_loaded(
+    db: Session,
+    ym: str,
+    cases: list[Case],
+    start: date,
+    end: date,
+) -> list[dict[str, Any]]:
     parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     rows: list[dict[str, Any]] = []
     start, end = month_bounds(ym)
@@ -1102,37 +1576,28 @@ def payout_preview_rows(
                 "unpaid": segment.unpaid_leaves,
                 "carry_forward": 0,
             }
-            billable = _billable_sessions_for_segment(
-                case, segment.approved_sessions, segment.approved_absence
-            )
+            billable = segment.payable_sessions
             pending_sessions = _pending_sessions_for_therapist(
                 db, case.id, segment.therapist_user_id, start, end
             )
             pending_absence = _pending_absence_for_therapist(
                 db, case.id, segment.therapist_user_id, start, end
             )
-            leave_taken = None
-            if not uses_calendar_day_pay(case):
-                case_leave = leave_days_in_month_for_case(db, therapist.id, case.id, ym)
-                leave_taken = int(case_leave.get("paid", 0) or 0) + int(case_leave.get("unpaid", 0) or 0)
-                if leave_taken == 0:
-                    from app.models.leave import LeaveStatus, TherapistLeave
-
-                    leaves = db.scalars(
-                        select(TherapistLeave).where(
-                            TherapistLeave.therapist_user_id == therapist.id,
-                            TherapistLeave.status == LeaveStatus.APPROVED,
-                            TherapistLeave.start_date <= end,
-                            TherapistLeave.end_date >= start,
-                        )
-                    ).all()
-                    from app.services.reports_export_helpers import leave_applies_to_case
-
-                    leave_taken = sum(
-                        (min(lv.end_date, end) - max(lv.start_date, start)).days + 1
-                        for lv in leaves
-                        if leave_applies_to_case(lv, case.id) or (not lv.case_id and not lv.case_ids)
+            leave_taken = int(segment.paid_leaves) + int(segment.unpaid_leaves)
+            if leave_taken == 0:
+                leaves = db.scalars(
+                    select(TherapistLeave).where(
+                        TherapistLeave.therapist_user_id == therapist.id,
+                        TherapistLeave.status == LeaveStatus.APPROVED,
+                        TherapistLeave.start_date <= end,
+                        TherapistLeave.end_date >= start,
                     )
+                ).all()
+                leave_taken = sum(
+                    (min(lv.end_date, end) - max(lv.start_date, start)).days + 1
+                    for lv in leaves
+                    if leave_applies_to_case(lv, case.id) or (not lv.case_id and not lv.case_ids)
+                )
             rows.append(
                 payout_preview_row(
                     case,
@@ -1154,6 +1619,9 @@ def payout_preview_rows(
                     pending_sessions=pending_sessions,
                     pending_absence=pending_absence,
                     leave_taken=leave_taken,
+                    logged_sessions=segment.logged_sessions,
+                    payable_sessions=segment.payable_sessions,
+                    child_absence=segment.child_absence,
                     parent_info=parents.get(case.child_id) if case.child_id else None,
                     db=db,
                 )

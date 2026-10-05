@@ -9,7 +9,7 @@ export function AdminFinanceReportsPage() {
         title="Reports"
         subtitle="Case-level payout previews and finance exports for therapist compensation."
       />
-      <AdminFinanceReportsTab />
+      <AdminFinanceReportsTab defaultReportKey="therapist-payout-preview" />
     </div>
   )
 }

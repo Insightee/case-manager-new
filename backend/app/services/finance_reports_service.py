@@ -33,6 +33,8 @@ REPORT_LABELS: dict[str, str] = {
     "manual-adjustments": "Manual adjustments",
     "revenue-by-service": "Revenue by service",
     "margin-by-case": "Margin by case",
+    "client-invoice-vs-calculation": "Client invoice vs calculation",
+    "therapist-invoice-vs-calculation": "Therapist invoice vs calculation",
 }
 
 
@@ -237,6 +239,12 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
             )
         return out
 
+    if report_key == "client-invoice-vs-calculation":
+        return client_invoice_vs_calculation_rows(db, ym)
+
+    if report_key == "therapist-invoice-vs-calculation":
+        return therapist_invoice_vs_calculation_rows(db, ym)
+
     return []
 
 
@@ -258,3 +266,156 @@ def report_subtitle(report_key: str, *, billing_month: str | None) -> str:
     ym = _ym(billing_month)
     base = f"Billing month {ym}"
     return base
+
+
+def _money(value) -> float:
+    if value in (None, ""):
+        return 0.0
+    return round(float(value), 2)
+
+
+def client_invoice_vs_calculation_rows(db: Session, ym: str) -> list[dict]:
+    """Client invoice submitted for the month against the finance calculation, one row per case."""
+    preview = finance_payout_preview_service.payout_preview_rows(db, ym)
+    by_case: dict[int, dict] = {}
+    for row in preview:
+        cid = row.get("caseId")
+        if cid is None:
+            continue
+        bucket = by_case.setdefault(
+            int(cid),
+            {
+                "caseId": int(cid),
+                "Case ID": row.get("Case ID") or "",
+                "Client Name": row.get("Client Name") or "",
+                "Service Type": row.get("Service Type") or "",
+                "Case Status": row.get("Case Status") or "",
+                "Calculated Client (INR)": 0.0,
+            },
+        )
+        bucket["Calculated Client (INR)"] = round(
+            bucket["Calculated Client (INR)"] + _money(row.get("Calculated Client (INR)")),
+            2,
+        )
+
+    invoices = db.scalars(select(ClientInvoice).where(ClientInvoice.billing_month == ym)).all()
+    invoices_by_case: dict[int, list] = {}
+    for inv in invoices:
+        invoices_by_case.setdefault(int(inv.case_id), []).append(inv)
+
+    rows: list[dict] = []
+    seen: set[int] = set()
+    for cid, bucket in by_case.items():
+        seen.add(cid)
+        invs = invoices_by_case.get(cid, [])
+        submitted = round(sum(float(inv.total_inr or 0) for inv in invs), 2)
+        calculated = bucket["Calculated Client (INR)"]
+        rows.append(
+            {
+                **bucket,
+                "Invoice Count": len(invs),
+                "Invoice Numbers": ", ".join(inv.invoice_number for inv in invs),
+                "Invoice Status": ", ".join(inv.status.value if inv.status else "" for inv in invs),
+                "Submitted (INR)": submitted,
+                "Difference (Submitted − Calculated)": round(submitted - calculated, 2),
+            }
+        )
+    for cid, invs in invoices_by_case.items():
+        if cid in seen:
+            continue
+        submitted = round(sum(float(inv.total_inr or 0) for inv in invs), 2)
+        rows.append(
+            {
+                "caseId": cid,
+                "Case ID": "",
+                "Client Name": "",
+                "Service Type": invs[0].service_type or "",
+                "Case Status": "",
+                "Calculated Client (INR)": 0.0,
+                "Invoice Count": len(invs),
+                "Invoice Numbers": ", ".join(inv.invoice_number for inv in invs),
+                "Invoice Status": ", ".join(inv.status.value if inv.status else "" for inv in invs),
+                "Submitted (INR)": submitted,
+                "Difference (Submitted − Calculated)": submitted,
+            }
+        )
+    rows.sort(key=lambda r: (r.get("Client Name") or "", r.get("Case ID") or ""))
+    return rows
+
+
+def therapist_invoice_vs_calculation_rows(db: Session, ym: str) -> list[dict]:
+    """Therapist payout invoice submitted for the month against the finance calculation."""
+    from app.services.invoice_billing_service import parse_month
+
+    _year, _month, label = parse_month(ym)
+    preview = finance_payout_preview_service.payout_preview_rows(db, ym)
+    by_therapist: dict[int, dict] = {}
+    for row in preview:
+        tid = row.get("therapistUserId")
+        if tid is None:
+            continue
+        bucket = by_therapist.setdefault(
+            int(tid),
+            {
+                "therapistUserId": int(tid),
+                "Therapist ID": row.get("Therapist ID") or "",
+                "Therapist Name": row.get("Therapist Name") or "",
+                "Case Count": 0,
+                "Logged Sessions": 0,
+                "Child Absence": 0,
+                "Leave taken": 0,
+                "Calculated Therapist (INR)": 0.0,
+            },
+        )
+        bucket["Case Count"] += 1
+        bucket["Logged Sessions"] += int(row.get("Logged Sessions") or 0)
+        bucket["Child Absence"] += int(row.get("Child Absence") or 0)
+        bucket["Leave taken"] += int(row.get("Leave taken") or 0)
+        bucket["Calculated Therapist (INR)"] = round(
+            bucket["Calculated Therapist (INR)"] + _money(row.get("Predicted Total")),
+            2,
+        )
+
+    invoices = db.scalars(select(Invoice).where(Invoice.month.in_([label, ym]))).all()
+    invoices_by_therapist: dict[int, list] = {}
+    for inv in invoices:
+        invoices_by_therapist.setdefault(int(inv.therapist_user_id), []).append(inv)
+
+    rows: list[dict] = []
+    seen: set[int] = set()
+    for tid, bucket in by_therapist.items():
+        seen.add(tid)
+        invs = invoices_by_therapist.get(tid, [])
+        submitted = round(sum(float(inv.amount_inr or 0) for inv in invs), 2)
+        calculated = bucket["Calculated Therapist (INR)"]
+        rows.append(
+            {
+                **bucket,
+                "Invoice Count": len(invs),
+                "Invoice Status": ", ".join(inv.status.value if inv.status else "" for inv in invs),
+                "Submitted (INR)": submitted,
+                "Difference (Submitted − Calculated)": round(submitted - calculated, 2),
+            }
+        )
+    for tid, invs in invoices_by_therapist.items():
+        if tid in seen:
+            continue
+        submitted = round(sum(float(inv.amount_inr or 0) for inv in invs), 2)
+        rows.append(
+            {
+                "therapistUserId": tid,
+                "Therapist ID": "",
+                "Therapist Name": "",
+                "Case Count": 0,
+                "Logged Sessions": 0,
+                "Child Absence": 0,
+                "Leave taken": 0,
+                "Calculated Therapist (INR)": 0.0,
+                "Invoice Count": len(invs),
+                "Invoice Status": ", ".join(inv.status.value if inv.status else "" for inv in invs),
+                "Submitted (INR)": submitted,
+                "Difference (Submitted − Calculated)": submitted,
+            }
+        )
+    rows.sort(key=lambda r: (r.get("Therapist Name") or "", str(r.get("Therapist ID") or "")))
+    return rows
