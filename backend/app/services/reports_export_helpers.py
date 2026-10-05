@@ -107,6 +107,24 @@ def parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, Any
     return out
 
 
+def case_owner_export_fields(
+    case: Case | None,
+    *,
+    therapist: User | None = None,
+    case_manager: User | None = None,
+    include_therapist: bool = True,
+) -> dict[str, str]:
+    """Case + operational owners only (no child/parent PII)."""
+    fields: dict[str, str] = {
+        "Case ID": export_case_id(case),
+        "Case Manager": user_display_name(case_manager),
+    }
+    if include_therapist:
+        fields["Therapist Name"] = user_display_name(therapist)
+        fields["Therapist ID"] = export_therapist_id(therapist)
+    return fields
+
+
 def case_people_export_fields(
     case: Case | None,
     *,
@@ -173,6 +191,19 @@ def apply_case_manager_filter(stmt: Any, column: Any, case_manager_user_id: int 
     return stmt.where(column == case_manager_user_id)
 
 
+def parse_case_status_list(value: str | list[str] | None) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        items = [str(v).strip().upper() for v in value if str(v).strip()]
+        return items or None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    items = [part.strip().upper() for part in raw.split(",") if part.strip()]
+    return items or None
+
+
 def scoped_cases(
     db: Session,
     user: User | None,
@@ -180,6 +211,7 @@ def scoped_cases(
     product_module: str | None = None,
     case_manager_user_id: int | list[int] | None = None,
     active_only: bool = False,
+    case_statuses: list[str] | None = None,
 ) -> list[Case]:
     stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
     if user is not None:
@@ -187,7 +219,22 @@ def scoped_cases(
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
     stmt = apply_case_manager_filter(stmt, Case.case_manager_user_id, case_manager_user_id)
-    if active_only:
+    if case_statuses:
+        status_enums: list[CaseStatus] = []
+        for raw in case_statuses:
+            token = raw.strip().upper()
+            if not token:
+                continue
+            try:
+                status_enums.append(CaseStatus[token])
+            except KeyError:
+                try:
+                    status_enums.append(CaseStatus(token))
+                except ValueError:
+                    continue
+        if status_enums:
+            stmt = stmt.where(Case.status.in_(status_enums))
+    elif active_only:
         stmt = stmt.where(Case.status == CaseStatus.ACTIVE)
     return list(db.scalars(stmt).all())
 

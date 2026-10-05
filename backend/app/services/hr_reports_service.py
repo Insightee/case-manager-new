@@ -65,6 +65,7 @@ def run_hr_report(
     case_manager_user_id: int | list[int] | None = None,
     therapist_user_id: Optional[int] = None,
     case_id: Optional[int] = None,
+    case_statuses: list[str] | None = None,
     user: User | None = None,
 ) -> dict[str, Any]:
     if report_key not in REPORT_KEYS:
@@ -81,6 +82,7 @@ def run_hr_report(
             case_manager_user_id=case_manager_user_id,
             therapist_user_id=therapist_user_id,
             case_id=case_id,
+            case_statuses=case_statuses,
         )
     rows = report_rows(
         db,

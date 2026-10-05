@@ -15,6 +15,7 @@ from app.services.reports_export_helpers import (
     default_export_month,
     month_long_label,
     normalize_month,
+    parse_case_status_list,
     parse_int_list,
 )
 
@@ -28,7 +29,7 @@ def _report_subtitle(
     date_from: str | None,
     date_to: str | None,
 ) -> str:
-    if report_key in {"session-log-detail"}:
+    if report_key in {"session-log-detail", "session-discrepancies"}:
         return f"Period: {date_from or '—'} to {date_to or '—'}"
     ym = normalize_month(month)
     return f"Month: {month_long_label(ym)}"
@@ -55,6 +56,10 @@ def hr_report(
     ),
     therapist_user_id: Optional[int] = None,
     case_id: Optional[int] = None,
+    case_statuses: Optional[str] = Query(
+        None,
+        description="Comma-separated case statuses (e.g. ACTIVE,SUSPENDED). Default ACTIVE for silent-cases sheet.",
+    ),
     format: str = Query("json", pattern="^(json|csv|xlsx|pdf)$"),
     user: User = Depends(require_any_permission("hr_report.export", "user.manage")),
     db: Session = Depends(get_db),
@@ -76,6 +81,7 @@ def hr_report(
         ) from exc
 
     try:
+        status_list = parse_case_status_list(case_statuses)
         payload = hr_reports_service.run_hr_report(
             db,
             report_key,
@@ -87,6 +93,7 @@ def hr_report(
             case_manager_user_id=cm_ids,
             therapist_user_id=therapist_user_id,
             case_id=case_id,
+            case_statuses=status_list,
             user=user,
         )
     except ValueError as exc:
@@ -98,6 +105,8 @@ def hr_report(
             "category": category,
             "rows": payload.get("rows") or [],
             "summaryRows": payload.get("summaryRows") or [],
+            "sheets": payload.get("sheets") or {},
+            "period": payload.get("period"),
             "count": payload.get("count", 0),
         }
 

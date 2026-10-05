@@ -37,6 +37,26 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
         "formats": ["csv", "xlsx", "pdf"],
     },
     {
+        "key": "session-discrepancies",
+        "label": "Session discrepancies (HR)",
+        "description": (
+            "Missing logs, clock vs schedule (±1h), under-40-minute visits, forgot-to-log usage, "
+            "and active cases silent in the selected period."
+        ),
+        "category": "session_ops",
+        "filters": [
+            "date_from",
+            "date_to",
+            "product_module",
+            "case_manager_user_id",
+            "therapist_user_id",
+            "case_id",
+            "case_statuses",
+        ],
+        "formats": ["csv", "xlsx", "pdf"],
+        "multi_sheet": True,
+    },
+    {
         "key": "session-monthly-summary",
         "label": "Monthly session summary",
         "description": "Client-wise (split by assignment window on reassignment) and therapist-wise session aggregates for the selected month.",

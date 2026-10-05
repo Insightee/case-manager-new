@@ -126,6 +126,7 @@ export function AdminReportLibrary({
   const [caseId, setCaseId] = useState(searchParams.get('case') || '')
   const [therapistUserId, setTherapistUserId] = useState('')
   const [caseManagerUserIds, setCaseManagerUserIds] = useState([])
+  const [caseStatuses, setCaseStatuses] = useState('ACTIVE')
   const [page, setPage] = useState(1)
   const [preview, setPreview] = useState(null)
   const [monthClose, setMonthClose] = useState(null)
@@ -260,10 +261,13 @@ export function AdminReportLibrary({
     if (usesFilter(selected, 'case_manager_user_id') && caseManagerUserIds.length) {
       params.case_manager_user_id = caseManagerUserIds.join(',')
     }
+    if (usesFilter(selected, 'case_statuses') && caseStatuses.trim()) {
+      params.case_statuses = caseStatuses.trim()
+    }
     if (selected.source !== 'finance') delete params.billing_month
     if (selected.source === 'finance' && !usesFilter(selected, 'month')) delete params.month
     return params
-  }, [selected, month, dateFrom, dateTo, productModule, status, caseId, therapistUserId, caseManagerUserIds])
+  }, [selected, month, dateFrom, dateTo, productModule, status, caseId, therapistUserId, caseManagerUserIds, caseStatuses])
 
   const endpoint = selected?.source === 'finance'
     ? `/api/v1/admin/finance-reports/${selected.key}`
@@ -553,6 +557,19 @@ export function AdminReportLibrary({
                       placeholder="All case managers"
                       id="report-lib-case-managers"
                     />
+                  ) : null}
+                  {usesFilter(selected, 'case_statuses') ? (
+                    <label className="admin-filter-field">
+                      <span className="admin-filter-field__label">Case statuses</span>
+                      <input
+                        type="text"
+                        className="admin-filter-select__input admin-input"
+                        value={caseStatuses}
+                        placeholder="ACTIVE"
+                        onChange={(e) => setCaseStatuses(e.target.value)}
+                        aria-label="Case statuses"
+                      />
+                    </label>
                   ) : null}
                 </AdminFilterGrid>
 
