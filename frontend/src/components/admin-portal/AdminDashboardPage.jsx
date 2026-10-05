@@ -17,6 +17,9 @@ import { isStaffAttendanceUser } from '../../lib/staffAttendanceAccess.js'
 import { UpcomingMeetingsPanel } from '../shared/UpcomingMeetingsPanel.jsx'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
 import { StaffTimerPanel } from './StaffTimerPanel.jsx'
+import { isStandaloneDisplay } from '../../lib/portalPwa.js'
+import { hasPwaStaleHint, isLikelyStaleAppError } from '../../lib/pwaStaleRecovery.js'
+import { PwaStaleRecoveryHelp } from '../shared/PwaStaleRecoveryHelp.jsx'
 import './admin-dashboard.css'
 
 const ALLOTMENT_KIND_LABELS = {
@@ -177,7 +180,14 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
         widgetFooter={widgetFooter}
       />
 
-      {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
+      {error ? (
+        <>
+          <p className="admin-alert admin-alert--error">{error}</p>
+          {isStandaloneDisplay() || hasPwaStaleHint() || isLikelyStaleAppError({ message: error }) ? (
+            <PwaStaleRecoveryHelp portalId="admin" variant="panel" forceVisible />
+          ) : null}
+        </>
+      ) : null}
 
       <AdminOpsKpiGrid kpis={kpis} loading={loading} />
 

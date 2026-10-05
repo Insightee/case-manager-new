@@ -11,6 +11,12 @@ import {
   sessionMatchesLoginPage,
   SIGN_IN_PATH,
 } from '../lib/portalLogin.js'
+import { applyPortalPwaMeta, isStandaloneDisplay } from '../lib/portalPwa.js'
+import {
+  hasPwaStaleHint,
+  isLikelyStaleLoginFailure,
+} from '../lib/pwaStaleRecovery.js'
+import { PwaStaleRecoveryHelp } from '../components/shared/PwaStaleRecoveryHelp.jsx'
 
 const DEMO_PASSWORD = 'demo123'
 const REMEMBER_ME_KEY = 'insightcase_remember_me'
@@ -174,6 +180,7 @@ export function LoginPage({ portalType }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [staleHelpOpen, setStaleHelpOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [selectedDemoEmail, setSelectedDemoEmail] = useState('')
 
@@ -257,6 +264,19 @@ export function LoginPage({ portalType }) {
   const active = useMemo(() => PORTALS.find((p) => p.id === currentPortalId) ?? PORTALS[0], [currentPortalId])
   const activeDemos = useMemo(() => flattenDemos(active), [active])
 
+  useEffect(() => {
+    if (portalType && portalType !== 'dev') {
+      applyPortalPwaMeta(portalType)
+    }
+  }, [portalType])
+
+  useEffect(() => {
+    if (portalType === 'dev' || !portalType) return
+    if (isStandaloneDisplay() || hasPwaStaleHint()) {
+      setStaleHelpOpen(true)
+    }
+  }, [portalType])
+
   usePageMeta({
     title: 'Sign in',
     description: `Sign in to the InsighteCase ${active.label.toLowerCase()} portal.`,
@@ -294,6 +314,9 @@ export function LoginPage({ portalType }) {
       navigate(portalHomePath(data.user))
     } catch (err) {
       setError(formatLoginError(err))
+      if (isLikelyStaleLoginFailure(err, { standalone: isStandaloneDisplay() })) {
+        setStaleHelpOpen(true)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -320,6 +343,9 @@ export function LoginPage({ portalType }) {
       navigate(portalHomePath(data.user))
     } catch (err) {
       setError(formatLoginError(err))
+      if (isLikelyStaleLoginFailure(err, { standalone: isStandaloneDisplay() })) {
+        setStaleHelpOpen(true)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -497,6 +523,14 @@ export function LoginPage({ portalType }) {
                 <p className="login-error" role="alert">
                   {error}
                 </p>
+              ) : null}
+              {portalType && portalType !== 'dev' ? (
+                <PwaStaleRecoveryHelp
+                  portalId={portalType}
+                  variant="panel"
+                  forceVisible={staleHelpOpen}
+                  onDismiss={() => setStaleHelpOpen(false)}
+                />
               ) : null}
               <button type="submit" className="login-submit" disabled={submitting} aria-busy={submitting}>
                 {submitting ? 'Signing in…' : 'Sign in'}

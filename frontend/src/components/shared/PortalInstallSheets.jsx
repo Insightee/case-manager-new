@@ -63,6 +63,9 @@ export function PortalInstallSheets({ sheet, appName, onClose }) {
 
   return (
     <InstallSheet appName={appName} onClose={onClose}>
+      <p className="portal-install-sheet__tip">
+        After an app update, remove the old icon first if sign-in or pages act stuck — then add the shortcut again from the browser.
+      </p>
       <ol>
         <li>Open your browser menu (three dots or lines).</li>
         <li>

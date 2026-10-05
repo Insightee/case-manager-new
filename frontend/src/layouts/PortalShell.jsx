@@ -14,6 +14,8 @@ import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
 import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.jsx'
+import { PwaStaleRecoveryHelp } from '../components/shared/PwaStaleRecoveryHelp.jsx'
+import { hasPwaStaleHint } from '../lib/pwaStaleRecovery.js'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
@@ -259,6 +261,11 @@ export function PortalShell({ portal }) {
   const profileIncomplete = portal === 'therapist' && isProfileCompletionIncomplete(user?.profile_completion)
   const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false)
   const [profileLogoutOpen, setProfileLogoutOpen] = useState(false)
+  const [showStaleBanner, setShowStaleBanner] = useState(false)
+
+  useEffect(() => {
+    setShowStaleBanner(hasPwaStaleHint())
+  }, [location.pathname])
 
   useEffect(() => {
     if (!profileIncomplete) {
@@ -706,6 +713,14 @@ export function PortalShell({ portal }) {
               .join(', ')}
             . Edit actions are disabled for those programmes.
           </div>
+        ) : null}
+        {showStaleBanner ? (
+          <PwaStaleRecoveryHelp
+            portalId={portal === 'parent' ? 'parent' : portal === 'admin' ? 'admin' : 'therapist'}
+            variant="banner"
+            forceVisible
+            onDismiss={() => setShowStaleBanner(false)}
+          />
         ) : null}
         {isClientPortalDashboard ? <PortalModuleRolloutNotice portal={portal} /> : null}
         {portal === 'therapist' ? (
