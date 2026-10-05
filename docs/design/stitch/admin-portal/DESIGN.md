@@ -1,38 +1,60 @@
-# Admin portal — mobile & PWA notes
+# Admin portal — Forest Light (operations)
 
-**Status:** Operational admin uses legacy clinical surfaces + `admin-*` components (not full Forest Light migration).  
-**Scope:** Staff on phones/tablets (case managers, finance, HR) who install **InsighteCase Admin** to the home screen.
+**Status:** Visual refresh shipped in code (`admin-forest-theme.css`); Stitch reference project for iteration.  
+**Implementation:** `.app-shell--admin.forest-light` · shared `admin-portal.css` + `admin-dashboard.css` + `admin-reports.css`.
+
+## Stitch project
+
+| Field | Value |
+|--------|--------|
+| Project ID | `319822486393192441` |
+| Title | InsighteCase Admin Portal — Forest Light |
+| Design system | `assets/d3e91569df33441fbf4421b9d1c8044a` (Forest Light Operations — generated with reports screen) |
+
+## Stitch screens
+
+| Screen | Stitch screen ID | Route · component |
+|--------|------------------|-------------------|
+| Clinical reports workspace | `aa5fe4ed10794951a5022aaa6333d7b7` | `/admin/reports` · `AdminReportsPage.jsx` |
+| Leadership home | _(generate next)_ | `/admin` · `AdminDashboardPage.jsx` |
+
+Mobile card lists remain a **code** concern (`AdminDataList` / `AdminTaskCard` at ≤900px).
+
+## Visual rules (aligned with parent Forest Light)
+
+| Token | Value |
+|-------|--------|
+| Page background | `#F7F8F5` |
+| Surface | `#FFFFFF` |
+| Border | `#DDE4DE` |
+| Primary / active | `#166534` · hover `#14532D` |
+| Soft fill | `#EAF3EC` |
+| Text | `#17211B` · muted `#526057` |
+
+**Do not use:** indigo/purple gradients (`#6366f1`, `#4f46e5`) on primary actions, eyebrows, or active tabs in new work.
+
+**Typography:** Manrope 600–700 for headings and panel titles; Inter for body and table cells. KPI values use `tabular-nums`.
+
+**Tables (`AdminDataList`):** Sticky header row, uppercase muted column labels, 12px cell padding, hover row `#F9FBF9`, wrapped in rounded border — no default zebra soup.
+
+**Buttons:** Min height 44px on mobile; primary solid forest green (no gradient shadow); secondary white + border; ghost soft green fill.
+
+**Motion:** No row lift/transform on hover for KPI or queue lists — border/background only (`table-ui-fix` density rule).
+
+## Mobile (≤900px)
+
+- Desktop table hidden; `admin-data-list__mobile` task cards (`admin-task-card`)
+- Full-width button groups in card footers
+- Admin tab bar scroll (`admin-portal-mobile.css`) uses forest active underline via `admin-forest-theme.css`
 
 ## PWA
 
-| Item | Value |
-|------|--------|
-| Manifest | `/manifest-admin.webmanifest` |
-| App name | InsighteCase Admin |
-| Config | `frontend/src/lib/portalPwa.js` → `PORTAL_PWA.admin` |
-| Sign-in | `/adminlogin` · `LoginPage` with `portalType="admin"` |
+See parent doc § PWA — admin login `/adminlogin`, manifest `manifest-admin.webmanifest`, `PwaStaleRecoveryHelp` on dashboard load errors.
 
-## After deploy — stale shortcut UX
+## Acceptance
 
-Same pattern as parent/therapist (`docs/design/stitch/parent-portal/DESIGN.md` § PWA):
-
-1. **Get latest** — service worker refresh via `refreshApp()`  
-2. **Open in browser** — copy URL; sign in outside the home-screen shell  
-3. **Re-add shortcut** — `PortalInstallSheets` instructions  
-
-Surfaces:
-
-- `LoginPage` (admin login) — `PwaStaleRecoveryHelp`
-- `PortalShell` (`portal="admin"`) — yellow banner when chunk load hint is set
-- `AdminDashboardPage` — recovery panel when dashboard API fails in standalone / stale hint
-
-## Mobile admin UX (existing patterns)
-
-- Lists: `AdminDataList` + card stack ≤900px (`frontend/docs/admin-mobile-ux.md`)
-- Dashboard: `AdminLeadershipOverview`, KPI grid, role queues — keep data density; no decorative row motion
-- Install control: top bar + sidebar `PortalInstallButton`
-
-## Future (not in scope)
-
-- Forest Light admin home migration (separate Stitch project when contracted)
-- Unified leadership + CM home visual parity with therapist `cov-*` surfaces
+- [x] Admin shell has `forest-light` class
+- [x] Primary buttons and active tabs forest green
+- [x] Tables: sticky headers + theme borders in admin shell
+- [ ] Stitch screens generated for dashboard + reports (reference)
+- [ ] CI visual spot-check on `/admin` and `/admin/reports`

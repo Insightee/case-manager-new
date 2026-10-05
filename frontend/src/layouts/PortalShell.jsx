@@ -379,7 +379,7 @@ export function PortalShell({ portal }) {
   const showNavIcons = portal === 'admin'
   const shellClass = [
     portal === 'admin'
-      ? 'app-shell app-shell--admin'
+      ? 'app-shell app-shell--admin forest-light'
       : portal === 'parent'
         ? 'app-shell app-shell--parent forest-light'
         : 'app-shell',
