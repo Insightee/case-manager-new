@@ -553,7 +553,9 @@ def build_reports_pipeline(db: Session, user: User) -> TherapistReportsPipelineR
         "draft": sum(1 for r in in_progress if r.get("status") == "draft"),
         "underReview": sum(1 for r in in_progress if r.get("status") == "under_review"),
         "published": len(published),
-        "overdue": sum(1 for a in attention if a.get("attentionType") == "overdue"),
+        "notStarted": sum(1 for a in attention if a.get("attentionType") == "not_started"),
+        "overdue": None,
+        "overdueAvailable": False,
     }
     return TherapistReportsPipelineResponse(
         attention=attention,

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.audit import log_audit
@@ -59,6 +59,7 @@ def create_client(
     allow_read: bool | None = None,
     allow_write: bool | None = None,
     case_ids: list[int] | None = None,
+    all_cases: bool = False,
     rate_limit_per_minute: int | None = None,
     access_token_minutes: int | None = None,
     key_ttl_days: int | None = None,
@@ -86,10 +87,13 @@ def create_client(
         key_ttl_days,
         fallback=int(settings.integration_credential_default_ttl_days),
     )
+    grant_all, explicit_ids = _resolve_case_grant_mode(db, case_ids or [], all_cases=all_cases)
+    _require_finance_grants(cleaned_scopes, grant_all=grant_all, case_ids=explicit_ids)
     client = IntegrationClient(
         name=name,
         status=IntegrationClientStatus.ACTIVE.value,
         scopes_json=cleaned_scopes,
+        all_cases=grant_all,
         rate_limit_per_minute=limit,
         access_token_minutes=token_minutes,
         key_ttl_days=ttl_days,
@@ -98,7 +102,7 @@ def create_client(
     )
     db.add(client)
     db.flush()
-    _replace_case_grants(db, client, case_ids or [])
+    _replace_case_grants(db, client, [] if grant_all else explicit_ids)
     issued = issue_credential_for_client(db, client)
     log_audit(
         db,
@@ -107,7 +111,12 @@ def create_client(
         action="integration.client_created",
         entity_type="integration_client",
         entity_id=client.id,
-        new_value={"name": name, "scopes": cleaned_scopes, "case_ids": case_ids or []},
+        new_value={
+            "name": name,
+            "scopes": cleaned_scopes,
+            "all_cases": grant_all,
+            "case_ids": [] if grant_all else explicit_ids,
+        },
         ip_address=ip_address,
         user_agent=user_agent,
     )
@@ -146,6 +155,7 @@ def update_client(
     allow_read: bool | None = None,
     allow_write: bool | None = None,
     case_ids: list[int] | None = None,
+    all_cases: bool | None = None,
     rate_limit_per_minute: int | None = None,
     access_token_minutes: int | None = None,
     key_ttl_days: int | None = None,
@@ -198,8 +208,21 @@ def update_client(
         if rate_limit_per_minute < 1 or rate_limit_per_minute > 1000:
             raise ValidationError("rate_limit_per_minute must be between 1 and 1000.")
         client.rate_limit_per_minute = rate_limit_per_minute
-    if case_ids is not None:
-        _replace_case_grants(db, client, case_ids)
+    scopes_changed = (
+        info_access is not None or allow_read is not None or allow_write is not None or scopes is not None
+    )
+    if case_ids is not None or all_cases is not None:
+        grant_all, explicit_ids = _resolve_case_grant_mode(
+            db,
+            case_ids if case_ids is not None else [g.case_id for g in (client.case_grants or [])],
+            all_cases=bool(all_cases) if all_cases is not None else bool(client.all_cases),
+        )
+        _require_finance_grants(client.scopes, grant_all=grant_all, case_ids=explicit_ids)
+        client.all_cases = grant_all
+        _replace_case_grants(db, client, [] if grant_all else explicit_ids)
+    elif scopes_changed:
+        explicit = [g.case_id for g in (client.case_grants or [])]
+        _require_finance_grants(client.scopes, grant_all=bool(client.all_cases), case_ids=explicit)
     client.updated_at = datetime.now(timezone.utc)
     log_audit(
         db,
@@ -211,6 +234,7 @@ def update_client(
         new_value={
             "name": client.name,
             "scopes": client.scopes,
+            "all_cases": client.all_cases,
             "case_ids": case_ids,
             "rate_limit_per_minute": client.rate_limit_per_minute,
         },
@@ -272,10 +296,37 @@ def revoke_client_admin(
     return client
 
 
+def _require_finance_grants(scopes: list[str], *, grant_all: bool, case_ids: list[int]) -> None:
+    if "finance:read" in scopes and not grant_all and not case_ids:
+        raise ValidationError(
+            "Finance reads need case access. Grant every case, or pick the cases this key can see."
+        )
+
+
+def _resolve_case_grant_mode(
+    db: Session, case_ids: list[int], *, all_cases: bool
+) -> tuple[bool, list[int]]:
+    """Return (grant every case, explicit ids). Selecting every case is all_cases, not an empty list."""
+    unique_ids = sorted({int(c) for c in case_ids})
+    if all_cases:
+        return True, []
+    if unique_ids:
+        every_case = set(db.scalars(select(Case.id)).all())
+        if every_case and set(unique_ids) >= every_case:
+            return True, []
+    if len(unique_ids) > 500:
+        raise ValidationError(
+            "A maximum of 500 explicit case grants is allowed. Grant every case instead of listing each id."
+        )
+    return False, unique_ids
+
+
 def _replace_case_grants(db: Session, client: IntegrationClient, case_ids: list[int]) -> None:
     unique_ids = sorted({int(c) for c in case_ids})
     if len(unique_ids) > 500:
-        raise ValidationError("A maximum of 500 case grants is allowed per client.")
+        raise ValidationError(
+            "A maximum of 500 explicit case grants is allowed. Grant every case instead of listing each id."
+        )
     if unique_ids:
         found = set(db.scalars(select(Case.id).where(Case.id.in_(unique_ids))).all())
         missing = [c for c in unique_ids if c not in found]
@@ -315,10 +366,21 @@ def recent_signals(db: Session, client_id: int, *, limit: int = 8) -> list[dict]
     ]
 
 
-def client_to_admin_dict(client: IntegrationClient, *, signals: list[dict] | None = None) -> dict:
+def client_to_admin_dict(
+    client: IntegrationClient, *, signals: list[dict] | None = None, db: Session | None = None
+) -> dict:
     active_creds = [c for c in (client.credentials or []) if c.revoked_at is None]
     current = _active_credential(client)
     described = describe_scopes(client.scopes)
+    explicit_ids = sorted(g.case_id for g in (client.case_grants or []))
+    if client.all_cases:
+        granted_case_count = (
+            int(db.scalar(select(func.count()).select_from(Case)) or 0) if db is not None else None
+        )
+        case_ids: list[int] = []
+    else:
+        granted_case_count = len(explicit_ids)
+        case_ids = explicit_ids
     return {
         "id": client.id,
         "name": client.name,
@@ -333,7 +395,9 @@ def client_to_admin_dict(client: IntegrationClient, *, signals: list[dict] | Non
         "public_client_id": current.public_client_id if current else None,
         "key_expires_at": current.expires_at.isoformat() if current and current.expires_at else None,
         "rate_limit_per_minute": client.rate_limit_per_minute,
-        "case_ids": sorted(g.case_id for g in (client.case_grants or [])),
+        "all_cases": bool(client.all_cases),
+        "case_ids": case_ids,
+        "granted_case_count": granted_case_count,
         "active_credential_count": len(active_creds),
         "recent_signals": signals or [],
         "created_at": client.created_at.isoformat() if client.created_at else None,

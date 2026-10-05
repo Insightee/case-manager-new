@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.audit_event import AuditEvent
 from app.models.case import Case
-from app.models.integration import IntegrationCredential
+from app.models.integration import IntegrationCaseGrant, IntegrationClient, IntegrationCredential
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
@@ -342,6 +342,8 @@ def test_mcp_tools_registered():
     assert "get_anonymised_ops_summary" in names
     assert "list_therapist_profiles" in names
     assert "create_therapist_profile" in names
+    assert "get_finance_receivables" in names
+    assert "get_finance_ledger" in names
 
 
 def test_mcp_invalid_inputs_safe_error():
@@ -784,3 +786,93 @@ def test_key_ttl_save_does_not_restart_or_revive(client):
         assert cred.is_usable is False
     finally:
         db.close()
+
+
+def test_all_cases_grant_is_not_zero(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    created_res = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={
+            "name": "All cases finance reader",
+            "scopes": ["cases:read", "finance:read"],
+            "case_ids": [],
+            "all_cases": True,
+        },
+    )
+    assert created_res.status_code == 201, created_res.text
+    created = created_res.json()
+    assert created["all_cases"] is True
+    assert created["case_ids"] == []
+    assert created["granted_case_count"] > 0
+
+    token_res = _token(client, created["client_id"], created["client_secret"])
+    assert token_res.status_code == 200, token_res.text
+    headers = {"Authorization": f"Bearer {token_res.json()['access_token']}"}
+
+    cases = client.get("/api/v1/integrations/v1/cases", headers=headers)
+    assert cases.status_code == 200, cases.text
+    assert cases.json()["total"] > 0
+
+    receivables = client.get(
+        "/api/v1/integrations/v1/finance/receivables",
+        headers=headers,
+        params={"billing_month": "2026-09"},
+    )
+    assert receivables.status_code == 200, receivables.text
+    body = receivables.json()
+    assert body["accessGap"] is False
+    assert body["allCases"] is True
+    assert body["grantedCaseCount"] > 0
+    assert body["billingMonth"] == "2026-09"
+
+    ledger = client.get(
+        "/api/v1/integrations/v1/finance/ledger",
+        headers=headers,
+        params={"billing_month": "2026-09"},
+    )
+    assert ledger.status_code == 200, ledger.text
+    assert ledger.json()["grantedCaseCount"] > 0
+    assert ledger.json()["accessGap"] is False
+
+
+def test_finance_read_without_grants_is_rejected(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    res = client.post(
+        "/api/v1/admin/integration-clients",
+        headers=admin,
+        json={"name": "Finance with no cases", "scopes": ["finance:read"], "case_ids": []},
+    )
+    assert res.status_code == 422, res.text
+    assert "every case" in res.json()["detail"]["message"].lower()
+
+
+def test_cleared_case_grants_are_an_access_gap(client):
+    admin = login_headers(client, "superadmin@demo.com")
+    db = SessionLocal()
+    try:
+        case_id = db.scalars(select(Case.id).limit(1)).first()
+    finally:
+        db.close()
+    created = _create_integration_client(client, admin, scopes=["finance:read"], case_ids=[case_id])
+    db = SessionLocal()
+    try:
+        row = db.get(IntegrationClient, created["id"])
+        row.all_cases = False
+        db.execute(delete(IntegrationCaseGrant).where(IntegrationCaseGrant.integration_client_id == created["id"]))
+        db.commit()
+    finally:
+        db.close()
+
+    token_res = _token(client, created["client_id"], created["client_secret"])
+    assert token_res.status_code == 200, token_res.text
+    headers = {"Authorization": f"Bearer {token_res.json()['access_token']}"}
+    res = client.get(
+        "/api/v1/integrations/v1/finance/receivables",
+        headers=headers,
+        params={"billing_month": "2026-09"},
+    )
+    assert res.status_code == 403, res.text
+    message = res.json()["detail"]["message"].lower()
+    assert "no case grants" in message
+    assert "access gap" in message

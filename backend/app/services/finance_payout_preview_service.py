@@ -1084,8 +1084,12 @@ def payout_preview_rows(
     *,
     user: User | None = None,
     product_module: str | None = None,
+    case_id: int | None = None,
+    therapist_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
     cases = scoped_cases(db, user, product_module=product_module, active_only=True)
+    if case_id:
+        cases = [c for c in cases if c.id == int(case_id)]
     if not cases:
         return []
 
@@ -1096,6 +1100,8 @@ def payout_preview_rows(
         for segment in build_cycle_segments(db, case, ym):
             therapist = db.get(User, segment.therapist_user_id)
             if not therapist:
+                continue
+            if therapist_user_id and segment.therapist_user_id != int(therapist_user_id):
                 continue
             leave = {
                 "paid": segment.paid_leaves,

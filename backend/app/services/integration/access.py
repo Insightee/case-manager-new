@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.case import Case
 from app.models.integration import IntegrationCaseGrant, IntegrationClient
 from app.services.integration.errors import ForbiddenError, NotFoundError
 
@@ -33,6 +34,9 @@ def require_mcp(principal: IntegrationPrincipal) -> None:
 
 
 def granted_case_ids(db: Session, principal: IntegrationPrincipal) -> set[int]:
+    if principal.client.all_cases:
+        rows = db.scalars(select(Case.id)).all()
+        return set(int(x) for x in rows)
     rows = db.scalars(
         select(IntegrationCaseGrant.case_id).where(
             IntegrationCaseGrant.integration_client_id == principal.client_id
@@ -42,6 +46,10 @@ def granted_case_ids(db: Session, principal: IntegrationPrincipal) -> set[int]:
 
 
 def require_case_grant(db: Session, principal: IntegrationPrincipal, case_id: int) -> None:
+    if principal.client.all_cases:
+        if db.get(Case, case_id) is None:
+            raise NotFoundError("Case not found")
+        return
     granted = db.scalars(
         select(IntegrationCaseGrant.id).where(
             IntegrationCaseGrant.integration_client_id == principal.client_id,

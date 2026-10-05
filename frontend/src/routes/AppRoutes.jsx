@@ -135,6 +135,16 @@ const AdminSupportHubPage = lazy(() =>
 const AdminHrReportsPage = lazy(() =>
   import('../components/admin-portal/AdminHrReportsPage.jsx').then((m) => ({ default: m.AdminHrReportsPage }))
 )
+const AdminTherapistAttentionPage = lazy(() =>
+  import('../components/admin-portal/AdminTherapistAttentionPage.jsx').then((m) => ({
+    default: m.AdminTherapistAttentionPage,
+  }))
+)
+const AdminDataExceptionsPage = lazy(() =>
+  import('../components/admin-portal/AdminDataExceptionsPage.jsx').then((m) => ({
+    default: m.AdminDataExceptionsPage,
+  }))
+)
 const AdminPlatformStatsPage = lazy(() =>
   import('../components/admin-portal/AdminPlatformStatsPage.jsx').then((m) => ({
     default: m.AdminPlatformStatsPage,
@@ -659,6 +669,22 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminHrReportsPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="therapist-attention"
+          element={
+            <Lazy>
+              <AdminTherapistAttentionPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="data-exceptions"
+          element={
+            <Lazy>
+              <AdminDataExceptionsPage />
             </Lazy>
           }
         />

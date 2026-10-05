@@ -210,6 +210,7 @@ export function AdminIntegrationsPage() {
       access_token_minutes: payload.access_token_minutes,
       key_ttl_days: payload.key_ttl_days,
       mcp_enabled: payload.mcp_enabled,
+      all_cases: payload.all_cases,
       case_ids: payload.case_ids,
       scopes: scopesFromDraft(draft),
       public_client_id: sheet?.mode === 'edit'
@@ -460,9 +461,11 @@ export function AdminIntegrationsPage() {
                 {client.allow_write ? <span className="integrations-pill integrations-pill--write">Write</span> : null}
               </div>
               <p className="integrations-note">
-                {(client.case_ids || []).length
-                  ? `Granted cases: ${client.case_ids.join(', ')}`
-                  : 'No case grants yet. Add case IDs before this key can see case data.'}
+                {client.all_cases
+                  ? `Every case is granted${client.granted_case_count != null ? ` (${client.granted_case_count})` : ''}.`
+                  : (client.case_ids || []).length
+                    ? `Granted cases: ${client.case_ids.join(', ')}`
+                    : 'No case grants yet. Grant every case, or add case IDs, before this key can see case data.'}
               </p>
               {client.status === 'active' ? (
                 <div className="integrations-card__actions">
@@ -652,11 +655,14 @@ export function AdminIntegrationsPage() {
                 <div className="integrations-field">
                   <label htmlFor="integration-cases-search">Granted cases</label>
                   <p className="integrations-note">
-                    Blank means this key cannot see any case. Filter the list, then tap cases to grant.
+                    Blank means this key cannot see any case. Grant every case, or filter the list and tap cases.
                   </p>
                   <IntegrationCaseGrantPicker
                     value={draft.caseIdsText}
-                    onChange={(caseIdsText) => patchDraft({ caseIdsText })}
+                    allCases={Boolean(draft.allCases)}
+                    onChange={(caseIdsText) => patchDraft({ caseIdsText, allCases: false })}
+                    onGrantEvery={() => patchDraft({ allCases: true, caseIdsText: '' })}
+                    onChooseSpecific={() => patchDraft({ allCases: false })}
                   />
                 </div>
                 <AccessSwitch

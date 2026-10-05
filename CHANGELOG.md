@@ -1,6 +1,11 @@
 ## [Unreleased]
 
 ### Added
+- Super-admin `/admin` home is a period-aware leadership overview (IST month): current vs during-period labels, all six case statuses, assignment gaps, session categories, finance snapshot cards, open vs in-progress tickets, in-app staff attendance, work queues that are not summed together, plus drill-downs for **Therapist attention** (`/admin/therapist-attention`) and **Data exceptions** (`/admin/data-exceptions`). Failed modules error locally instead of showing 0. `GET /api/v1/admin/dashboard/summary` now includes `leadership`; `GET /api/v1/admin/leadership/*` serves the detail reports.
+- Metric contracts in [docs/REPORT_METRICS.md](docs/REPORT_METRICS.md): payout preview vs collections, Support ticket report vs HR parent-tickets export, login vs activity, current vs period, confirmed vs pending. Production totals are not verified in this environment.
+- Support hub **Ticket report** for staff who already handle tickets: read-only counts (status, category, module, who raised, who replied, first-reply hours, aging, repeating questions) and the open plus in-progress queue, with the same filters and an Excel download. POSH and CPP stay as counts. The page does not reply, close, or change a ticket. `GET /api/v1/admin/support/ticket-report` and `GET /api/v1/admin/support/ticket-report.xlsx`.
+- Month-end auto-submit raises therapist payout invoices still missing at 11:59 PM IST on the last day of the month (`scripts/auto_submit_month_end_invoices.py`, Railway cron `29 18 * * *`). A manual `--month YYYY-MM` backfill uses the same submit path.
+- Integration keys can grant every case (`all_cases`) and read receivables and ledger totals with `finance:read` on `/api/v1/integrations/v1/finance/*` and MCP tools `get_finance_receivables` / `get_finance_ledger`. An empty case list is zero access, not an empty month. Alembic `tp_qual_cards_1001` → `i2all3cases4fin`.
 - Integration keys can list and create therapist website profiles (`profiles:read` / `profiles:write`) from `GET/POST /api/v1/integrations/v1/therapist-profiles` and MCP tools `list_therapist_profiles` / `create_therapist_profile`. Listing fields only; create status is always `PENDING`.
 - Super admin **Integrations** screen: API keys, webhooks, and MCP, with read/write, token life, key validity, and seven information-access toggles. Writes land as structured `pending_review` signals and cannot complete a report. Alembic `st1ff4tt3nd1` → `bb6328f4ca05`.
 - Therapist invoice: **In this pay / Waiting on review / Doesn’t change pay** buckets; next-month **session count** for non-counselling homecare package/per-session; consolidated PDF with Insighte Childcare letterhead (`INVOICE_COMPANY_*`); HR TDS % on profile; submit prefills TDS (default 10%).
@@ -17,7 +22,15 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Finance, HR, and Operations **Downloads** share one report library: pick any permitted export, set month / case type / period start and end / report status, then generate or download. Clinical `/admin/reports` stays the review workspace, with a Downloads tab for the same library.
+- Clinical `/admin/reports` month is a real month picker; report status and case type stay visible on the queue and all-reports views.
+- Shared billing-month parser (`YYYY-MM`, `Oct 2026`, `October 2026`) for HR, finance, and control-tower month filters. IST defaults replace UTC `toISOString()` / `date.today()` on those surfaces.
+- Dashboard ticket cards drill into `/admin/support?tab=ticket-report`. Open and in-progress stay separate; needs action is both.
+- HR report categories grouped as Attendance and delivery, Work and session ops, Business and cases, Work and approvals.
+- Therapist monthly pipeline **Overdue** is unavailable (no due policy); **Not started** is the supported missing-month count.
+- Clinical-engine approve requires `monthly_report.approve` (or admin override), not case visibility alone. The engine is not enabled by this change.
 - Integration API key sheet grants cases from a filtered picker (all, assigned to me, status) instead of typing IDs.
+
 - Therapist listing quality is scored live (photo, address + pincode, 10-digit phone, 40-word public bio, one degree, services). Submit at 50%+; auto-publish above 80% when photo, pincode, bio, and a degree are present. Below that, admin reviews or requests changes. Login popup stays off after a prior submit.
 - Therapist profile completion is a reminder, not a hard gate: sessions and session logs stay available. A popup with deadline **3 October** and **Edit your details** appears on login and again on sign-out until the profile is submitted.
 - Leave management report tab and CSV export now call `GET /api/v1/leave/period-export` instead of `/leave/report` so browser ad blockers do not silently block the request. Legacy `/leave/report` remains for API clients.
@@ -28,7 +41,7 @@
 - Meetings: therapist booking uses the same CM availability API as case managers; unchecked weekdays stay closed after CM saves availability; CM-only availability/Google UI hidden on therapist portal; mobile bottom-sheet modals for book/reschedule/cancel. `Session cancelled` / `Paid leave` / `Unpaid leave` (no extra Still paid / Not billed chips); shadow may choose unpaid while credits remain (paid default); parent invoice lines use the same cancelled wording and show planned next-month session count when present.
 - Finance snapshot enabled on insighte.org: Railway `ENABLE_BILLING=true` (read-only tower routes); Vercel Production `VITE_ENABLE_FINANCE_DASHBOARD_V1=true` + `VITE_FINANCE_DASHBOARD_ALLOW_PROD=true`. Ledger writes remain off. Runbook: `docs/FINANCE_SNAPSHOT_PROD_CUTOVER.md`, script: `scripts/enable_finance_snapshot_prod.py`.
 - Finance therapist payout preview Excel/CSV columns aligned to lumpsum billing: **Billing Type**, **Client Amount (INR)** (was package-only `Lumpsum Amount`), **Therapist Pay (INR)**, **Therapist Unit Pay (INR)** — no share/% headers. Closed snapshots remap legacy headers on read. Postgres migration proof registry includes Alembic head `v6w7x8y9z0a1`.
-- Finance Reports UI uses a card catalog (all 10 report types) with clearer empty states instead of a single dropdown.
+- Finance Reports stays **Therapist payout preview** with generate-before-run, IST month, and honest pagination (replacing the 10-report card catalog on this page).
 - Therapist compensation is lumpsum-only (`FIXED_LUMP`): UI and writers no longer offer percentage; `resolve_therapist_pay` reads `therapist_fixed_pay_inr` with fallback to legacy `pay_share_amount_inr`. Existing PERCENTAGE rows are copy-migrated (amounts already INR — not re-multiplied).
 - Finance **Margin by case** report includes `marginPct` and flags rows where Insighte margin is under 30% (`LOW_MARGIN_BELOW_30`); UI highlights those rows.
 - Payout preview / HR billing snapshot columns use lumpsum labels (`Therapist Pay (INR)`, `Per Session Pay (INR)`) instead of legacy “share” / PERCENTAGE wording; closed-month snapshots remap old headers on read.
@@ -41,7 +54,11 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Finance Reports page no longer uses unstyled invoice filter classes, so month, case type, period start/end, and report status are actually pickable on every generateable export. The same library lists payouts, collections, outstanding, and monthly billing.
+- Clinical-engine approve rejects therapists with 403 (reviewer role required), not a 400 status-state error.
+- Collections totals use `client_payments.payment_status` (not a missing `status` field) and honour cash-period vs invoice-month cohort. Outstanding stays a current snapshot unless the caller asks for a billing-month cohort. Control tower matches therapist `Invoice.month` aliases including `May 2026`. Case status mix includes `PENDING_REPLACEMENT` and `DEACTIVATED`. Monthly/observation completed counts include `PUBLISHED` as well as `APPROVED`. Parent portal export columns say login, not activity.
 - CI Alembic head gates now match `tp_qual_level_2703` (academic qualification level) and register that revision in the Postgres migration proof.
+
 - Leave and child absence are unique per **case×day** (disjoint cases the same day stay allowed). Shadow leave counts only dates with a session or booked slot, so a Saturday without a session is not deducted. Paid/unpaid days recompute on approve from live monthly credits; invoice copy explains missing employment start date vs remaining credits.
 - Month-spanning leave applies paid credits to the earliest billable days and bills each month by that day’s real paid/unpaid status (no 50/50 rounding that zeroed mixed leave on both invoices).
 - Meetings: slot validation no longer blocks double-booking conflict messages; `min_notice_minutes=0` saves correctly; therapist slot picker respects assigned case manager availability windows.

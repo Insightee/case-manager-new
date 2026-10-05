@@ -30,6 +30,45 @@ def staff_may_see_ticket(db: Session, user: User, ticket: SupportTicket) -> bool
     return may_read_support_ticket(db, user, ticket)
 
 
+def staff_ticket_visibility_clause(db: Session, user: User):
+    """SQL scope used by the staff ticket list. None means no extra restriction."""
+    scope = support_scope(user, db)
+    scope_clause = None
+    if scope == "none":
+        scope_clause = SupportTicket.raised_by_user_id == user.id
+    elif scope == "finance_desk":
+        scope_clause = ticket_esc.finance_desk_ticket_clause(user.id)
+    elif scope == "hr_desk":
+        scope_clause = ticket_esc.hr_desk_ticket_clause(user.id)
+    elif scope == "admin_desk":
+        scope_clause = ticket_esc.admin_desk_ticket_clause(user.id)
+    elif user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
+        if is_team_scoped_support_user(user):
+            scope_clause = team_support_ticket_clause(user)
+        else:
+            allowed = get_allowed_case_product_modules(user)
+            if allowed is not None:
+                if not allowed:
+                    scope_clause = SupportTicket.id < 0
+                else:
+                    scope_clause = or_(
+                        SupportTicket.case_id.is_(None),
+                        SupportTicket.product_module.in_(allowed),
+                        SupportTicket.product_module.is_(None),
+                    )
+    else:
+        scope_clause = SupportTicket.raised_by_user_id == user.id
+
+    department_clause = None
+    if scope != "full" and user.department and user_has_permission(user, "ticket.manage"):
+        department_clause = SupportTicket.escalated_to_department == user.department
+    if scope_clause is not None and department_clause is not None:
+        return or_(scope_clause, department_clause)
+    if scope_clause is not None:
+        return scope_clause
+    return department_clause
+
+
 def _apply_ticket_search(stmt, search: str | None):
     """Filter tickets by subject, id, case/client/parent/therapist names, or raiser/assignee."""
     q = (search or "").strip()
@@ -128,42 +167,9 @@ def list_tickets_for_user(
         stmt = stmt.where(SupportTicket.status == status)
     stmt = _apply_ticket_search(stmt, search)
 
-    scope = support_scope(user, db)
-    scope_clause = None
-    if scope == "none":
-        scope_clause = SupportTicket.raised_by_user_id == user.id
-    elif scope == "finance_desk":
-        scope_clause = ticket_esc.finance_desk_ticket_clause(user.id)
-    elif scope == "hr_desk":
-        scope_clause = ticket_esc.hr_desk_ticket_clause(user.id)
-    elif scope == "admin_desk":
-        scope_clause = ticket_esc.admin_desk_ticket_clause(user.id)
-    elif user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
-        if is_team_scoped_support_user(user):
-            scope_clause = team_support_ticket_clause(user)
-        else:
-            allowed = get_allowed_case_product_modules(user)
-            if allowed is not None:
-                if not allowed:
-                    scope_clause = SupportTicket.id < 0
-                else:
-                    scope_clause = or_(
-                        SupportTicket.case_id.is_(None),
-                        SupportTicket.product_module.in_(allowed),
-                        SupportTicket.product_module.is_(None),
-                    )
-    else:
-        scope_clause = SupportTicket.raised_by_user_id == user.id
-
-    department_clause = None
-    if scope != "full" and user.department and user_has_permission(user, "ticket.manage"):
-        department_clause = SupportTicket.escalated_to_department == user.department
-    if scope_clause is not None and department_clause is not None:
-        stmt = stmt.where(or_(scope_clause, department_clause))
-    elif scope_clause is not None:
-        stmt = stmt.where(scope_clause)
-    elif department_clause is not None:
-        stmt = stmt.where(department_clause)
+    visibility = staff_ticket_visibility_clause(db, user)
+    if visibility is not None:
+        stmt = stmt.where(visibility)
 
     rows, total = paginate_query(db, stmt, page=page, page_size=page_size)
     case_ids = {t.case_id for t in rows if t.case_id}

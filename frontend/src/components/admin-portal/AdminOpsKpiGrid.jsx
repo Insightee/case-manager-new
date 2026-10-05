@@ -6,8 +6,8 @@ const LANDING_HINTS = {
   FINANCE: 'Finance lands on Invoices.',
 }
 
-function kpi(title, value, hint, tone, icon, to) {
-  return { title, value: value ?? '—', hint, tone, icon, to }
+function kpi(title, value, hint, tone, icon, to, basis = 'Current') {
+  return { title, value: value ?? '—', hint, tone, icon, to, basis }
 }
 
 export function buildAdminKpis({ summary, role, canNavigate, can }) {
@@ -18,6 +18,7 @@ export function buildAdminKpis({ summary, role, canNavigate, can }) {
   const showFinanceInvoices = can('invoice.approve') && (!clinicalPrimary || financePrimary)
   const showClinical =
     can('monthly_report.approve') || can('case.update') || can('iep.read')
+  const ticketHref = '/admin/support?tab=ticket-report'
 
   const items = []
 
@@ -41,7 +42,7 @@ export function buildAdminKpis({ summary, role, canNavigate, can }) {
         'Observation checklists',
         summary.observation_checklists_pending,
         summary.observation_checklists_overdue
-          ? `${summary.observation_checklists_overdue} overdue`
+          ? `${summary.observation_checklists_overdue} overdue (due date set)`
           : 'Awaiting CM review',
         'indigo',
         '☑',
@@ -111,7 +112,16 @@ export function buildAdminKpis({ summary, role, canNavigate, can }) {
 
   if (!financePrimary && can('ticket.manage')) {
     items.push(
-      kpi('Open tickets', summary.open_tickets, 'Support workload', 'slate', '✉', '/admin/tickets'),
+      kpi(
+        'Open tickets',
+        summary.open_tickets,
+        summary.in_progress_tickets
+          ? `${summary.in_progress_tickets} in progress · needs action ${summary.tickets_needing_action ?? ''}`
+          : 'Open now (in progress counted separately)',
+        'slate',
+        '✉',
+        ticketHref,
+      ),
     )
   }
 
@@ -132,15 +142,16 @@ export function AdminOpsKpiGrid({ kpis, loading }) {
     <section className="admin-kpi-grid" aria-label="Key metrics">
       {loading
         ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="admin-skeleton" />)
-        : kpis.map((kpi) => (
+        : kpis.map((kpiItem) => (
             <AdminStatCard
-              key={kpi.title}
-              title={kpi.title}
-              value={kpi.value}
-              hint={kpi.hint}
-              tone={kpi.tone}
-              icon={kpi.icon}
-              to={kpi.to}
+              key={kpiItem.title}
+              title={kpiItem.title}
+              value={kpiItem.value}
+              hint={kpiItem.hint}
+              tone={kpiItem.tone}
+              icon={kpiItem.icon}
+              to={kpiItem.to}
+              basis={kpiItem.basis}
             />
           ))}
     </section>

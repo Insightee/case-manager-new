@@ -15,12 +15,12 @@ import {
 } from './integrationDesk.js'
 
 describe('integrationDesk', () => {
-  it('exposes eight information areas and seven webhook events', () => {
-    assert.equal(INFO_ACCESS.length, 8)
+  it('exposes nine information areas and seven webhook events', () => {
+    assert.equal(INFO_ACCESS.length, 9)
     assert.equal(WEBHOOK_EVENTS.length, 7)
     assert.deepEqual(
       INFO_ACCESS.map((item) => item.id),
-      ['cases', 'sessions', 'reports', 'goals', 'iep', 'reporting', 'ops', 'profiles'],
+      ['cases', 'sessions', 'reports', 'goals', 'iep', 'reporting', 'ops', 'profiles', 'finance'],
     )
   })
 
@@ -42,6 +42,8 @@ describe('integrationDesk', () => {
     assert.equal(scopes.includes('iep:write'), false)
     assert.equal(scopes.includes('ops:write'), false)
     assert.ok(scopes.includes('reports:read'))
+    assert.ok(scopes.includes('finance:read'))
+    assert.equal(scopes.includes('finance:write'), false)
   })
 
   it('asks for read or write and at least one information area', () => {
@@ -78,6 +80,7 @@ describe('integrationDesk', () => {
     })
     assert.equal(payload.name, 'School agent')
     assert.deepEqual(payload.case_ids, [3, 9])
+    assert.equal(payload.all_cases, false)
     assert.equal(payload.allow_read, true)
     assert.equal(payload.allow_write, true)
     assert.equal(payload.mcp_enabled, true)

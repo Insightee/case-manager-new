@@ -86,6 +86,52 @@ export function todayIsoIST() {
   return new Date().toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE })
 }
 
+/** Current billing month in IST (YYYY-MM). */
+export function currentBillingMonthIST() {
+  return todayIsoIST().slice(0, 7)
+}
+
+/** First and last IST calendar dates of YYYY-MM. */
+export function isoMonthDateBounds(ym) {
+  const match = String(ym || '').match(/^(\d{4})-(\d{2})$/)
+  if (!match) {
+    const today = todayIsoIST()
+    return { dateFrom: `${today.slice(0, 8)}01`, dateTo: today }
+  }
+  const y = Number(match[1])
+  const m = Number(match[2])
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return {
+    dateFrom: `${match[1]}-${match[2]}-01`,
+    dateTo: `${match[1]}-${match[2]}-${String(last).padStart(2, '0')}`,
+  }
+}
+
+/** YYYY-MM → "October 2026" (UTC month, no timezone shift). */
+export function isoMonthToLongLabel(ym) {
+  const match = String(ym || '').match(/^(\d{4})-(\d{2})$/)
+  if (!match) return ym || ''
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)).toLocaleString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+/** "October 2026" / "Oct 2026" / YYYY-MM → YYYY-MM when parseable. */
+export function longLabelToIsoMonth(value) {
+  const raw = String(value || '').trim()
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw
+  const parsed = Date.parse(`${raw} UTC`)
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed)
+    if (!Number.isNaN(d.getTime())) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+    }
+  }
+  return raw
+}
+
 export function actualDurationMinsIST(startIso, endIso) {
   const start = parseApiDatetime(startIso)
   const end = parseApiDatetime(endIso)

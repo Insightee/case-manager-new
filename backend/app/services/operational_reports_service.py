@@ -378,7 +378,7 @@ def session_log_detail_rows(
     therapist_user_id: int | None = None,
     case_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    today = date.today()
+    today = today_ist()
     d_from = parse_iso_date(date_from, today.replace(day=1))
     d_to = parse_iso_date(date_to, today)
 
@@ -983,7 +983,7 @@ def inactive_clients_rows(
     product_module: str | None = None,
     case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
-    today = date.today()
+    today = today_ist()
     cases = scoped_cases(
         db,
         user,
@@ -1063,7 +1063,7 @@ def parent_portal_usage_rows(
     product_module: str | None = None,
     case_manager_user_id: int | list[int] | None = None,
 ) -> list[dict[str, Any]]:
-    today = date.today()
+    today = today_ist()
     cases = scoped_cases(
         db,
         user,
@@ -1103,7 +1103,7 @@ def parent_portal_usage_rows(
                 **case_people_export_fields(case, therapist=therapist, parent_info=parent),
                 "Login Status": "Active" if is_active else "Inactive",
                 "Last Login": last_login.date().isoformat() if last_login else "",
-                "Days Since Last Activity": days_since_activity
+                "Days Since Last Login": days_since_activity
                 if days_since_activity is not None
                 else "",
                 "Case Status": enum_value(case.status),
@@ -1112,8 +1112,8 @@ def parent_portal_usage_rows(
         )
     rows.sort(
         key=lambda r: (
-            r["Days Since Last Activity"]
-            if isinstance(r["Days Since Last Activity"], int)
+            r["Days Since Last Login"]
+            if isinstance(r["Days Since Last Login"], int)
             else -1
         ),
         reverse=True,

@@ -9,6 +9,7 @@ from app.services.integration import (
     case_query,
     framework_query,
     ops_summary,
+    finance_query,
     profile_directory,
     report_query,
     session_summary,
@@ -92,6 +93,14 @@ def list_pending_reporting(
 
 def get_anonymised_ops_summary(principal: IntegrationPrincipal) -> dict[str, Any]:
     return _run(ops_summary.get_anonymised_ops_summary, principal)
+
+
+def get_finance_receivables(principal: IntegrationPrincipal, billing_month: str) -> dict[str, Any]:
+    return _run(finance_query.receivables_summary, principal, billing_month=billing_month)
+
+
+def get_finance_ledger(principal: IntegrationPrincipal, billing_month: str) -> dict[str, Any]:
+    return _run(finance_query.ledger_summary, principal, billing_month=billing_month)
 
 
 def list_goal_framework(

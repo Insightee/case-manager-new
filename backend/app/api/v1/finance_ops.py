@@ -296,16 +296,44 @@ def close_billing_month(
     return result
 
 
+@router.get("/finance-reports/catalog")
+def finance_report_catalog(
+    user: User = Depends(require_permission("invoice.approve")),
+):
+    return finance_reports_service.catalog_payload()
+
+
 @router.get("/finance-reports/{report_key}")
 def finance_report(
     report_key: str,
     billing_month: Optional[str] = None,
     format: str = Query("json", pattern="^(json|csv|xlsx)$"),
+    product_module: Optional[str] = None,
+    case_id: Optional[int] = Query(None),
+    therapist_user_id: Optional[int] = Query(None),
+    date_basis: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     user: User = Depends(require_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
     try:
-        rows = finance_reports_service.report_rows(db, report_key, billing_month=billing_month)
+        rows = finance_reports_service.report_rows(
+            db,
+            report_key,
+            billing_month=billing_month,
+            user=user,
+            product_module=product_module,
+            case_id=case_id,
+            therapist_user_id=therapist_user_id,
+            date_basis=date_basis,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -343,15 +371,29 @@ def finance_report(
             headers={"Content-Disposition": f'attachment; filename="{report_key}.xlsx"'},
         )
 
+    extras: dict = {}
+    if report_key == "collections":
+        extras["confirmedTotalInr"] = sum(
+            float(r.get("amountInr") or 0) for r in rows if r.get("paymentStatus") == "CONFIRMED"
+        )
+        extras["pendingClaimCount"] = sum(1 for r in rows if r.get("paymentStatus") == "PENDING_REVIEW")
+        extras["dateBasis"] = (rows[0].get("dateBasis") if rows else None) or date_basis or "cash_period"
+
+    start = (page - 1) * page_size
+    page_rows = rows[start : start + page_size]
     return {
         "reportKey": report_key,
         "title": title,
-        "rows": rows,
+        "rows": page_rows,
         "count": len(rows),
+        "page": page,
+        "pageSize": page_size,
+        "previewLimited": len(page_rows) < len(rows),
         "generatedBy": meta["generated_by"],
         "generatedAt": meta["generated_at"],
         "billingMonthClosed": month_closed,
         "dataSource": data_source,
+        **extras,
     }
 
 
