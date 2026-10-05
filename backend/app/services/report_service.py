@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.billing_month import try_parse_billing_month, therapist_invoice_month_keys
+from app.core.config import settings
 from app.core.module_access import get_allowed_case_product_modules
 from app.core.pagination import paginate_query, paginated_response
 from app.core.permissions import case_scope_check, user_has_permission
