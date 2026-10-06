@@ -201,7 +201,7 @@ export function StaffTimerPanel({ title = "Today's session", subtitle, className
                 <p className="admin-muted staff-timer-panel__mode-hint">
                   {workMode === 'WFH' || lockedWorkMode === 'WFH'
                     ? `${wfhUsed} of ${wfhLimit} WFH days used this month (${wfhRemaining} left). Location is captured when you start.`
-                    : `Office start requires you within about ${todayState?.office_radius_meters ?? 300} m of ${todayState?.office_label || 'the office'}.`}
+                    : `Office start requires you within about ${todayState?.office_radius_meters ?? 500} m of ${todayState?.office_label || 'the office'}.`}
                 </p>
               </div>
             ) : null}

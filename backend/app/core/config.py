@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Staff attendance — office geofence (AECS Layout, Bengaluru; override via Railway).
     staff_office_latitude: float = 12.964118
     staff_office_longitude: float = 77.713036
-    staff_office_radius_meters: float = 300.0
+    staff_office_radius_meters: float = 500.0
     staff_office_label: str = "Insighte office (AECS Layout, Bengaluru)"
     staff_wfh_days_per_month: int = 15
     # IST calendar dates on/after this count toward the monthly WFH quota (YYYY-MM-DD).
