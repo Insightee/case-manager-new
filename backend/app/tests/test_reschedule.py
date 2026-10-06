@@ -50,7 +50,8 @@ def test_parent_reschedule_creates_history():
     parent = _login("parent@demo.com")
     th, ph = _headers(therapist), _headers(parent)
 
-    start = date(2026, 10, 6)
+    # Far enough ahead that booked slots satisfy the 6-hour reschedule/cancel window in CI.
+    start = date.today() + timedelta(days=21)
     end = start + timedelta(days=6)
     client.post(
         "/api/v1/scheduling/template/materialize",

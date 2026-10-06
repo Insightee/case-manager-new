@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { apiDownload } from '../../lib/apiClient.js'
-import '../support/ticket-attachment-preview.css'
+import '../support/support-tickets.css'
 
 export function VaultDocumentPreviewModal({ open, fileName, fileUrl, downloadPath, loading, error, onClose }) {
   useEffect(() => {
@@ -43,7 +43,7 @@ export function VaultDocumentPreviewModal({ open, fileName, fileUrl, downloadPat
           {loading ? <p className="ticket-attachment-preview__status">Loading preview…</p> : null}
           {error ? <p className="ticket-attachment-preview__status ticket-attachment-preview__status--error">{error}</p> : null}
           {!loading && !error && fileUrl ? (
-            <iframe title={fileName} className="ticket-attachment-preview__pdf" src={fileUrl} />
+            <iframe title={fileName} className="ticket-attachment-preview__iframe" src={fileUrl} />
           ) : null}
         </div>
       </div>

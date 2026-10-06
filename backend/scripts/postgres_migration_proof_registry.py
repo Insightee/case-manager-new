@@ -1221,6 +1221,39 @@ register_head(
 )
 
 
+def _seed_tvault001(db: Session) -> dict[str, Any]:
+    from app.models.therapist_vault_document import TherapistVaultDocument, TherapistVaultDocumentStatus
+    from app.models.user import User
+
+    therapist = db.scalar(select(User).where(User.email == "therapist@demo.com"))
+    if not therapist:
+        therapist = db.scalar(select(User).limit(1))
+    if not therapist:
+        raise RuntimeError("Need a user — run demo_seed first")
+    doc = TherapistVaultDocument(
+        therapist_user_id=therapist.id,
+        slot_key="pan_card",
+        version=1,
+        status=TherapistVaultDocumentStatus.PENDING,
+        file_name="migration-proof.pdf",
+        file_path="therapist_vault/user_0/migration-proof.pdf",
+        mime_type="application/pdf",
+        size_bytes=12,
+        uploaded_by_user_id=therapist.id,
+    )
+    db.add(doc)
+    db.flush()
+    return {"document_id": doc.id, "therapist_user_id": therapist.id}
+
+
+register_head(
+    "tvault001",
+    tables_added=["therapist_vault_documents"],
+    columns_added=[],
+    seed=_seed_tvault001,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
