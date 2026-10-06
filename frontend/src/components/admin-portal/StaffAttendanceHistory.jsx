@@ -25,6 +25,7 @@ export function StaffAttendanceHistory({ rows = [], loading = false, title = 'Se
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Mode</th>
                   <th>Status</th>
                   <th>Start</th>
                   <th>End</th>
@@ -36,6 +37,7 @@ export function StaffAttendanceHistory({ rows = [], loading = false, title = 'Se
                 {rows.map((row) => (
                   <tr key={row.id}>
                     <td>{formatDateIN(`${row.work_date}T12:00:00Z`) || row.work_date}</td>
+                    <td>{row.work_mode === 'WFH' ? 'WFH' : row.work_mode === 'OFFICE' ? 'Office' : '—'}</td>
                     <td>
                       <StatusBadge tone={STATUS_TONE[row.status] || 'zinc'}>
                         {row.status?.replace(/_/g, ' ') || '—'}
@@ -60,6 +62,8 @@ export function StaffAttendanceHistory({ rows = [], loading = false, title = 'Se
                   </StatusBadge>
                 </div>
                 <p className="admin-muted" style={{ margin: '0 0 6px' }}>
+                  {row.work_mode === 'WFH' ? 'WFH' : row.work_mode === 'OFFICE' ? 'Office' : '—'}
+                  {' · '}
                   {row.clock_in_at ? formatTimeIST(row.clock_in_at) : '—'}
                   {' → '}
                   {row.clock_out_at ? formatTimeIST(row.clock_out_at) : '—'}

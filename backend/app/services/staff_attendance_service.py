@@ -18,9 +18,12 @@ from app.models.staff_attendance import (
     StaffAttendanceSegment,
     StaffAttendanceSegmentType,
     StaffAttendanceStatus,
+    StaffWorkMode,
 )
+from app.services import staff_attendance_location as location_svc
 from app.models.staff_leave import StaffLeave
 from app.models.user import User
+from app.core.config import settings
 from app.services.staff_attendance_access import assert_staff_attendance_eligible
 
 MIN_WORK_SUMMARY_LEN = 3
@@ -145,6 +148,12 @@ def serialize_attendance(attendance: StaffAttendance, db: Session) -> dict:
         "created_at": attendance.created_at.isoformat() if attendance.created_at else None,
         "updated_at": attendance.updated_at.isoformat() if attendance.updated_at else None,
         "record_kind": "attendance",
+        "work_mode": attendance.work_mode.value if attendance.work_mode else None,
+        "clock_in_latitude": attendance.clock_in_latitude,
+        "clock_in_longitude": attendance.clock_in_longitude,
+        "clock_in_accuracy_meters": attendance.clock_in_accuracy_meters,
+        "distance_from_office_meters": attendance.distance_from_office_meters,
+        "clock_in_place_label": attendance.clock_in_place_label,
     }
 
 
@@ -153,15 +162,29 @@ def get_today_state(db: Session, user: User) -> dict:
     today = today_ist()
     live = _get_live_attendance(db, user.id, today)
     in_progress = live is not None and live.status == StaffAttendanceStatus.IN_PROGRESS
+    quota = location_svc.wfh_quota_summary(db, user.id)
     return {
         "work_date": today.isoformat(),
         "is_clocked_in": in_progress and not live.is_paused,
         "is_paused": bool(live and live.is_paused),
         "attendance": serialize_attendance(live, db) if live else None,
+        **quota,
+        "office_label": settings.staff_office_label,
+        "office_radius_meters": int(settings.staff_office_radius_meters),
     }
 
 
-def clock_in(db: Session, user: User, meta: dict | None = None) -> StaffAttendance:
+def clock_in(
+    db: Session,
+    user: User,
+    *,
+    work_mode: StaffWorkMode | str,
+    latitude: float,
+    longitude: float,
+    accuracy_meters: float | None = None,
+    place_label: str | None = None,
+    meta: dict | None = None,
+) -> StaffAttendance:
     assert_staff_attendance_eligible(user)
     today = today_ist()
     now = _utc_now()
@@ -170,19 +193,58 @@ def clock_in(db: Session, user: User, meta: dict | None = None) -> StaffAttendan
     if live and live.status == StaffAttendanceStatus.IN_PROGRESS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are already clocked in for today.")
 
+    if live and live.status == StaffAttendanceStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You already finished today's session — stay clocked in through the day next time, and start fresh tomorrow.",
+        )
+
+    mode = StaffWorkMode(work_mode) if isinstance(work_mode, str) else work_mode
+
+    if mode == StaffWorkMode.WFH:
+        location_svc.assert_wfh_quota_available(db, user.id, today)
+
+    distance_m = location_svc.validate_clock_in_location(
+        work_mode=mode,
+        latitude=latitude,
+        longitude=longitude,
+    )
+
+    label = (place_label or "").strip() or None
+    if label and len(label) > 512:
+        label = label[:512]
+
     if not live:
         live = StaffAttendance(
             user_id=user.id,
             work_date=today,
             entry_type=StaffAttendanceEntryType.LIVE,
             status=StaffAttendanceStatus.IN_PROGRESS,
+            work_mode=mode,
+            clock_in_latitude=latitude,
+            clock_in_longitude=longitude,
+            clock_in_accuracy_meters=accuracy_meters,
+            distance_from_office_meters=distance_m,
+            clock_in_place_label=label,
         )
         db.add(live)
         db.flush()
     else:
+        if live.work_mode is not None and live.work_mode != mode:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Today's work mode is already set — contact HR if something looks off.",
+            )
         live.status = StaffAttendanceStatus.IN_PROGRESS
         live.is_paused = False
         live.auto_closed = False
+        if live.work_mode is None:
+            live.work_mode = mode
+            live.clock_in_latitude = latitude
+            live.clock_in_longitude = longitude
+            live.clock_in_accuracy_meters = accuracy_meters
+            live.distance_from_office_meters = distance_m
+            live.clock_in_place_label = label
 
     db.add(
         StaffAttendanceSegment(
@@ -200,7 +262,12 @@ def clock_in(db: Session, user: User, meta: dict | None = None) -> StaffAttendan
         action="staff_attendance.clock_in",
         entity_type="staff_attendance",
         entity_id=str(live.id),
-        new_value={"work_date": today.isoformat()},
+        new_value={
+            "work_date": today.isoformat(),
+            "work_mode": mode.value,
+            "latitude": latitude,
+            "longitude": longitude,
+        },
         **(meta or {}),
     )
     return live
