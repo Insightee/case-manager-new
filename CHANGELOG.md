@@ -56,6 +56,7 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
+- Therapist statement PDF (and invoice CSV/breakdown export) returns HTTP 422 with case code when a PACKAGE case has no `package_session_count`, instead of an unhandled 500 (`MISSING_PACKAGE_COUNT`).
 - Finance Reports page no longer uses unstyled invoice filter classes, so month, case type, period start/end, and report status are actually pickable on every generateable export. The same library lists payouts, collections, outstanding, and monthly billing.
 - Clinical-engine approve rejects therapists with 403 (reviewer role required), not a 400 status-state error.
 - Collections totals use `client_payments.payment_status` (not a missing `status` field) and honour cash-period vs invoice-month cohort. Outstanding stays a current snapshot unless the caller asks for a billing-month cohort. Control tower matches therapist `Invoice.month` aliases including `May 2026`. Case status mix includes `PENDING_REPLACEMENT` and `DEACTIVATED`. Monthly/observation completed counts include `PUBLISHED` as well as `APPROVED`. Parent portal export columns say login, not activity.
