@@ -161,7 +161,7 @@ export function TherapistVaultPage() {
   return (
     <div className="therapist-vault">
       <header className="therapist-vault__header">
-        <p className="therapist-profile__eyebrow">My account</p>
+        <p className="therapist-profile__eyebrow">Therapist portal</p>
         <h1 className="therapist-profile__title">Vault</h1>
         <p className="therapist-profile__intro">
           Keep onboarding documents in one place. Each file is reviewed separately — we will notify you when it is

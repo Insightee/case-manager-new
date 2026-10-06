@@ -25,6 +25,7 @@ import '../components/shared/notification-bell.css'
 const THERAPIST_NAV = [
   { to: '/therapist', label: 'Dashboard', end: true },
   { to: '/therapist/cases', label: 'My Cases' },
+  { to: '/therapist/vault', label: 'Vault' },
   { to: '/therapist/logs', label: 'Session Logs' },
   { to: '/therapist/reports', label: 'Monthly Reports' },
   { to: '/therapist/invoices', label: 'Invoices' },
