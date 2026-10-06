@@ -96,6 +96,7 @@ from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage
 from app.models.ticket_attachment import TicketAttachment
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+from app.models.therapist_vault_document import TherapistVaultDocument, TherapistVaultDocumentStatus
 from app.models.therapist_payout_settlement import (
     TherapistPayoutBatch,
     TherapistPayoutBatchStatus,

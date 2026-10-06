@@ -1,0 +1,182 @@
+.therapist-vault__header {
+  margin-bottom: 24px;
+}
+
+.therapist-vault__section {
+  margin-bottom: 28px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.therapist-vault__section--soon {
+  opacity: 0.65;
+}
+
+.therapist-vault__section h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.therapist-vault__section-intro {
+  margin: 0 0 16px;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.therapist-vault__soon {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.therapist-vault__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.therapist-vault__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.therapist-vault__row--empty {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.therapist-vault__row-main {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.therapist-vault__row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.therapist-vault__row-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.therapist-vault__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.therapist-vault__status-icon {
+  font-size: 0.85rem;
+}
+
+.therapist-vault__status--approved {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #6ee7b7;
+}
+
+.therapist-vault__status--pending {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+}
+
+.therapist-vault__status--rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.therapist-vault__status--missing {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.therapist-vault__help,
+.therapist-vault__file-meta {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.therapist-vault__rejection {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: #b91c1c;
+}
+
+.therapist-vault__alert {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: #b45309;
+}
+
+.therapist-vault__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.therapist-vault__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.therapist-vault__btn--primary {
+  background: #0f766e;
+  color: #fff;
+}
+
+.therapist-vault__btn--ghost {
+  background: #fff;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+
+.therapist-vault__other {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.therapist-vault__other-title {
+  margin: 0 0 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.therapist-vault__loading {
+  color: #64748b;
+  font-size: 0.875rem;
+}

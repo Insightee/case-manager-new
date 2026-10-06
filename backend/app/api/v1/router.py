@@ -37,6 +37,7 @@ from app.api.v1 import (
     tickets,
     support,
     therapist_profile,
+    therapist_vault,
     therapist_portal,
     geocode,
     files,
@@ -111,6 +112,8 @@ api_router.include_router(scheduling.router)
 api_router.include_router(booking.router)
 api_router.include_router(hr.router)
 api_router.include_router(therapist_profile.router)
+api_router.include_router(therapist_vault.router)
+api_router.include_router(therapist_vault.admin_router)
 api_router.include_router(therapist_portal.router)
 api_router.include_router(geocode.router)
 api_router.include_router(files.router)

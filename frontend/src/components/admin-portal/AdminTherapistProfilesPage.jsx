@@ -8,6 +8,7 @@ import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
 import { TherapistLeaveBalancePanel } from '../hr-portal/TherapistLeaveBalancePanel.jsx'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
+import { AdminTherapistVaultPanel } from './AdminTherapistVaultPanel.jsx'
 import { qualificationLevelLabel } from '../../lib/therapistQualificationLevels.js'
 import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
 import { AdminStaffSelect } from './ui/AdminStaffSelect.jsx'
@@ -236,6 +237,7 @@ export function AdminTherapistProfilesPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [drawerTab, setDrawerTab] = useState('review')
 
   const load = useCallback(
     async (selectProfileId = null) => {
@@ -455,6 +457,7 @@ export function AdminTherapistProfilesPage() {
   }
 
   function closeDrawer() {
+    setDrawerTab('review')
     setSelected(null)
     setEditingSupervisor(false)
     setEditingServices(false)
@@ -711,6 +714,7 @@ export function AdminTherapistProfilesPage() {
                               type="button"
                               className="admin-btn admin-btn--ghost admin-btn--sm"
                               onClick={() => {
+                                setDrawerTab('review')
                                 setSelected(p)
                                 setEditingSupervisor(false)
                                 setEditingServices(false)
@@ -738,6 +742,7 @@ export function AdminTherapistProfilesPage() {
                             type="button"
                             className="admin-btn admin-btn--primary admin-btn--sm"
                             onClick={() => {
+                              setDrawerTab('review')
                               setSelected(p)
                               setEditingSupervisor(false)
                               setEditingServices(false)
@@ -791,14 +796,40 @@ export function AdminTherapistProfilesPage() {
                     <StatusBadge status={profileDisplayStatus(selected)} />
                   </div>
                 </div>
-                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={closeDrawer}>
-                  Close
-                </button>
+                <div className="admin-btn-group">
+                  {selected.status !== 'NEEDS_LISTING' ? (
+                    <>
+                      <button
+                        type="button"
+                        className={`admin-btn admin-btn--sm ${drawerTab === 'review' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+                        onClick={() => setDrawerTab('review')}
+                      >
+                        Review
+                      </button>
+                      <button
+                        type="button"
+                        className={`admin-btn admin-btn--sm ${drawerTab === 'documents' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+                        onClick={() => setDrawerTab('documents')}
+                      >
+                        Documents
+                      </button>
+                    </>
+                  ) : null}
+                  <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={closeDrawer}>
+                    Close
+                  </button>
+                </div>
               </div>
             </header>
 
             <div className="therapist-profile-drawer__body">
-              {selected.status === 'NEEDS_LISTING' ? (
+              {drawerTab === 'documents' && selected.status !== 'NEEDS_LISTING' ? (
+                <section className="therapist-profile-drawer__section">
+                  <h3 className="therapist-profile-drawer__section-title">Vault documents</h3>
+                  <AdminTherapistVaultPanel therapistUserId={selected.user_id} canReview={canEditProfiles} />
+                </section>
+              ) : null}
+              {drawerTab === 'review' && selected.status === 'NEEDS_LISTING' ? (
                 <section className="therapist-profile-drawer__section">
                   <p className="therapist-profile-drawer__text">
                     This therapist account does not have a service listing yet. Pending and deleted listings are tracked separately.
@@ -811,7 +842,7 @@ export function AdminTherapistProfilesPage() {
                 </section>
               ) : null}
 
-              {selected.status !== 'NEEDS_LISTING' ? (
+              {drawerTab === 'review' && selected.status !== 'NEEDS_LISTING' ? (
                 <>
               <ProfileChangesSection profile={selected} categories={categories} />
 
