@@ -12,6 +12,14 @@ class QualificationEntry(BaseModel):
     year: Optional[int] = Field(None, ge=1950, le=2035)
 
 
+class QualificationEntryRead(BaseModel):
+    """Stored qualification rows may predate write-side length limits."""
+
+    kind: Literal["degree", "certificate"] = "certificate"
+    title: str = Field(..., min_length=1)
+    year: Optional[int] = None
+
+
 class TherapistProfileBase(BaseModel):
     display_name: Optional[str] = Field(None, max_length=255)
     short_bio: Optional[str] = Field(None, max_length=2000)
@@ -34,6 +42,13 @@ class TherapistProfileUpdate(TherapistProfileBase):
 
 
 class TherapistProfileRead(TherapistProfileBase):
+    # Read responses must tolerate legacy DB values longer than write limits.
+    display_name: Optional[str] = None
+    short_bio: Optional[str] = None
+    academic_qualifications: Optional[str] = None
+    academic_qualification_level: Optional[str] = None
+    professional_qualification_entries: list[QualificationEntryRead] = Field(default_factory=list)
+
     id: Optional[int] = None
     user_id: int
     status: str
