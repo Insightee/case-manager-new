@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
+from app.core.billing_calc_errors import raise_http_for_billing_calc_error
 from app.core.database import get_db
 from app.core.module_access import user_has_feature
 from app.core.module_write import ensure_billing_write_access
@@ -477,7 +478,10 @@ def invoice_breakdown(
             raise HTTPException(status_code=403, detail="Access denied")
     elif not user_has_permission(user, "invoice.approve") and not user_has_permission(user, "therapist.read"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    data = invoice_billing_service.invoice_breakdown(db, invoice_id)
+    try:
+        data = invoice_billing_service.invoice_breakdown(db, invoice_id)
+    except ValueError as e:
+        raise_http_for_billing_calc_error(e)
     if not data:
         raise HTTPException(status_code=404, detail="Invoice not found")
     if _hide_client_pricing(user):
@@ -605,7 +609,10 @@ def export_invoice_pdf(
     therapist = db.get(User, invoice.therapist_user_id)
     if not therapist:
         raise HTTPException(status_code=404, detail="Therapist not found")
-    content, filename = therapist_statement_pdf_service.build_therapist_statement_pdf(db, invoice, therapist)
+    try:
+        content, filename = therapist_statement_pdf_service.build_therapist_statement_pdf(db, invoice, therapist)
+    except ValueError as e:
+        raise_http_for_billing_calc_error(e)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -630,7 +637,7 @@ def export_invoice_csv(
     try:
         content = invoice_billing_service.export_invoice_csv(db, invoice_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise_http_for_billing_calc_error(e)
     return Response(
         content=content,
         media_type="text/csv",
