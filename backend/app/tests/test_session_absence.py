@@ -590,3 +590,33 @@ def test_child_absence_replace_pending_log():
     finally:
         db.close()
 
+
+def test_admin_child_absence_list_paginated_with_search():
+    admin_headers = _login("superadmin@demo.com")
+    page1 = client.get("/api/v1/leave/child-absence?page=1&page_size=5", headers=admin_headers)
+    assert page1.status_code == 200, page1.text
+    payload = page1.json()
+    assert isinstance(payload, dict)
+    assert "items" in payload
+    assert "total" in payload
+    assert "counts" in payload
+
+    junk = client.get(
+        "/api/v1/leave/child-absence?page=1&search=adsf",
+        headers=admin_headers,
+    )
+    assert junk.status_code == 200, junk.text
+    assert junk.json()["total"] >= 0
+
+    first = (payload.get("items") or [{}])[0]
+    child_name = (first.get("child_name") or "").strip()
+    if child_name:
+        token = child_name.split()[0]
+        if len(token) >= 2:
+            by_child = client.get(
+                f"/api/v1/leave/child-absence?page=1&search={token}",
+                headers=admin_headers,
+            )
+            assert by_child.status_code == 200, by_child.text
+            assert by_child.json()["total"] >= 1
+
