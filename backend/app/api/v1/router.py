@@ -8,6 +8,7 @@ from app.api.v1 import (
     finance_writable,
     hr_ops,
     admin,
+    admin_ops,
     admin_integration_clients,
     admin_integration_webhooks,
     admin_support,
@@ -73,6 +74,7 @@ api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)
 api_router.include_router(invoices.router)
 api_router.include_router(admin.router)
+api_router.include_router(admin_ops.router)
 api_router.include_router(
     finance_ops.router,
     dependencies=[Depends(require_billing)],
