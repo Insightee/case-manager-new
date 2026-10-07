@@ -1254,6 +1254,68 @@ register_head(
 )
 
 
+def _seed_st4ff4tt3nd2(db: Session) -> dict[str, Any]:
+    from app.core.timezone import today_ist
+    from app.models.staff_attendance import (
+        StaffAttendance,
+        StaffAttendanceEntryType,
+        StaffAttendanceStatus,
+        StaffWorkMode,
+    )
+    from app.models.user import User
+
+    actor = db.scalar(select(User).where(User.email == "hr@demo.com"))
+    if not actor:
+        actor = db.scalar(select(User).limit(1))
+    if not actor:
+        raise RuntimeError("Need a user — run demo_seed first")
+
+    today = today_ist()
+    att = db.scalar(
+        select(StaffAttendance).where(
+            StaffAttendance.user_id == actor.id,
+            StaffAttendance.work_date == today,
+            StaffAttendance.entry_type == StaffAttendanceEntryType.LIVE,
+        )
+    )
+    if not att:
+        att = StaffAttendance(
+            user_id=actor.id,
+            work_date=today,
+            entry_type=StaffAttendanceEntryType.LIVE,
+            status=StaffAttendanceStatus.IN_PROGRESS,
+            work_summary="Migration proof staff attendance location",
+            total_work_seconds=0,
+            total_break_seconds=0,
+        )
+        db.add(att)
+        db.flush()
+
+    att.work_mode = StaffWorkMode.OFFICE
+    att.clock_in_latitude = 12.9716
+    att.clock_in_longitude = 77.5946
+    att.clock_in_accuracy_meters = 15.0
+    att.distance_from_office_meters = 42.5
+    att.clock_in_place_label = "Migration proof office clock-in"
+    db.flush()
+    return {"attendance_id": att.id, "work_mode": att.work_mode.value if att.work_mode else None}
+
+
+register_head(
+    "st4ff4tt3nd2",
+    tables_added=[],
+    columns_added=[
+        ("staff_attendance", "work_mode"),
+        ("staff_attendance", "clock_in_latitude"),
+        ("staff_attendance", "clock_in_longitude"),
+        ("staff_attendance", "clock_in_accuracy_meters"),
+        ("staff_attendance", "distance_from_office_meters"),
+        ("staff_attendance", "clock_in_place_label"),
+    ],
+    seed=_seed_st4ff4tt3nd2,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
