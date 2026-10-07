@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.billing_calc_errors import MissingPackageCountError
 from app.core.billing_validation import case_billing_dict, resolve_therapist_pay
 from app.core.permissions import get_active_assignment
 from app.core.session_defaults import default_session_mode_for_case
@@ -98,7 +99,7 @@ def _package_per_session_rate(
     _ = use_therapist_fixed
     pkg_count = int(case.package_session_count) if case.package_session_count else 0
     if pkg_count <= 0:
-        raise ValueError("MISSING_PACKAGE_COUNT")
+        raise MissingPackageCountError(case)
     base = _per_session_amount(case, db=db, as_of=as_of)
     return base / pkg_count
 
@@ -142,7 +143,7 @@ def compute_case_totals(
     if case.billing_type == BillingType.PACKAGE:
         pkg_count = int(case.package_session_count) if case.package_session_count else 0
         if pkg_count <= 0:
-            raise ValueError("MISSING_PACKAGE_COUNT")
+            raise MissingPackageCountError(case)
 
     subtotal = payout_cycle.predicted_subtotal_inr(
         case, approved_sessions=approved, db=db, as_of=as_of
