@@ -1254,6 +1254,32 @@ register_head(
 )
 
 
+def _seed_31fb30395ec2(db: Session) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.models.ops_state_transition import OpsStateTransition
+
+    row = OpsStateTransition(
+        entity_type="support_ticket",
+        entity_id=0,
+        field_name="status",
+        old_value=None,
+        new_value="OPEN",
+        occurred_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    db.flush()
+    return {"transition_id": row.id}
+
+
+register_head(
+    "31fb30395ec2",
+    tables_added=["ops_state_transitions"],
+    columns_added=[],
+    seed=_seed_31fb30395ec2,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
