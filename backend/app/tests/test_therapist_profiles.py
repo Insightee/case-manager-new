@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.main import app
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
+from app.schemas.therapist_profile import TherapistProfileRead
 from app.seed.demo_seed import run as seed_run
 
 client = TestClient(app)
@@ -503,3 +504,85 @@ def test_resubmit_below_80_stages_pending_submission():
     assert second["has_pending_changes"] is True
     assert second["pending_submission"]["display_name"] == "Pending Edit"
     assert second["quality"]["auto_pass"] is False
+
+
+def _inject_legacy_overlength_profile(email: str = "therapist@demo.com") -> int:
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        profile = db.scalar(select(TherapistProfile).where(TherapistProfile.user_id == user.id))
+        if profile is None:
+            profile = TherapistProfile(user_id=user.id, status=TherapistProfileStatus.APPROVED)
+            db.add(profile)
+            db.flush()
+        profile.short_bio = "x" * 2500
+        profile.academic_qualifications = "y" * 5000
+        profile.academic_qualification_level = "legacy-level-" + ("z" * 40)
+        profile.pending_submission = None
+        profile.professional_qualification_entries = [
+            {"kind": "degree", "title": "t" * 300, "year": 2015},
+        ]
+        db.commit()
+        return user.id
+    finally:
+        db.close()
+
+
+def test_read_endpoints_tolerate_legacy_overlength_profile():
+    user_id = _inject_legacy_overlength_profile()
+    therapist_token = _login("therapist@demo.com")
+    own = client.get("/api/v1/therapist/profile", headers=_headers(therapist_token))
+    assert own.status_code == 200, own.text
+    body = own.json()
+    assert len(body["short_bio"]) == 2500
+    assert len(body["academic_qualifications"]) == 5000
+    assert len(body["academic_qualification_level"]) > 32
+    assert body["professional_qualification_entries"]
+
+    admin = _login("superadmin@demo.com")
+    listing = client.get("/api/v1/admin/therapist-profiles?page_size=100", headers=_headers(admin))
+    assert listing.status_code == 200, listing.text
+    rows = _profile_items(listing)
+    match = next((row for row in rows if row["user_id"] == user_id), None)
+    assert match is not None
+    assert len(match["short_bio"]) == 2500
+
+
+def test_therapist_profile_read_schema_accepts_long_stored_qualification_title():
+    parsed = TherapistProfileRead(
+        user_id=1,
+        status="APPROVED",
+        professional_qualification_entries=[{"kind": "degree", "title": "t" * 300, "year": 2015}],
+    )
+    assert len(parsed.professional_qualification_entries[0].title) == 300
+
+
+def test_profile_write_still_validates_field_lengths():
+    token = _login("therapist@demo.com")
+    overlong = client.post(
+        "/api/v1/therapist/profile/submit",
+        headers=_headers(token),
+        json={
+            "display_name": "Valid Name",
+            "short_bio": "w" * 2001,
+            "services_offered": ["homecare"],
+            "professional_qualification_entries": [{"kind": "degree", "title": "B.Ed", "year": 2018}],
+        },
+    )
+    assert overlong.status_code == 422
+
+    admin = _login("superadmin@demo.com")
+    profile = _therapist_profile(token)
+    if not profile.get("id"):
+        user_id = _inject_legacy_overlength_profile()
+        listing = _profile_items(
+            client.get("/api/v1/admin/therapist-profiles?page_size=100", headers=_headers(admin))
+        )
+        profile = next(row for row in listing if row["user_id"] == user_id)
+    patch = client.patch(
+        f"/api/v1/admin/therapist-profiles/{profile['id']}",
+        headers=_headers(admin),
+        json={"short_bio": "v" * 2001},
+    )
+    assert patch.status_code == 422
