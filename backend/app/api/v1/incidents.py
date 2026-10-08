@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -389,6 +389,7 @@ async def upload_incident_attachments(
 async def add_incident_message(
     incident_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -440,6 +441,16 @@ async def add_incident_message(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    if user.id != incident.reported_by_user_id:
+        from app.services import incident_parent_notify_service as inc_parent_notify
+
+        inc_parent_notify.notify_parents_incident_staff_reply(
+            db,
+            incident,
+            msg,
+            staff_user=user,
+            background_tasks=background_tasks,
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="message", entity_type="incident", entity_id=incident_id, **meta)
     db.commit()

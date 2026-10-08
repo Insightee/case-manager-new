@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import BackgroundTasks
@@ -29,6 +30,8 @@ _TEMPLATE_DEFAULT_EVENTS: dict[str, EmailEvent] = {
     "session_rescheduled_today": EmailEvent.PARENT_SAME_DAY_SCHEDULE,
     "incident_family_notice": EmailEvent.PARENT_INCIDENT_SHARED,
     "parent_support_escalated": EmailEvent.PARENT_SUPPORT_ESCALATED,
+    "support_ticket_reply": EmailEvent.PARENT_SUPPORT_TICKET_REPLY,
+    "incident_staff_reply": EmailEvent.PARENT_INCIDENT_STAFF_REPLY,
     "cm_meeting_cancelled": EmailEvent.CM_MEETING_CANCELLED,
 }
 
@@ -45,6 +48,7 @@ def _parent_email_dedupe_hit(
     template_key: str,
     entity_type: str | None,
     entity_id: int | None,
+    within_minutes: int | None = None,
 ) -> bool:
     if not entity_type or entity_id is None:
         return False
@@ -58,9 +62,22 @@ def _parent_email_dedupe_hit(
             EmailLog.entity_id == entity_id,
         )
         .order_by(EmailLog.id.desc())
-        .limit(3)
+        .limit(10)
     ).all()
-    return any(is_submission_success(r.status) for r in rows)
+    cutoff = None
+    if within_minutes is not None and within_minutes > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
+    for row in rows:
+        if not is_submission_success(row.status):
+            continue
+        if cutoff is not None:
+            created = row.created_at
+            if created is not None and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created is not None and created < cutoff:
+                continue
+        return True
+    return False
 
 
 def send_parent_email(
@@ -77,6 +94,7 @@ def send_parent_email(
     subject: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
     force_resend: bool = False,
+    dedupe_window_minutes: int | None = None,
 ) -> int | None:
     """Queue or send one parent email. Returns email_logs.id when queued, 0 when sent sync, None if skipped."""
     if RoleName.PARENT.value not in parent.role_names:
@@ -94,6 +112,7 @@ def send_parent_email(
         template_key=template_key,
         entity_type=entity_type,
         entity_id=entity_id,
+        within_minutes=dedupe_window_minutes,
     ):
         return None
 

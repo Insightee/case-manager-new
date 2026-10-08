@@ -389,6 +389,7 @@ def pick_up_ticket_endpoint(
 async def add_message(
     ticket_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -434,6 +435,16 @@ async def add_message(
         await att_svc.save_attachments(db, ticket, user, files, message_id=msg.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if not is_internal and user.id != ticket.raised_by_user_id:
+        from app.services import ticket_notify_service as ticket_notify
+
+        ticket_notify.notify_parent_staff_ticket_reply(
+            db,
+            ticket,
+            msg,
+            staff_user=user,
+            background_tasks=background_tasks,
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="message", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()

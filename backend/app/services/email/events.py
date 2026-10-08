@@ -23,4 +23,6 @@ class EmailEvent(str, Enum):
     PARENT_SAME_DAY_SCHEDULE = "parent_same_day_schedule"
     PARENT_INCIDENT_SHARED = "parent_incident_shared"
     PARENT_SUPPORT_ESCALATED = "parent_support_escalated"
+    PARENT_SUPPORT_TICKET_REPLY = "parent_support_ticket_reply"
+    PARENT_INCIDENT_STAFF_REPLY = "parent_incident_staff_reply"
     CM_MEETING_CANCELLED = "cm_meeting_cancelled"

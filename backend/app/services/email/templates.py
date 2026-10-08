@@ -105,6 +105,8 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "session_rescheduled_today": _session_rescheduled_today,
         "incident_family_notice": _incident_family_notice,
         "parent_support_escalated": _parent_support_escalated,
+        "support_ticket_reply": _support_ticket_reply,
+        "incident_staff_reply": _incident_staff_reply,
         "cm_meeting_cancelled": _cm_meeting_cancelled,
     }
     fn = renderers.get(template_key)
@@ -637,6 +639,54 @@ def _parent_support_escalated(payload: dict[str, Any], *, locale: str = "en") ->
         f"<p>Your support request (<strong>{escape(str(ticket_subject))}</strong>) was escalated "
         f"for priority follow-up. A team member will reach out soon.</p>"
         f"{_button(portal_url, 'Open support') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _support_ticket_reply(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    ticket_subject = payload.get("ticket_subject", "your request")
+    reply_excerpt = (payload.get("reply_excerpt") or "").strip()
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"New reply on your support request"
+    excerpt_block = ""
+    excerpt_html = ""
+    if reply_excerpt:
+        excerpt_block = f"\n\n{reply_excerpt}\n"
+        excerpt_html = f"<blockquote>{escape(reply_excerpt)}</blockquote>"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Your care team replied to your support request ({ticket_subject})."
+        f"{excerpt_block}\n"
+        f"Read the full thread: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Your care team replied to your support request "
+        f"(<strong>{escape(str(ticket_subject))}</strong>).</p>"
+        f"{excerpt_html}"
+        f"{_button(portal_url, 'Open support') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _incident_staff_reply(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Update on {child_name}'s incident report"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Your care team added an update to the incident report for {child_name}. "
+        f"Details are in your secure portal — we do not include sensitive information in email.\n\n"
+        f"Open your portal: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Your care team added an update to the incident report for "
+        f"<strong>{escape(str(child_name))}</strong>.</p>"
+        f"<p>Details are available in your secure portal — we do not include sensitive information in email.</p>"
+        f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
     )
     return _with_parent_footer(subject, text, body, payload, locale=locale)
 
