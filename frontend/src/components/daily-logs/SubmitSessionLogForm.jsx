@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiFetch, isAuthSessionError } from '../../lib/apiClient.js'
+import {
+  evaluateSessionLogSubmitReadiness,
+  isLateReasonApiError,
+  planSessionLogSubmitFailureActions,
+  sessionLogSubmitFailureMessage,
+} from '../../lib/sessionLogSubmitHelpers.js'
 import { clearLogDraft, getLogDraft, listPendingDrafts, markDraftSynced, saveLogDraft } from '../../lib/logDraftStore.js'
 import {
   formatSessionTimeRange,
@@ -8,7 +14,6 @@ import {
   isLogResubmittable,
   logToFormState,
   todayIsoIST,
-  validateSessionLogForm,
 } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { getDurationComplianceWarning } from '../../lib/sessionDurationCompliance.js'
@@ -146,6 +151,7 @@ export function SubmitSessionLogForm({
   const [form, setForm] = useState(emptyLogForm)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [requireLateReasonUi, setRequireLateReasonUi] = useState(false)
   const [draftNote, setDraftNote] = useState('')
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const draftTimer = useRef(null)
@@ -295,10 +301,34 @@ export function SubmitSessionLogForm({
     }
   }, [form, goalTaps, strategyTaps, session?.id, isEdit])
 
-  const isLateSession = useMemo(() => {
-    if (!session?.scheduled_date) return false
-    return session.scheduled_date < todayIsoIST()
-  }, [session])
+  const isLateSession =
+    requireLateReasonUi ||
+    (session?.scheduled_date ? session.scheduled_date < todayIsoIST() : false)
+
+  async function applySubmitFailure(err, body) {
+    const plan = planSessionLogSubmitFailureActions(err, {
+      sessionId: !isEdit ? session?.id : null,
+      hasBody: Boolean(body),
+    })
+    if (plan.requireLateUi) setRequireLateReasonUi(true)
+    setError(plan.errorMessage)
+    if (!session?.id || isEdit || !plan.saveLocalDraft) return
+    const draft = {
+      ...form,
+      goalTaps,
+      strategyTaps,
+      sync_status: plan.draftSyncStatus || 'local',
+    }
+    if (plan.queueOffline && body) {
+      draft.sync_payload = { session_id: session.id, ...body }
+    }
+    await saveLogDraft(session.id, draft).catch(() => {})
+    if (plan.queueOffline) {
+      setDraftNote('Saved on device — will sync when you’re back online')
+    } else if (isAuthSessionError(err) || /session expired/i.test(plan.errorMessage)) {
+      setDraftNote('Saved on this device — sign in again to submit')
+    }
+  }
 
   const editable = !isEdit || canEditLog(existingLog)
   const pendingEdit = isEdit && isLogEditable(existingLog)
@@ -332,9 +362,13 @@ export function SubmitSessionLogForm({
   async function handleResubmit(e) {
     e.preventDefault()
     if (!existingLog?.id) return
-    const validationError = validateSessionLogForm(form, { isLateSession })
-    if (validationError) {
-      setError(validationError)
+    const readiness = evaluateSessionLogSubmitReadiness(session, form, todayIsoIST(), {
+      isEdit: true,
+      existingLog,
+    })
+    if (!readiness.ok) {
+      if (readiness.requireLateUi) setRequireLateReasonUi(true)
+      setError(readiness.error)
       return
     }
     setSubmitting(true)
@@ -351,7 +385,8 @@ export function SubmitSessionLogForm({
       })
       onSuccess?.(saved)
     } catch (err) {
-      setError(err.message || 'Could not resubmit log')
+      if (isLateReasonApiError(err)) setRequireLateReasonUi(true)
+      setError(sessionLogSubmitFailureMessage(err) || 'Could not resubmit log')
     } finally {
       setSubmitting(false)
     }
@@ -418,15 +453,20 @@ export function SubmitSessionLogForm({
       }
       return
     }
-    const validationError = validateSessionLogForm(form, { isLateSession })
-    if (validationError) {
-      setError(validationError)
+    const readiness = evaluateSessionLogSubmitReadiness(session, form, todayIsoIST(), {
+      isEdit,
+      existingLog,
+    })
+    if (!readiness.ok) {
+      if (readiness.requireLateUi) setRequireLateReasonUi(true)
+      setError(readiness.error)
       return
     }
     setSubmitting(true)
     setError('')
+    let body
     try {
-      const body = {
+      body = {
         ...form,
         late_reason: form.late_reason || undefined,
         ...evidencePayload(goalTaps, strategyTaps),
@@ -447,17 +487,7 @@ export function SubmitSessionLogForm({
       setDraftNote('')
       onSuccess?.(saved)
     } catch (err) {
-      if (session?.id) {
-        await saveLogDraft(session.id, {
-          ...form,
-          goalTaps,
-          strategyTaps,
-          sync_status: 'pending_sync',
-          sync_payload: { session_id: session.id, ...body },
-        }).catch(() => {})
-        setDraftNote('Saved on device — will sync when you’re back online')
-      }
-      setError(err.message || 'Could not save log')
+      await applySubmitFailure(err, body)
     } finally {
       setSubmitting(false)
     }

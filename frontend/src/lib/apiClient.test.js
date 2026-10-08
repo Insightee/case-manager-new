@@ -6,6 +6,7 @@ import {
   ensureAccessToken,
   getTokens,
   isPublicAuthPath,
+  isTimeoutError,
   setTokens,
 } from './apiClient.js'
 
@@ -20,6 +21,17 @@ globalThis.localStorage = {
 
 /** Minimal JWT whose access token expired in 1970. */
 const EXPIRED_ACCESS = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.expired'
+
+describe('apiClient timeout helpers', () => {
+  it('isTimeoutError matches dev and production timeout messages', () => {
+    assert.equal(isTimeoutError(new Error('Request timed out after 30s.')), true)
+    assert.equal(
+      isTimeoutError(new Error('This is taking longer than expected (30s). Check your connection and try again.')),
+      true,
+    )
+    assert.equal(isTimeoutError(new Error('Cannot reach the API through https://example.com')), false)
+  })
+})
 
 describe('apiClient auth helpers', () => {
   it('accessTokenNeedsRefresh detects expired access tokens', () => {
