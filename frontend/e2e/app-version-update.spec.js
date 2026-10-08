@@ -7,6 +7,12 @@ const artifactsDir = '/opt/cursor/artifacts'
 
 const PRODUCTION_THERAPIST_URL = 'https://www.insighte.org/therapist'
 
+function projectSlug(testInfo) {
+  if (testInfo.project.name.includes('iphone')) return 'iphone'
+  if (testInfo.project.name.includes('desktop')) return 'desktop'
+  return 'android'
+}
+
 test.describe('App version update notice', () => {
   test.beforeEach(async ({ page, context }, testInfo) => {
     if (!testInfo.project.name.includes('iphone')) {
@@ -39,37 +45,35 @@ test.describe('App version update notice', () => {
     }
   })
 
-  test('primary action opens reinstall sheet with production link', async ({ page }, testInfo) => {
+  test('stale notice opens two-step reinstall sheet', async ({ page }, testInfo) => {
+    const slug = projectSlug(testInfo)
     await page.goto('/e2e/app-version-update')
 
     await expect(page.getByRole('region', { name: 'App update available' })).toBeVisible()
     await expect(page.getByText("You're on i1006, latest is i1008.")).toBeVisible()
     await expect(page.getByRole('link', { name: PRODUCTION_THERAPIST_URL })).toBeVisible()
 
-    const slug = testInfo.project.name.includes('iphone')
-      ? 'iphone'
-      : testInfo.project.name.includes('desktop')
-        ? 'desktop'
-        : 'android'
     await page.screenshot({
       path: path.join(artifactsDir, `app-version-notice-${slug}.png`),
       fullPage: true,
     })
 
-    await page.getByRole('button', { name: 'Re-add shortcut' }).click()
+    await page.getByRole('button', { name: 'Install InsighteCase' }).click()
 
-    const sheet = page.getByRole('dialog', { name: /Re-add the InsighteCase shortcut/i })
+    const sheet = page.getByRole('dialog', { name: /Install InsighteCase again/i })
     await expect(sheet).toBeVisible()
-    await expect(sheet.getByRole('link', { name: PRODUCTION_THERAPIST_URL })).toBeVisible()
+    await expect(sheet.locator('.app-version-sheet__step-num').filter({ hasText: '1.' })).toBeVisible()
+    await expect(sheet.locator('.app-version-sheet__step-num').filter({ hasText: '2.' })).toBeVisible()
+
     if (slug === 'iphone') {
-      await expect(sheet.getByRole('button', { name: 'Open in Safari' })).toBeVisible()
+      await expect(sheet.getByRole('button', { name: 'Open InsighteCase' })).toBeVisible()
       await expect(sheet.getByText(/Add to Home Screen/i)).toBeVisible()
       await expect(sheet.getByText(/chrome:\/\/apps/i)).toHaveCount(0)
-    } else if (slug === 'android') {
-      await expect(sheet.getByRole('button', { name: 'Open in Chrome' })).toBeVisible()
-      await expect(sheet.getByText(/chrome:\/\/apps/i)).toHaveCount(0)
-    } else if (slug === 'desktop') {
-      await expect(sheet.getByText(/chrome:\/\/apps/i)).toBeVisible()
+    } else {
+      await expect(sheet.getByRole('button', { name: 'Install InsighteCase' })).toBeVisible()
+      if (slug === 'desktop') {
+        await expect(sheet.getByText(/Uninstall|chrome:\/\/apps/i)).toBeVisible()
+      }
     }
 
     await page.screenshot({
@@ -77,7 +81,40 @@ test.describe('App version update notice', () => {
       fullPage: true,
     })
 
-    await sheet.getByRole('button', { name: 'Copy link' }).first().click()
+    await sheet.getByRole('button', { name: 'Copy link' }).click()
     await expect(sheet.getByText('Link copied.')).toBeVisible()
+  })
+
+  test('reinstall=1 landing shows install affordance', async ({ page }, testInfo) => {
+    const slug = projectSlug(testInfo)
+    const isIphone = slug === 'iphone'
+
+    await page.goto('/e2e/app-version-update?reinstall=1')
+
+    if (!isIphone) {
+      await page.evaluate(() => {
+        const ev = new Event('beforeinstallprompt', { cancelable: true })
+        ev.preventDefault = () => {}
+        ev.prompt = async () => {}
+        ev.userChoice = Promise.resolve({ outcome: 'accepted' })
+        window.dispatchEvent(ev)
+      })
+    }
+
+    if (isIphone) {
+      const landing = page.getByRole('region', { name: /Add InsighteCase to home screen/i })
+      await expect(landing).toBeVisible()
+      await expect(landing.getByText(/Share → Add to Home Screen/i)).toBeVisible()
+    } else {
+      const landing = page.getByRole('region', { name: 'Install InsighteCase' })
+      await expect(landing).toBeVisible()
+      const installBtn = landing.getByRole('button', { name: 'Install InsighteCase' })
+      await expect(installBtn).toBeEnabled({ timeout: 10_000 })
+    }
+
+    await page.screenshot({
+      path: path.join(artifactsDir, `pwa-reinstall-landing-${slug}.png`),
+      fullPage: true,
+    })
   })
 })

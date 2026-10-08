@@ -84,7 +84,7 @@ export function AppVersionNotice({ portalId = 'parent', variant = 'banner', test
               className="app-version-btn app-version-btn--primary"
               onClick={() => setSheetOpen(true)}
             >
-              Re-add shortcut
+              Install InsighteCase
             </button>
           ) : !standalone ? (
             <button type="button" className="app-version-btn app-version-btn--primary" onClick={handleReload}>

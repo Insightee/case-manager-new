@@ -1,26 +1,15 @@
 import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  buildIosSafariOpenUrl,
-  detectReinstallPlatform,
-  formatVersionNoticeLead,
-  getReinstallSteps,
-} from '../../lib/appVersionUpdate.js'
+import { formatVersionNoticeLead } from '../../lib/appVersionUpdate.js'
 import { getCanonicalPortalUrl } from '../../lib/canonicalAppUrl.js'
-import { usePortalInstall } from '../../context/usePortalInstall.js'
+import {
+  appendReinstallParam,
+  detectReinstallPlatform,
+  getRemoveAppOneLiner,
+  launchReinstallInBrowser,
+} from '../../lib/pwaReinstall.js'
+import { copyCanonicalPortalUrl } from '../../lib/pwaStaleRecovery.js'
 import './app-version-notice.css'
-
-async function copyText(url) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url)
-      return true
-    }
-  } catch {
-    // fall through
-  }
-  return false
-}
 
 /**
  * @param {{
@@ -42,42 +31,31 @@ export function AppVersionReinstallSheet({
   portalUrl,
   appName,
 }) {
-  const { canNativeInstall, promptInstall } = usePortalInstall()
   const platform = detectReinstallPlatform()
-  const steps = getReinstallSteps(platform, { portalUrl, appName })
+  const isIos = platform.startsWith('ios')
+  const removeLine = getRemoveAppOneLiner(platform, appName)
   const [copyNote, setCopyNote] = useState('')
 
+  const reinstallUrl = appendReinstallParam(portalUrl || getCanonicalPortalUrl(portalId))
+
+  const handleInstall = useCallback(() => {
+    launchReinstallInBrowser(platform, portalUrl || getCanonicalPortalUrl(portalId))
+  }, [platform, portalId, portalUrl])
+
   const handleCopy = useCallback(async () => {
-    const url = portalUrl || getCanonicalPortalUrl(portalId)
-    const ok = await copyText(url)
-    setCopyNote(ok ? 'Link copied.' : `Copy this link: ${url}`)
-  }, [portalId, portalUrl])
-
-  const handleOpenSafari = useCallback(() => {
-    const url = portalUrl || getCanonicalPortalUrl(portalId)
-    const safariUrl = buildIosSafariOpenUrl(url)
-    const opened = window.open(safariUrl, '_blank')
-    if (!opened) {
-      void handleCopy()
-      setCopyNote((prev) => prev || 'Link copied — paste it in Safari.')
+    const { ok, url } = await copyCanonicalPortalUrl(portalId)
+    const withFlag = appendReinstallParam(url || reinstallUrl)
+    if (ok && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(withFlag)
+        setCopyNote('Link copied.')
+        return
+      } catch {
+        // fall through
+      }
     }
-  }, [handleCopy, portalId, portalUrl])
-
-  const handleOpenBrowser = useCallback(() => {
-    const url = portalUrl || getCanonicalPortalUrl(portalId)
-    const opened = window.open(url, '_blank', 'noopener,noreferrer')
-    if (!opened) void handleCopy()
-  }, [handleCopy, portalId, portalUrl])
-
-  const handleNativeInstall = useCallback(async () => {
-    const result = await promptInstall()
-    if (result?.outcome === 'accepted') {
-      onClose()
-    }
-  }, [onClose, promptInstall])
-
-  const showInstallNow =
-    canNativeInstall && (platform === 'android' || platform === 'android-edge' || platform === 'desktop' || platform === 'desktop-edge')
+    setCopyNote(ok ? 'Link copied.' : `Copy: ${withFlag}`)
+  }, [portalId, reinstallUrl])
 
   if (!open) return null
 
@@ -91,51 +69,35 @@ export function AppVersionReinstallSheet({
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="app-version-reinstall-title" className="app-version-sheet__title">
-          Re-add the InsighteCase shortcut
+          Install InsighteCase again
         </h2>
         <p className="app-version-sheet__lead">
-          {formatVersionNoticeLead(embeddedReleaseLabel, remoteReleaseLabel)} Follow these steps to
-          refresh the web app on your home screen or desktop.
+          {formatVersionNoticeLead(embeddedReleaseLabel, remoteReleaseLabel)}
         </p>
-        <p className="app-version-sheet__url-line">
-          <a className="app-version-sheet__url" href={portalUrl} target="_blank" rel="noopener noreferrer">
-            {portalUrl}
-          </a>
-        </p>
-        {showInstallNow ? (
-          <div className="app-version-sheet__actions app-version-sheet__actions--top">
-            <button type="button" className="app-version-btn app-version-btn--primary" onClick={() => void handleNativeInstall()}>
-              Install now
-            </button>
-          </div>
-        ) : null}
-        <ol className="app-version-sheet__steps">
-            {steps.map((step, index) => {
-              if (step.kind === 'action') {
-                const onAction =
-                  step.action === 'copy'
-                    ? () => void handleCopy()
-                    : step.action === 'open_safari'
-                      ? handleOpenSafari
-                      : handleOpenBrowser
-                return (
-                  <li key={step.id}>
-                    <span className="app-version-sheet__step-num">{index + 1}.</span>
-                    <button type="button" className="app-version-btn app-version-btn--secondary app-version-btn--inline" onClick={onAction}>
-                      {step.label}
-                    </button>
-                    {step.hint ? <p className="app-version-sheet__step-hint">{step.hint}</p> : null}
-                  </li>
-                )
-              }
-              return (
-                <li key={step.id}>
-                  <span className="app-version-sheet__step-num">{index + 1}.</span>
-                  {step.text}
-                </li>
-              )
-            })}
+        <ol className="app-version-sheet__steps app-version-sheet__steps--compact">
+          <li>
+            <span className="app-version-sheet__step-num">1.</span>
+            {removeLine}
+          </li>
+          <li>
+            <span className="app-version-sheet__step-num">2.</span>
+            {isIos ? (
+              <>
+                <button type="button" className="app-version-btn app-version-btn--primary app-version-btn--inline" onClick={handleInstall}>
+                  Open InsighteCase
+                </button>
+                <p className="app-version-sheet__step-hint">Then tap Share → Add to Home Screen → Add.</p>
+              </>
+            ) : (
+              <button type="button" className="app-version-btn app-version-btn--primary app-version-btn--inline" onClick={handleInstall}>
+                Install InsighteCase
+              </button>
+            )}
+          </li>
         </ol>
+        <button type="button" className="app-version-notice__later" onClick={() => void handleCopy()}>
+          Copy link
+        </button>
         {copyNote ? <p className="app-version-sheet__note">{copyNote}</p> : null}
         <div className="app-version-sheet__actions">
           <button type="button" className="app-version-btn app-version-btn--ghost" onClick={onClose}>

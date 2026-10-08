@@ -162,6 +162,10 @@
   margin-bottom: 12px;
 }
 
+.app-version-sheet__steps--compact li {
+  margin-bottom: 14px;
+}
+
 .app-version-sheet__step-num {
   font-weight: 700;
   color: #0f3d2e;

@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext.jsx'
 import { AppRoutes } from './routes/AppRoutes.jsx'
 import { queryClient } from './lib/queryClient.js'
 import { PwaStaleRecoveryListener } from './components/shared/PwaStaleRecoveryListener.jsx'
+import { PwaReinstallLanding } from './components/shared/PwaReinstallLanding.jsx'
 import './App.css'
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PwaStaleRecoveryListener />
+            <PwaReinstallLanding />
             <AppRoutes />
             <Analytics />
           </AuthProvider>
