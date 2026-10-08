@@ -163,6 +163,115 @@ def active_transition_for_case(db: Session, case_id: int) -> CaseTherapistTransi
     ).first()
 
 
+def transition_handover_date_bounds(transition: CaseTherapistTransition) -> tuple[date, date] | None:
+    dates = sorted(coerced_transition_dates(transition.transition_dates))
+    if not dates:
+        return None
+    return dates[0], dates[-1]
+
+
+def therapist_may_book_during_transition(
+    transition: CaseTherapistTransition,
+    therapist_user_id: int,
+    slot_date: date,
+) -> bool:
+    bounds = transition_handover_date_bounds(transition)
+    if not bounds:
+        return False
+    first_day, last_day = bounds
+    if therapist_user_id == transition.outgoing_therapist_user_id:
+        return slot_date <= last_day
+    if therapist_user_id == transition.incoming_therapist_user_id:
+        return slot_date >= first_day
+    return False
+
+
+def outgoing_bookings_after_handover(
+    db: Session,
+    transition: CaseTherapistTransition,
+) -> list[dict]:
+    """Booked slots for the outgoing therapist after the last handover day (CM visibility)."""
+    from app.models.slot import SlotStatus, TherapistSlot
+
+    bounds = transition_handover_date_bounds(transition)
+    if not bounds:
+        return []
+    _, last_day = bounds
+    rows = db.scalars(
+        select(TherapistSlot).where(
+            TherapistSlot.case_id == transition.case_id,
+            TherapistSlot.therapist_user_id == transition.outgoing_therapist_user_id,
+            TherapistSlot.slot_date > last_day,
+            TherapistSlot.status == SlotStatus.BOOKED,
+        )
+    ).all()
+    return [
+        {
+            "slot_id": slot.id,
+            "slot_date": slot.slot_date.isoformat(),
+            "start_time": slot.start_time.isoformat() if slot.start_time else None,
+            "session_id": slot.session_id,
+        }
+        for slot in rows
+    ]
+
+
+def transition_booking_policy(transition: CaseTherapistTransition) -> dict:
+    bounds = transition_handover_date_bounds(transition)
+    if not bounds:
+        return {}
+    first_day, last_day = bounds
+    return {
+        "first_handover_date": first_day.isoformat(),
+        "last_handover_date": last_day.isoformat(),
+        "outgoing_therapist_user_id": transition.outgoing_therapist_user_id,
+        "incoming_therapist_user_id": transition.incoming_therapist_user_id,
+        "outgoing_may_book_through": last_day.isoformat(),
+        "incoming_may_book_from": first_day.isoformat(),
+    }
+
+
+def slot_allowed_for_case_handover(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    slot_date: date,
+) -> bool:
+    transition = active_transition_for_case(db, case_id)
+    if not transition:
+        return True
+    return therapist_may_book_during_transition(transition, therapist_user_id, slot_date)
+
+
+def is_transition_assignment_overlap(
+    db: Session,
+    case_id: int,
+    covering: list[CaseAssignment],
+) -> bool:
+    """True when active assignments are exactly this case's open handover pair."""
+    if len(covering) < 2:
+        return False
+    therapists = {a.therapist_user_id for a in covering}
+    if len(therapists) < 2:
+        return False
+    transition = active_transition_for_case(db, case_id)
+    if not transition:
+        return False
+    expected = {
+        transition.outgoing_therapist_user_id,
+        transition.incoming_therapist_user_id,
+    }
+    if therapists != expected:
+        return False
+    assignment_ids = {a.id for a in covering}
+    expected_ids = {
+        transition.outgoing_assignment_id,
+        transition.incoming_assignment_id,
+    }
+    return assignment_ids == expected_ids
+
+
 def list_transitions_for_case(db: Session, case_id: int) -> list[CaseTherapistTransition]:
     return list(
         db.scalars(
@@ -554,6 +663,19 @@ def complete_transition(
     dates = coerced_transition_dates(transition.transition_dates)
     last_date = max(dates) if dates else today_ist()
 
+    leftover_bookings = outgoing_bookings_after_handover(db, transition)
+    if leftover_bookings:
+        logger.warning(
+            "Transition %s completing for case %s: outgoing therapist %s still has %s booked "
+            "session(s) after the last handover day (%s): %s",
+            transition.id,
+            transition.case_id,
+            transition.outgoing_therapist_user_id,
+            len(leftover_bookings),
+            last_date.isoformat(),
+            leftover_bookings,
+        )
+
     outgoing = db.get(CaseAssignment, transition.outgoing_assignment_id)
     if outgoing and outgoing.status == CaseAssignmentStatus.ACTIVE:
         outgoing.status = CaseAssignmentStatus.TRANSFERRED
@@ -667,6 +789,7 @@ def transition_to_read_dict(db: Session, transition: CaseTherapistTransition) ->
     incoming = users.get(transition.incoming_therapist_user_id)
     creator = users.get(transition.created_by_user_id)
     locked_dates = submitted_transition_dates(db, transition.id)
+    future_outgoing = outgoing_bookings_after_handover(db, transition)
     return {
         "id": transition.id,
         "case_id": transition.case_id,
@@ -684,6 +807,9 @@ def transition_to_read_dict(db: Session, transition: CaseTherapistTransition) ->
         "full_day_pay_inr": float(transition.full_day_pay_inr),
         "half_day_pay_inr": float(transition.half_day_pay_inr),
         "locked_dates": sorted(value.isoformat() for value in locked_dates),
+        "outgoing_future_bookings_after_handover": future_outgoing,
+        "has_outgoing_future_bookings_after_handover": bool(future_outgoing),
+        "booking_policy": transition_booking_policy(transition),
         "can_cancel": transition.status in OPEN_TRANSITION_STATUSES and not locked_dates,
         "notes": transition.notes,
         "created_by_user_id": transition.created_by_user_id,

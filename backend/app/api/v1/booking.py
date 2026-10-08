@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.module_write import ensure_case_transition_allows_booking
+from app.models.case import Case
+from app.models.slot import TherapistSlot
 from app.core.permissions import RoleName, user_has_permission, case_scope_check
 from app.models.slot import BookingSource
 from app.models.user import User
@@ -104,11 +107,23 @@ def booking_availability(
     therapist_id: int = Query(...),
     from_date: date = Query(...),
     to_date: date = Query(...),
+    case_id: Optional[int] = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_parent_booking(user)
-    return cal.list_available_slots_public(db, therapist_id, from_date, to_date)
+    if RoleName.PARENT.value in user.role_names:
+        _require_parent_booking(user)
+    elif case_id is not None:
+        case = case_service.get_case(db, case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if not (user_has_permission(user, "slot.book_any") or case_scope_check(db, user, case)):
+            raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        _require_parent_booking(user)
+    return cal.list_available_slots_public(
+        db, therapist_id, from_date, to_date, case_id=case_id
+    )
 
 
 @router.post("/appointments", status_code=status.HTTP_201_CREATED)
@@ -122,6 +137,18 @@ def create_appointment(
     allowed = _parent_case_ids(db, user)
     if payload.case_id not in allowed:
         raise HTTPException(status_code=404, detail="Case not found")
+    slot_row = db.get(TherapistSlot, payload.slot_id)
+    if not slot_row:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    case = db.get(Case, payload.case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_transition_allows_booking(
+        case,
+        db,
+        slot_date=slot_row.slot_date,
+        therapist_user_id=slot_row.therapist_user_id,
+    )
     try:
         slot = appt_booking.book_with_session(
             db, payload.slot_id, payload.case_id, user.id, BookingSource.PARENT
