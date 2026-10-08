@@ -66,14 +66,23 @@ test('detectReinstallPlatform', () => {
 })
 
 test('detectReinstallPlatform() with no args uses navigator when available', () => {
-  const original = globalThis.navigator
-  globalThis.navigator = {
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
-    platform: 'Linux x86_64',
-    maxTouchPoints: 0,
+  // Node 21+ exposes a getter-only global navigator, so swap it via defineProperty.
+  const originalDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    writable: true,
+    value: {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+      platform: 'Linux x86_64',
+      maxTouchPoints: 0,
+    },
+  })
+  try {
+    assert.equal(detectReinstallPlatform(), 'ios')
+  } finally {
+    if (originalDesc) Object.defineProperty(globalThis, 'navigator', originalDesc)
+    else delete globalThis.navigator
   }
-  assert.equal(detectReinstallPlatform(), 'ios')
-  globalThis.navigator = original
 })
 
 test('getReinstallSteps includes portal URL in copy step flow', () => {
