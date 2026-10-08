@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.module_access import is_view_only_user, module_bypass, user_has_feature
 from app.core.modules import MODULE_BY_ID
 from app.core.rbac_access import build_module_registry, user_can_write_module, user_module_enabled
 from app.models.case import Case
-from app.models.case_therapist_transition import (
-    CaseTherapistTransition,
-    CaseTherapistTransitionStatus,
-)
+from app.models.case_therapist_transition import CaseTherapistTransition
 from app.models.user import User
 from app.services import therapist_transition_service
 
@@ -106,6 +104,23 @@ def user_can_write_feature(
     return False
 
 
+_TRANSITION_STRUCTURAL_LOCK_DETAIL = (
+    "This case is in a therapist transition. Other case changes are paused "
+    "until the handover is completed or cancelled."
+)
+
+_TRANSITION_BOOKING_LOCK_DETAIL = (
+    "This booking is outside the handover window for this therapist. "
+    "Outgoing therapists can book through the last handover day; "
+    "incoming therapists can book from the first handover day onward."
+)
+
+
+def _open_transition_for_case(db: Session, case_id: int) -> CaseTherapistTransition | None:
+    therapist_transition_service.complete_due_transition_for_case(db, case_id)
+    return therapist_transition_service.active_transition_for_case(db, case_id)
+
+
 def ensure_case_transition_allows_write(
     case: Case,
     db: Session,
@@ -114,28 +129,53 @@ def ensure_case_transition_allows_write(
 ) -> None:
     if allow_during_transition:
         return
-    therapist_transition_service.complete_due_transition_for_case(db, case.id)
-    open_transition = db.scalars(
-        select(CaseTherapistTransition.id)
-        .where(
-            CaseTherapistTransition.case_id == case.id,
-            CaseTherapistTransition.status.in_(
-                [
-                    CaseTherapistTransitionStatus.SCHEDULED,
-                    CaseTherapistTransitionStatus.ACTIVE,
-                ]
-            ),
-        )
-        .limit(1)
-    ).first()
-    if open_transition:
+    if _open_transition_for_case(db, case.id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "This case is in a therapist transition. Other case changes are paused "
-                "until the handover is completed or cancelled."
-            ),
+            detail=_TRANSITION_STRUCTURAL_LOCK_DETAIL,
         )
+
+
+def ensure_case_transition_allows_booking(
+    case: Case,
+    db: Session,
+    *,
+    slot_date: date,
+    therapist_user_id: int,
+) -> None:
+    """Scoped booking during SCHEDULED/ACTIVE handover — operational, not structural."""
+    transition = _open_transition_for_case(db, case.id)
+    if not transition:
+        return
+    if therapist_transition_service.therapist_may_book_during_transition(
+        transition, therapist_user_id, slot_date
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=_TRANSITION_BOOKING_LOCK_DETAIL,
+    )
+
+
+def ensure_case_transition_allows_booking_range(
+    case: Case,
+    db: Session,
+    *,
+    start_date: date,
+    end_date: date,
+    therapist_user_id: int,
+) -> None:
+    if end_date < start_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date range")
+    current = start_date
+    while current <= end_date:
+        ensure_case_transition_allows_booking(
+            case,
+            db,
+            slot_date=current,
+            therapist_user_id=therapist_user_id,
+        )
+        current += timedelta(days=1)
 
 
 def ensure_case_write_access(
@@ -232,6 +272,6 @@ def guard_clinical_case(
     feature: str | None = None,
 ) -> None:
     """Case programme write plus optional feature (reports, iep, session_logs, …)."""
-    ensure_case_write_access(user, case, db)
+    ensure_case_write_access(user, case, db, allow_during_transition=True)
     if feature:
         ensure_feature_write_access(user, feature, product_module=case.product_module, db=db)

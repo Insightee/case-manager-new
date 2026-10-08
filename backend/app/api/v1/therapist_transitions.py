@@ -45,6 +45,9 @@ class TherapistTransitionRead(BaseModel):
     full_day_pay_inr: float
     half_day_pay_inr: float
     locked_dates: list[str] = Field(default_factory=list)
+    outgoing_future_bookings_after_handover: list[dict] = Field(default_factory=list)
+    has_outgoing_future_bookings_after_handover: bool = False
+    booking_policy: dict = Field(default_factory=dict)
     can_cancel: bool = False
     notes: Optional[str] = None
     created_by_user_id: int

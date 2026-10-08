@@ -505,9 +505,20 @@ def _case_for_user(db: Session, user: User, case_id: int) -> Case:
     return case
 
 
-def _case_for_user_write(db: Session, user: User, case_id: int) -> Case:
+def _case_for_user_write(
+    db: Session,
+    user: User,
+    case_id: int,
+    *,
+    allow_during_transition: bool = True,
+) -> Case:
     case = _case_for_user(db, user, case_id)
-    ensure_case_write_access(user, case, db)
+    ensure_case_write_access(
+        user,
+        case,
+        db,
+        allow_during_transition=allow_during_transition,
+    )
     return case
 
 
