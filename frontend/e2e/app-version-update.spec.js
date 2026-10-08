@@ -61,7 +61,14 @@ test.describe('App version update notice', () => {
     const sheet = page.getByRole('dialog', { name: /Re-add the InsighteCase shortcut/i })
     await expect(sheet).toBeVisible()
     await expect(sheet.getByRole('link', { name: PRODUCTION_THERAPIST_URL })).toBeVisible()
-    if (slug === 'desktop') {
+    if (slug === 'iphone') {
+      await expect(sheet.getByRole('button', { name: 'Open in Safari' })).toBeVisible()
+      await expect(sheet.getByText(/Add to Home Screen/i)).toBeVisible()
+      await expect(sheet.getByText(/chrome:\/\/apps/i)).toHaveCount(0)
+    } else if (slug === 'android') {
+      await expect(sheet.getByRole('button', { name: 'Open in Chrome' })).toBeVisible()
+      await expect(sheet.getByText(/chrome:\/\/apps/i)).toHaveCount(0)
+    } else if (slug === 'desktop') {
       await expect(sheet.getByText(/chrome:\/\/apps/i)).toBeVisible()
     }
 

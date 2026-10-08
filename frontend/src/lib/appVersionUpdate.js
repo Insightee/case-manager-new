@@ -86,19 +86,19 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
       {
         id: 'remove',
         kind: 'text',
-        text: `Remove the old ${appName} shortcut from your home screen (press and hold the icon → Remove App → Delete App).`,
+        text: `Press and hold the old ${appName} icon on your home screen, then choose Remove App → Delete from Home Screen.`,
       },
       {
         id: 'open-safari',
         kind: 'action',
         action: 'open_safari',
         label: 'Open in Safari',
-        hint: `Open Safari, paste ${link}, and sign in.`,
+        hint: 'Paste the link in Safari if it does not open automatically.',
       },
       {
         id: 'add',
         kind: 'text',
-        text: 'Tap Share → Add to Home Screen → Add to re-add the web app shortcut.',
+        text: 'Tap Share → Add to Home Screen → Add.',
       },
     ]
   }
@@ -146,15 +146,25 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
   ]
 }
 
-/** @param {string} [userAgent] */
-export function detectReinstallPlatform(userAgent = '') {
-  const ua = userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : '')
-  const isIos =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (typeof navigator !== 'undefined' &&
-      navigator.platform === 'MacIntel' &&
-      navigator.maxTouchPoints > 1)
-  if (isIos) return 'ios'
+/**
+ * @param {string | { userAgent?: string, platform?: string, maxTouchPoints?: number }} [input]
+ * @returns {'ios' | 'android' | 'desktop'}
+ */
+export function detectReinstallPlatform(input) {
+  const env =
+    typeof input === 'string'
+      ? { userAgent: input }
+      : input != null && typeof input === 'object'
+        ? input
+        : {}
+
+  const ua = env.userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '')
+  const platform = env.platform ?? (typeof navigator !== 'undefined' ? navigator.platform : '')
+  const maxTouchPoints =
+    env.maxTouchPoints ?? (typeof navigator !== 'undefined' ? navigator.maxTouchPoints : 0)
+
+  if (/iPad|iPhone|iPod/i.test(ua)) return 'ios'
+  if (platform === 'MacIntel' && maxTouchPoints > 1) return 'ios'
   if (/Android/i.test(ua)) return 'android'
   return 'desktop'
 }

@@ -30,9 +30,50 @@ test('formatVersionNoticeLead', () => {
 })
 
 test('detectReinstallPlatform', () => {
-  assert.equal(detectReinstallPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'), 'ios')
-  assert.equal(detectReinstallPlatform('Mozilla/5.0 (Linux; Android 14)'), 'android')
-  assert.equal(detectReinstallPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120'), 'desktop')
+  assert.equal(
+    detectReinstallPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'),
+    'ios',
+  )
+  assert.equal(
+    detectReinstallPlatform({
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+    }),
+    'ios',
+  )
+  assert.equal(detectReinstallPlatform('Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36'), 'android')
+  assert.equal(
+    detectReinstallPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'),
+    'desktop',
+  )
+  assert.equal(
+    detectReinstallPlatform(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    ),
+    'desktop',
+  )
+  assert.equal(
+    detectReinstallPlatform({
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+    }),
+    'desktop',
+  )
+})
+
+test('detectReinstallPlatform() with no args uses navigator when available', () => {
+  const original = globalThis.navigator
+  globalThis.navigator = {
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+    platform: 'Linux x86_64',
+    maxTouchPoints: 0,
+  }
+  assert.equal(detectReinstallPlatform(), 'ios')
+  globalThis.navigator = original
 })
 
 test('getReinstallSteps includes portal URL in copy step flow', () => {

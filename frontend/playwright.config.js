@@ -50,11 +50,8 @@ export default defineConfig({
       name: 'app-version-iphone',
       testMatch: '**/app-version-update.spec.js',
       use: {
-        browserName: 'webkit',
+        ...devices['iPhone 13'],
         viewport: { width: 375, height: 812 },
-        isMobile: true,
-        hasTouch: true,
-        deviceScaleFactor: 3,
       },
     },
     {
