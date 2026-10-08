@@ -206,7 +206,10 @@ def preview_invoice(
         if not user_has_permission(user, "invoice.approve"):
             raise HTTPException(status_code=403, detail="Access denied")
         target_id = therapist_user_id
-    preview = invoice_billing_service.build_month_preview(db, target_id, month)
+    try:
+        preview = invoice_billing_service.build_month_preview(db, target_id, month)
+    except ValueError as e:
+        raise_http_for_billing_calc_error(e)
     if _hide_client_pricing(user):
         preview = _redact_preview_client_pricing(preview)
     preview["therapistUserId"] = target_id
@@ -274,7 +277,10 @@ def submit_invoice_for_therapist(
     therapist = db.get(User, payload.therapist_user_id)
     if not therapist:
         raise HTTPException(status_code=404, detail="Therapist not found")
-    preview = invoice_billing_service.build_month_preview(db, payload.therapist_user_id, payload.month)
+    try:
+        preview = invoice_billing_service.build_month_preview(db, payload.therapist_user_id, payload.month)
+    except ValueError as e:
+        raise_http_for_billing_calc_error(e)
     note = (payload.notes or "").strip() or "Raised by finance"
     try:
         invoice = invoice_billing_service.submit_invoice_from_preview(
@@ -418,7 +424,10 @@ def submit_invoice(
     user: User = Depends(require_permission("invoice.generate")),
     db: Session = Depends(get_db),
 ):
-    preview = invoice_billing_service.build_month_preview(db, user.id, payload.month)
+    try:
+        preview = invoice_billing_service.build_month_preview(db, user.id, payload.month)
+    except ValueError as e:
+        raise_http_for_billing_calc_error(e)
     if payload.edits:
         edits_dict = payload.edits.model_dump()
         preview = invoice_billing_service.apply_preview_edits(preview, edits_dict)
@@ -446,7 +455,10 @@ def amend_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.therapist_user_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    preview = invoice_billing_service.build_month_preview(db, user.id, invoice.month)
+    try:
+        preview = invoice_billing_service.build_month_preview(db, user.id, invoice.month)
+    except ValueError as e:
+        raise_http_for_billing_calc_error(e)
     if payload.edits:
         preview = invoice_billing_service.apply_preview_edits(
             preview, payload.edits.model_dump()
