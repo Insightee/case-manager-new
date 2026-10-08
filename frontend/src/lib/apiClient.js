@@ -258,6 +258,11 @@ function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {
   return `This is taking longer than expected (${secs}s). Check your connection and try again.`
 }
 
+export function isTimeoutError(err) {
+  const msg = String(err?.message || '')
+  return msg.startsWith('Request timed out') || /taking longer than expected/i.test(msg)
+}
+
 export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = timeoutMs > 0 ? new AbortController() : null
   const timer =
@@ -403,7 +408,7 @@ export async function apiFetch(path, options = {}) {
   } catch (err) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
-    if (err?.message?.startsWith('Request timed out')) throw err
+    if (isTimeoutError(err)) throw err
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       const offlineErr = new Error('You appear offline. Check your connection and try again.')
       offlineErr.isConnectionError = true

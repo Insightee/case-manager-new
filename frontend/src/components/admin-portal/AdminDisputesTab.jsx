@@ -22,6 +22,7 @@ export function AdminDisputesTab() {
   const [replyId, setReplyId] = useState(null)
   const [replyBody, setReplyBody] = useState('')
   const [correctionId, setCorrectionId] = useState(null)
+  const [drawerId, setDrawerId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
