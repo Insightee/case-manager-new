@@ -75,7 +75,10 @@ export function shouldOfferReinstallFallback(buildKey, remoteNewer) {
 }
 
 /**
- * @param {'ios' | 'android' | 'android-samsung' | 'android-firefox' | 'mac-safari' | 'desktop' | 'desktop-firefox'} platform
+ * Re-add shortcut steps for the browsers we support: Chrome, Safari and Edge.
+ * Other browsers fall back to the closest of these (Chromium-style on Android
+ * and desktop, the shared iOS home-screen flow on iPhone).
+ * @param {'ios' | 'ios-chrome' | 'ios-edge' | 'android' | 'android-edge' | 'mac-safari' | 'desktop' | 'desktop-edge'} platform
  * @param {{ portalUrl: string, appName: string }} ctx
  */
 export function getReinstallSteps(platform, { portalUrl, appName }) {
@@ -86,7 +89,9 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
     kind: 'text',
     text: `Remove the old ${appName} home screen shortcut (press and hold the icon → Uninstall or Remove).`,
   }
-  if (platform === 'ios') {
+
+  if (platform === 'ios' || platform === 'ios-chrome' || platform === 'ios-edge') {
+    const browser = platform === 'ios-chrome' ? 'Chrome' : platform === 'ios-edge' ? 'Edge' : 'Safari'
     return [
       copyStep,
       {
@@ -95,20 +100,25 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
         text: `Press and hold the old ${appName} icon on your home screen, then choose Remove App → Delete from Home Screen.`,
       },
       {
-        id: 'open-safari',
+        id: 'open-browser',
         kind: 'action',
-        action: 'open_safari',
-        label: 'Open in Safari',
-        hint: 'Paste the link in Safari if it does not open automatically. Chrome or Edge on iPhone also work: paste the link there instead.',
+        action: platform === 'ios' ? 'open_safari' : 'open_browser',
+        label: `Open in ${browser}`,
+        hint: `Paste the link in ${browser} if it does not open automatically. Safari, Chrome and Edge on iPhone all use the same steps.`,
       },
       {
         id: 'add',
         kind: 'text',
-        text: 'Tap Share (square with an arrow; in Chrome or Edge it is in the address bar or ⋯ menu) → Add to Home Screen → Add.',
+        text:
+          browser === 'Safari'
+            ? 'Tap Share (the square with an arrow) → Add to Home Screen → Add.'
+            : `Tap the Share icon in the address bar, or ⋯ → Share → Add to Home Screen → Add.`,
       },
     ]
   }
-  if (platform === 'android-samsung') {
+
+  if (platform === 'android' || platform === 'android-edge') {
+    const browser = platform === 'android-edge' ? 'Edge' : 'Chrome'
     return [
       copyStep,
       androidRemove,
@@ -116,52 +126,20 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
         id: 'open-browser',
         kind: 'action',
         action: 'open_browser',
-        label: 'Open in Samsung Internet',
-        hint: `Paste ${link} in Samsung Internet if needed.`,
+        label: `Open in ${browser}`,
+        hint: `Paste ${link} in ${browser} if needed.`,
       },
       {
         id: 'install',
         kind: 'text',
-        text: 'Tap the install icon in the address bar, or the ☰ menu → Add page to → Home screen.',
+        text:
+          browser === 'Edge'
+            ? 'Tap … → Add to phone → Install app (or Add to Home screen) → Add.'
+            : 'Tap ⋮ → Install app or Add to Home screen → Add.',
       },
     ]
   }
-  if (platform === 'android-firefox') {
-    return [
-      copyStep,
-      androidRemove,
-      {
-        id: 'open-browser',
-        kind: 'action',
-        action: 'open_browser',
-        label: 'Open in Firefox',
-        hint: `Paste ${link} in Firefox if needed.`,
-      },
-      {
-        id: 'install',
-        kind: 'text',
-        text: 'Tap ⋮ → Add app to Home screen (may read Install or Add to Home screen) → Add.',
-      },
-    ]
-  }
-  if (platform === 'android') {
-    return [
-      copyStep,
-      androidRemove,
-      {
-        id: 'open-browser',
-        kind: 'action',
-        action: 'open_browser',
-        label: 'Open in browser',
-        hint: `Paste ${link} in Chrome (or Brave / Edge) if needed.`,
-      },
-      {
-        id: 'install',
-        kind: 'text',
-        text: 'Tap ⋮ → Install app or Add to Home screen to add the shortcut again.',
-      },
-    ]
-  }
+
   if (platform === 'mac-safari') {
     return [
       copyStep,
@@ -184,53 +162,55 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
       },
     ]
   }
-  if (platform === 'desktop-firefox') {
+
+  if (platform === 'desktop-edge') {
     return [
       copyStep,
       {
         id: 'open',
         kind: 'action',
         action: 'open_browser',
-        label: 'Open in a browser tab',
-        hint: 'Use a normal browser tab, not the shortcut window.',
+        label: 'Open in Edge',
+        hint: 'Use a normal Edge tab, not the installed app window.',
       },
       {
         id: 'remove',
         kind: 'text',
-        text: `Remove the old ${appName} shortcut (right-click it on the taskbar or desktop → Unpin / Delete).`,
+        text: `Remove the old ${appName} shortcut: in the app window open … → App settings → Uninstall, or go to edge://apps, right‑click the icon → Uninstall.`,
       },
       {
         id: 'install',
         kind: 'text',
-        text: 'Firefox cannot re-add the app on most computers: bookmark the link, or open it in Chrome or Edge and use the install icon in the address bar.',
+        text: 'Re-add it: use the install icon in the address bar, or … → Apps → Install this site as an app → Install.',
       },
     ]
   }
+
   return [
     copyStep,
     {
       id: 'open',
       kind: 'action',
       action: 'open_browser',
-      label: 'Open in a browser tab',
-      hint: 'Use a normal Chrome, Edge or Brave tab, not the installed shortcut window.',
+      label: 'Open in Chrome',
+      hint: 'Use a normal Chrome tab, not the installed shortcut window.',
     },
     {
       id: 'remove',
       kind: 'text',
-      text: `Remove the old ${appName} shortcut. Chrome / Brave: in the app window, open the ⋮ menu → Uninstall ${appName} (or visit chrome://apps / brave://apps, right‑click the icon → Remove). Edge: … → Apps → Manage apps → remove the old shortcut.`,
+      text: `Remove the old ${appName} shortcut: in the app window open ⋮ → Uninstall ${appName}, or go to chrome://apps, right‑click the icon → Remove.`,
     },
     {
       id: 'install',
       kind: 'text',
-      text: 'Re-add the shortcut: use the install icon in the address bar, or Chrome ⋮ → Cast, save and share → Install page as app (Edge: Apps → Install this site as an app; Brave: ≡ → Install InsighteCase).',
+      text: 'Re-add the shortcut: use the install icon in the address bar, or ⋮ → Cast, save and share → Install page as app.',
     },
   ]
 }
 
 /**
  * @param {string | { userAgent?: string, platform?: string, maxTouchPoints?: number }} [input]
- * @returns {'ios' | 'android' | 'android-samsung' | 'android-firefox' | 'mac-safari' | 'desktop' | 'desktop-firefox'}
+ * @returns {'ios' | 'ios-chrome' | 'ios-edge' | 'android' | 'android-edge' | 'mac-safari' | 'desktop' | 'desktop-edge'}
  */
 export function detectReinstallPlatform(input) {
   const env =
@@ -245,15 +225,17 @@ export function detectReinstallPlatform(input) {
   const maxTouchPoints =
     env.maxTouchPoints ?? (typeof navigator !== 'undefined' ? navigator.maxTouchPoints : 0)
 
-  // Every iOS / iPadOS browser (Safari, CriOS, FxiOS, EdgiOS) uses WebKit and the same Add to Home Screen flow.
-  if (/iPad|iPhone|iPod/i.test(ua)) return 'ios'
-  if (platform === 'MacIntel' && maxTouchPoints > 1) return 'ios'
+  // Every iPhone / iPad browser is WebKit. Name the three we support; anything else gets Safari's steps.
+  if (/iPad|iPhone|iPod/i.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1)) {
+    if (/CriOS/i.test(ua)) return 'ios-chrome'
+    if (/EdgiOS/i.test(ua)) return 'ios-edge'
+    return 'ios'
+  }
   if (/Android/i.test(ua)) {
-    if (/SamsungBrowser/i.test(ua)) return 'android-samsung'
-    if (/Firefox\//i.test(ua)) return 'android-firefox'
+    if (/EdgA\//i.test(ua)) return 'android-edge'
     return 'android'
   }
-  if (/Firefox\//i.test(ua)) return 'desktop-firefox'
+  if (/Edg\//i.test(ua)) return 'desktop-edge'
   if (/Macintosh|Mac OS X/i.test(ua) && /Safari\//i.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/i.test(ua)) {
     return 'mac-safari'
   }

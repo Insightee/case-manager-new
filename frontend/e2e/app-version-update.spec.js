@@ -66,7 +66,7 @@ test.describe('App version update notice', () => {
       await expect(sheet.getByText(/Add to Home Screen/i)).toBeVisible()
       await expect(sheet.getByText(/chrome:\/\/apps/i)).toHaveCount(0)
     } else if (slug === 'android') {
-      await expect(sheet.getByRole('button', { name: 'Open in browser' })).toBeVisible()
+      await expect(sheet.getByRole('button', { name: 'Open in Chrome' })).toBeVisible()
       await expect(sheet.getByText(/chrome:\/\/apps/i)).toHaveCount(0)
     } else if (slug === 'desktop') {
       await expect(sheet.getByText(/chrome:\/\/apps/i)).toBeVisible()

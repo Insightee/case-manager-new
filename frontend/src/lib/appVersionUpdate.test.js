@@ -52,7 +52,7 @@ test('detectReinstallPlatform', () => {
     detectReinstallPlatform(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
     ),
-    'desktop',
+    'desktop-edge',
   )
   assert.equal(
     detectReinstallPlatform({
@@ -98,6 +98,7 @@ test('getReinstallSteps includes portal URL in copy step flow', () => {
     appName: 'InsighteCase Therapist',
   })
   assert.match(desktop.find((s) => s.id === 'remove')?.text || '', /chrome:\/\/apps/i)
+  assert.doesNotMatch(desktop.find((s) => s.id === 'remove')?.text || '', /edge:\/\/apps/i)
 })
 
 test('shouldOfferReinstallFallback only after prior stale visit', () => {
@@ -139,42 +140,44 @@ test('buildIosSafariOpenUrl', () => {
 const BROWSER_UAS = {
   iphoneSafari:
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-  iphoneChrome:
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.54 Mobile/15E148 Safari/604.1',
   iphoneStandalone:
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-  samsung:
-    'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
-  androidFirefox: 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0',
-  // Brave sends a plain Chrome UA on Android and desktop.
-  androidBrave:
+  iphoneChrome:
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.54 Mobile/15E148 Safari/604.1',
+  iphoneEdge:
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 EdgiOS/126.0.2592.56 Mobile/15E148 Safari/605.1.15',
+  androidChrome:
     'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
-  desktopFirefox: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
-  macFirefox: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5; rv:128.0) Gecko/20100101 Firefox/128.0',
-  desktopBrave:
+  androidEdge:
+    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 EdgA/126.0.2592.80',
+  winChrome:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  winEdge:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.2592.87',
   macChrome:
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  macEdge:
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.2592.87',
   macSafari:
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
 }
 
-test('detectReinstallPlatform per browser', () => {
+test('detectReinstallPlatform for Chrome, Safari and Edge', () => {
   const mac = (userAgent) => ({ userAgent, platform: 'MacIntel', maxTouchPoints: 0 })
   assert.equal(detectReinstallPlatform(BROWSER_UAS.iphoneSafari), 'ios')
-  assert.equal(detectReinstallPlatform(BROWSER_UAS.iphoneChrome), 'ios')
   assert.equal(detectReinstallPlatform(BROWSER_UAS.iphoneStandalone), 'ios')
-  assert.equal(detectReinstallPlatform(BROWSER_UAS.samsung), 'android-samsung')
-  assert.equal(detectReinstallPlatform(BROWSER_UAS.androidFirefox), 'android-firefox')
-  assert.equal(detectReinstallPlatform(BROWSER_UAS.androidBrave), 'android')
-  assert.equal(detectReinstallPlatform(BROWSER_UAS.desktopFirefox), 'desktop-firefox')
-  assert.equal(detectReinstallPlatform(mac(BROWSER_UAS.macFirefox)), 'desktop-firefox')
-  assert.equal(detectReinstallPlatform(BROWSER_UAS.desktopBrave), 'desktop')
+  assert.equal(detectReinstallPlatform(BROWSER_UAS.iphoneChrome), 'ios-chrome')
+  assert.equal(detectReinstallPlatform(BROWSER_UAS.iphoneEdge), 'ios-edge')
+  assert.equal(detectReinstallPlatform(BROWSER_UAS.androidChrome), 'android')
+  assert.equal(detectReinstallPlatform(BROWSER_UAS.androidEdge), 'android-edge')
+  assert.equal(detectReinstallPlatform(BROWSER_UAS.winChrome), 'desktop')
+  assert.equal(detectReinstallPlatform(BROWSER_UAS.winEdge), 'desktop-edge')
   assert.equal(detectReinstallPlatform(mac(BROWSER_UAS.macChrome)), 'desktop')
+  assert.equal(detectReinstallPlatform(mac(BROWSER_UAS.macEdge)), 'desktop-edge')
   assert.equal(detectReinstallPlatform(mac(BROWSER_UAS.macSafari)), 'mac-safari')
 })
 
-test('getReinstallSteps gives each browser its own flow', () => {
+test('getReinstallSteps gives Chrome, Safari and Edge their own flow', () => {
   const ctx = { portalUrl: 'https://www.insighte.org/parent', appName: 'InsighteCase Client' }
   const text = (platform) =>
     getReinstallSteps(platform, ctx)
@@ -182,31 +185,30 @@ test('getReinstallSteps gives each browser its own flow', () => {
       .join(' | ')
   const actions = (platform) => getReinstallSteps(platform, ctx).map((s) => s.action).filter(Boolean)
 
-  // iPhone (any browser): Safari primary, Chrome/Edge mentioned, never desktop steps.
-  assert.match(text('ios'), /Add to Home Screen/)
-  assert.match(text('ios'), /Chrome or Edge/)
-  assert.doesNotMatch(text('ios'), /chrome:\/\/apps|Install app/)
+  // iPhone: never desktop steps; Chrome/Edge users are not forced into Safari.
+  for (const p of ['ios', 'ios-chrome', 'ios-edge']) {
+    assert.match(text(p), /Add to Home Screen/)
+    assert.doesNotMatch(text(p), /chrome:\/\/apps|edge:\/\/apps|Install app/)
+  }
   assert.deepEqual(actions('ios'), ['copy', 'open_safari'])
+  assert.match(text('ios-chrome'), /Open in Chrome/)
+  assert.deepEqual(actions('ios-chrome'), ['copy', 'open_browser'])
+  assert.match(text('ios-edge'), /Open in Edge/)
+  assert.deepEqual(actions('ios-edge'), ['copy', 'open_browser'])
 
-  assert.match(text('android-samsung'), /Samsung Internet/)
-  assert.match(text('android-samsung'), /Add page to → Home screen/)
-  assert.doesNotMatch(text('android-samsung'), /Open in Chrome|chrome:\/\/apps/)
-
-  assert.match(text('android-firefox'), /Open in Firefox/)
-  assert.doesNotMatch(text('android-firefox'), /Open in Chrome|chrome:\/\/apps/)
-
-  assert.match(text('android'), /Open in browser/)
-  assert.match(text('android'), /Brave/)
+  assert.match(text('android'), /Open in Chrome/)
+  assert.match(text('android'), /Install app/)
+  assert.match(text('android-edge'), /Open in Edge/)
+  assert.doesNotMatch(text('android-edge'), /Open in Chrome|chrome:\/\//)
 
   assert.match(text('mac-safari'), /Add to Dock/)
   assert.match(text('mac-safari'), /Open in Safari/)
-  assert.doesNotMatch(text('mac-safari'), /chrome:\/\/apps|Edge|Chrome/)
+  assert.doesNotMatch(text('mac-safari'), /chrome:\/\/apps|edge:\/\/apps|Edge|Chrome/)
   assert.deepEqual(actions('mac-safari'), ['copy', 'open_browser'])
 
-  assert.match(text('desktop-firefox'), /bookmark/)
-  assert.doesNotMatch(text('desktop-firefox'), /chrome:\/\/apps/)
-
   assert.match(text('desktop'), /chrome:\/\/apps/)
-  assert.match(text('desktop'), /brave:\/\/apps/)
-  assert.doesNotMatch(text('desktop'), /Add to Dock|Add to Home Screen/)
+  assert.doesNotMatch(text('desktop'), /edge:\/\/apps|Add to Dock|Add to Home Screen/)
+  assert.match(text('desktop-edge'), /edge:\/\/apps/)
+  assert.match(text('desktop-edge'), /Install this site as an app/)
+  assert.doesNotMatch(text('desktop-edge'), /chrome:\/\/apps|Add to Dock/)
 })
