@@ -40,7 +40,9 @@ frontend/.playwright-browsers/
 .idea/
 .vscode/
 *.swp
-.cursor/
+.cursor/*
+# Shared agent skills are committed (see .cursor/skills/README.md)
+!.cursor/skills/
 
 # Uploads (local dev artifacts)
 backend/uploads/
