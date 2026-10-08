@@ -15,6 +15,7 @@ import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
 import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.jsx'
 import { AppVersionNotice } from '../components/shared/AppVersionNotice.jsx'
+import { AppReleaseLabel } from '../components/shared/AppReleaseLabel.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
@@ -481,6 +482,7 @@ export function PortalShell({ portal }) {
                   >
                     Logout
                   </button>
+                  <AppReleaseLabel variant="menu" />
                 </div>
               ) : null}
             </div>
@@ -643,6 +645,7 @@ export function PortalShell({ portal }) {
             </div>
           )}
 
+          <AppReleaseLabel variant="footer" />
           <button type="button" className="app-sidebar__logout" onClick={requestLogout}>
             <svg
               className="app-sidebar__logout-icon"

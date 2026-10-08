@@ -1,6 +1,10 @@
 /** Build / service-worker version detection for PWA update prompts (all portals). */
 
-import { isIosSafari, isStandaloneDisplay } from './portalPwa.js'
+import { isStandaloneDisplay } from './portalPwa.js'
+import {
+  getEmbeddedReleaseLabel,
+  isDeployedReleaseNewer,
+} from './releaseLabel.js'
 
 export const VERSION_DISMISS_KEY = 'insightcase:version-notice-dismissed'
 export const VERSION_REFRESH_ATTEMPTS_KEY = 'insightcase:version-refresh-attempts'
@@ -11,7 +15,6 @@ export const HARD_RECOVERY_SHOWN_KEY = 'insightcase:version-hard-shown'
 const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000
 const MAX_SOFT_REFRESH_ATTEMPTS = 2
 
-/** @returns {string} */
 export function getEmbeddedBuildId() {
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BUILD_ID) {
     return String(import.meta.env.VITE_BUILD_ID)
@@ -19,18 +22,15 @@ export function getEmbeddedBuildId() {
   return 'dev'
 }
 
+export { getEmbeddedReleaseLabel }
+
 export function shouldPollRemoteVersion() {
   return Boolean(import.meta.env?.PROD)
 }
 
-/**
- * @param {string} embedded
- * @param {string | null | undefined} remote
- */
+/** @deprecated use isDeployedReleaseNewer */
 export function isRemoteBuildNewer(embedded, remote) {
-  if (!remote || !embedded) return false
-  if (embedded === 'dev' || remote === 'dev') return false
-  return embedded !== remote
+  return isDeployedReleaseNewer(embedded, remote)
 }
 
 /** @param {unknown} err */
@@ -41,6 +41,16 @@ export function isGenericNetworkError(err) {
   if (msg === 'failed to fetch' || msg === 'networkerror when attempting to fetch resource.') return true
   if (msg.includes('network request failed')) return true
   return false
+}
+
+/**
+ * @param {string} embedded
+ * @param {string | null | undefined} remote
+ */
+export function formatVersionNoticeLead(embedded, remote) {
+  const you = embedded || 'unknown'
+  const latest = remote || 'unknown'
+  return `You're on ${you}, latest is ${latest}. Tap Refresh now to load the latest build.`
 }
 
 /**
@@ -112,15 +122,15 @@ export function recordRefreshAttempt() {
   return next
 }
 
-export function dismissVersionNoticeForSession(buildId) {
+export function dismissVersionNoticeForSession(releaseKey) {
   if (typeof sessionStorage === 'undefined') return
-  sessionStorage.setItem(VERSION_DISMISS_KEY, buildId || 'unknown')
+  sessionStorage.setItem(VERSION_DISMISS_KEY, releaseKey || 'unknown')
 }
 
-export function isVersionNoticeDismissed(buildId) {
+export function isVersionNoticeDismissed(releaseKey) {
   if (typeof sessionStorage === 'undefined') return false
   const dismissed = sessionStorage.getItem(VERSION_DISMISS_KEY)
-  return dismissed && buildId && dismissed === buildId
+  return dismissed && releaseKey && dismissed === releaseKey
 }
 
 export function markHardRecoveryShown() {
@@ -149,9 +159,10 @@ export function markVersionChecked() {
 
 /**
  * Whether to show any update / stale UI (banner or sheet).
+ * Soft notice only when deployed release label is newer than the embedded client label.
  * @param {{
- *   embeddedBuildId: string
- *   remoteBuildId?: string | null
+ *   embeddedReleaseLabel: string
+ *   remoteReleaseLabel?: string | null
  *   chunkStale?: boolean
  *   swWaiting?: boolean
  *   standalone?: boolean
@@ -159,43 +170,39 @@ export function markVersionChecked() {
  */
 export function shouldShowVersionNotice(input) {
   const {
-    embeddedBuildId,
-    remoteBuildId = null,
+    embeddedReleaseLabel,
+    remoteReleaseLabel = null,
     chunkStale = false,
     swWaiting = false,
     standalone = isStandaloneDisplay(),
   } = input
 
-  const remoteNewer = isRemoteBuildNewer(embeddedBuildId, remoteBuildId)
-  const buildKey = remoteBuildId || embeddedBuildId || 'unknown'
+  const remoteNewer = isDeployedReleaseNewer(embeddedReleaseLabel, remoteReleaseLabel)
+  const buildKey = remoteReleaseLabel || embeddedReleaseLabel || 'unknown'
 
-  if (!chunkStale && !swWaiting && !remoteNewer) return { show: false, mode: 'none', buildKey }
+  if (!remoteNewer) return { show: false, mode: 'none', buildKey, remoteNewer: false }
 
   if (isVersionNoticeDismissed(buildKey) && !chunkStale) {
-    return { show: false, mode: 'none', buildKey }
+    return { show: false, mode: 'none', buildKey, remoteNewer: false }
   }
 
   const refreshAttempts = getRefreshAttemptCount()
   const hardEligible =
     standalone &&
-    (chunkStale || remoteNewer || swWaiting) &&
+    remoteNewer &&
     refreshAttempts >= MAX_SOFT_REFRESH_ATTEMPTS &&
     !wasHardRecoveryShown()
 
   if (hardEligible) {
-    return { show: true, mode: 'hard', buildKey }
+    return { show: true, mode: 'hard', buildKey, remoteNewer: true }
   }
 
-  if (chunkStale || swWaiting || remoteNewer) {
-    return { show: true, mode: 'soft', buildKey }
-  }
-
-  return { show: false, mode: 'none', buildKey }
+  return { show: true, mode: 'soft', buildKey, remoteNewer: true }
 }
 
 /**
  * Fetch /version.json (cache-busted lightly).
- * @returns {Promise<{ buildId: string } | null>}
+ * @returns {Promise<{ buildId: string, releaseLabel: string } | null>}
  */
 export async function fetchRemoteVersionMeta() {
   if (!shouldPollRemoteVersion()) return null
@@ -206,8 +213,11 @@ export async function fetchRemoteVersionMeta() {
     const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin' })
     if (!res.ok) return null
     const data = await res.json()
-    if (!data?.buildId) return null
-    return { buildId: String(data.buildId) }
+    if (!data?.releaseLabel) return null
+    return {
+      buildId: data.buildId ? String(data.buildId) : '',
+      releaseLabel: String(data.releaseLabel),
+    }
   } catch (err) {
     if (isGenericNetworkError(err)) return null
     return null

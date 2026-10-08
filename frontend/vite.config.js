@@ -1,3 +1,4 @@
+/* eslint-env node */
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -5,6 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execSync } from 'node:child_process'
+import { buildVersionManifest } from './scripts/releaseLabel.mjs'
 
 function resolveBuildId() {
   if (process.env.VITE_BUILD_ID) return String(process.env.VITE_BUILD_ID).slice(0, 64)
@@ -18,11 +20,13 @@ function resolveBuildId() {
 }
 
 const buildId = resolveBuildId()
+const versionManifest = buildVersionManifest({ buildId })
 
 // https://vite.dev/config/
 export default defineConfig({
   define: {
     'import.meta.env.VITE_BUILD_ID': JSON.stringify(buildId),
+    'import.meta.env.VITE_RELEASE_LABEL': JSON.stringify(versionManifest.releaseLabel),
   },
   plugins: [
     react(),
@@ -40,11 +44,7 @@ export default defineConfig({
     {
       name: 'emit-version-json',
       closeBundle() {
-        const payload = {
-          buildId,
-          builtAt: new Date().toISOString(),
-        }
-        writeFileSync(resolve('dist/version.json'), `${JSON.stringify(payload, null, 2)}\n`)
+        writeFileSync(resolve('dist/version.json'), `${JSON.stringify(versionManifest, null, 2)}\n`)
       },
     },
   ],

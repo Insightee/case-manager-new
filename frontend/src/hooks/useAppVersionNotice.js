@@ -3,7 +3,7 @@ import {
   clearServiceWorkerUpdateWaiting,
   dismissVersionNoticeForSession,
   fetchRemoteVersionMeta,
-  getEmbeddedBuildId,
+  getEmbeddedReleaseLabel,
   hasServiceWorkerUpdateWaiting,
   markHardRecoveryShown,
   recordRefreshAttempt,
@@ -18,14 +18,14 @@ import { isStandaloneDisplay } from '../lib/portalPwa.js'
  */
 export function useAppVersionNotice(opts = {}) {
   const pollMs = opts.pollMs ?? 30 * 60 * 1000
-  const embeddedBuildId = getEmbeddedBuildId()
-  const [remoteBuildId, setRemoteBuildId] = useState(null)
+  const embeddedReleaseLabel = getEmbeddedReleaseLabel()
+  const [remoteReleaseLabel, setRemoteReleaseLabel] = useState(null)
   const [chunkStale, setChunkStale] = useState(() => hasPwaStaleHint())
   const [swWaiting, setSwWaiting] = useState(() => hasServiceWorkerUpdateWaiting())
 
   const refreshRemote = useCallback(async () => {
     const meta = await fetchRemoteVersionMeta()
-    if (meta?.buildId) setRemoteBuildId(meta.buildId)
+    if (meta?.releaseLabel) setRemoteReleaseLabel(meta.releaseLabel)
   }, [])
 
   useEffect(() => {
@@ -42,10 +42,11 @@ export function useAppVersionNotice(opts = {}) {
   useEffect(() => {
     function onSwWaiting() {
       setSwWaiting(true)
+      void refreshRemote()
     }
     window.addEventListener('insightcase:sw-waiting', onSwWaiting)
     return () => window.removeEventListener('insightcase:sw-waiting', onSwWaiting)
-  }, [])
+  }, [refreshRemote])
 
   useEffect(() => {
     function onRejection(event) {
@@ -63,13 +64,13 @@ export function useAppVersionNotice(opts = {}) {
   const notice = useMemo(
     () =>
       shouldShowVersionNotice({
-        embeddedBuildId,
-        remoteBuildId,
+        embeddedReleaseLabel,
+        remoteReleaseLabel,
         chunkStale,
         swWaiting,
         standalone,
       }),
-    [chunkStale, embeddedBuildId, remoteBuildId, standalone, swWaiting],
+    [chunkStale, embeddedReleaseLabel, remoteReleaseLabel, standalone, swWaiting],
   )
 
   const dismissForSession = useCallback(() => {
@@ -90,12 +91,13 @@ export function useAppVersionNotice(opts = {}) {
   }, [])
 
   return {
-    embeddedBuildId,
-    remoteBuildId,
+    embeddedReleaseLabel,
+    remoteReleaseLabel,
     notice,
     dismissForSession,
     noteRefreshAttempt,
     showHardRecovery,
     setChunkStale,
+    refreshRemote,
   }
 }

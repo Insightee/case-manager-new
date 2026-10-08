@@ -8,7 +8,9 @@ import {
 } from '../../lib/pwaStaleRecovery.js'
 import {
   detectReinstallPlatform,
+  formatVersionNoticeLead,
   getReinstallSteps,
+  getEmbeddedReleaseLabel,
 } from '../../lib/appVersionUpdate.js'
 import { useAppVersionNotice } from '../../hooks/useAppVersionNotice.js'
 import { PwaStaleRecoveryHelp } from './PwaStaleRecoveryHelp.jsx'
@@ -22,7 +24,15 @@ import './app-version-notice.css'
  */
 export function AppVersionNotice({ portalId = 'parent', variant = 'banner' }) {
   const config = PORTAL_PWA[portalId] || PORTAL_PWA.parent
-  const { notice, dismissForSession, noteRefreshAttempt, showHardRecovery } = useAppVersionNotice()
+  const {
+    notice,
+    dismissForSession,
+    noteRefreshAttempt,
+    showHardRecovery,
+    embeddedReleaseLabel,
+    remoteReleaseLabel,
+  } = useAppVersionNotice()
+  const embedded = embeddedReleaseLabel || getEmbeddedReleaseLabel()
   const [copyNote, setCopyNote] = useState('')
   const portalUrl = portalUrlForBrowser() || window.location.origin
 
@@ -63,7 +73,7 @@ export function AppVersionNotice({ portalId = 'parent', variant = 'banner' }) {
             A new version of Insighte is available.
           </h2>
           <p className="app-version-sheet__lead">
-            Your home screen app is still on an older build. Re-add the shortcut using these steps:
+            {formatVersionNoticeLead(embedded, remoteReleaseLabel)} Re-add the shortcut using these steps:
           </p>
           <ol className="app-version-sheet__steps">
             {steps.map((step) => (
@@ -100,9 +110,11 @@ export function AppVersionNotice({ portalId = 'parent', variant = 'banner' }) {
         onRefresh={handleRefresh}
         title="A new version of Insighte is available."
         lead={
-          isStandaloneDisplay()
-            ? 'Tap Refresh now to load the latest build. If pages still fail, use Copy link and re-add the home screen shortcut.'
-            : 'We shipped an update. Refresh to load the latest version.'
+          remoteReleaseLabel
+            ? formatVersionNoticeLead(embedded, remoteReleaseLabel)
+            : isStandaloneDisplay()
+              ? 'Tap Refresh now to load the latest build.'
+              : 'Refresh to load the latest version.'
         }
       />
     </div>
