@@ -176,7 +176,12 @@ PARENT_TEMPLATES = [
     "session_rescheduled_today",
     "incident_family_notice",
     "parent_support_escalated",
+    "support_ticket_reply",
+    "incident_staff_reply",
+    "child_absence_confirmed",
+    "leave_sessions_cancelled",
     "cm_meeting_cancelled",
+    "cm_meeting_invite",
 ]
 
 LOGIN_TEMPLATES = ["portal_invite", "password_reset"]

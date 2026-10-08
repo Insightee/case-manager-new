@@ -107,6 +107,8 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "parent_support_escalated": _parent_support_escalated,
         "support_ticket_reply": _support_ticket_reply,
         "incident_staff_reply": _incident_staff_reply,
+        "child_absence_confirmed": _child_absence_confirmed,
+        "leave_sessions_cancelled": _leave_sessions_cancelled,
         "cm_meeting_cancelled": _cm_meeting_cancelled,
     }
     fn = renderers.get(template_key)
@@ -687,6 +689,52 @@ def _incident_staff_reply(payload: dict[str, Any], *, locale: str = "en") -> tup
         f"<strong>{escape(str(child_name))}</strong>.</p>"
         f"<p>Details are available in your secure portal — we do not include sensitive information in email.</p>"
         f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _child_absence_confirmed(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    session_date = payload.get("session_date", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Absence recorded for {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"We recorded that {child_name} was absent for the session on {session_date}.\n\n"
+        f"View details: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>We recorded that <strong>{escape(str(child_name))}</strong> was absent "
+        f"for the session on <strong>{escape(str(session_date))}</strong>.</p>"
+        f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _leave_sessions_cancelled(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    therapist_name = payload.get("therapist_name", "your therapist")
+    date_range = payload.get("date_range", "")
+    cancelled_lines = payload.get("cancelled_lines") or []
+    portal_url = (payload.get("portal_url") or "").strip()
+    lines_text = "\n".join(f"• {ln}" for ln in cancelled_lines) if cancelled_lines else "• (see portal)"
+    subject = "Sessions cancelled — therapist on leave"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Leave for {therapist_name} ({date_range}) is confirmed. These session(s) were cancelled:\n"
+        f"{lines_text}\n\n"
+        f"Book a new time: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Leave for <strong>{escape(str(therapist_name))}</strong> "
+        f"(<strong>{escape(str(date_range))}</strong>) is confirmed.</p>"
+        f"<p>These session(s) were cancelled:</p><ul>"
+        + "".join(f"<li>{escape(str(ln))}</li>" for ln in cancelled_lines)
+        + "</ul>"
+        f"{_button(portal_url, 'Book appointment') if portal_url else ''}"
     )
     return _with_parent_footer(subject, text, body, payload, locale=locale)
 

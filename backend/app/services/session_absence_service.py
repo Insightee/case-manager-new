@@ -228,12 +228,18 @@ def _notify_parents_on_child_absence_approved(
     db: Session,
     row: SessionAbsenceRequest,
     session: TherapySession,
+    *,
+    background_tasks=None,
 ) -> None:
+    from app.core.config import settings
+    from app.services.email.parent_mail import send_parent_email
+
     case = row.case or db.get(Case, row.case_id)
     child = case.child.full_name if case and case.child else "your child"
     date_label = session.scheduled_date.isoformat()
     title = "Child marked absent"
     body = f"{child} was marked absent for the session on {date_label}."
+    portal_url = f"{settings.frontend_url.rstrip('/')}/parent"
     for parent_id in leave_notify._parents_for_case(db, row.case_id):
         notification_service.create_notification(
             db,
@@ -243,6 +249,23 @@ def _notify_parents_on_child_absence_approved(
             entity_type="session_absence",
             entity_id=row.id,
         )
+        parent_user = db.get(User, parent_id)
+        if parent_user:
+            send_parent_email(
+                db,
+                parent_user,
+                category="appointments",
+                template_key="child_absence_confirmed",
+                payload={
+                    "parent_name": parent_user.full_name or parent_user.email,
+                    "child_name": child,
+                    "session_date": date_label,
+                    "portal_url": portal_url,
+                },
+                entity_type="session_absence",
+                entity_id=row.id,
+                background_tasks=background_tasks,
+            )
 
 
 def _apply_billing(db: Session, session: TherapySession, case: Case, absence_type: SessionAbsenceType) -> str:

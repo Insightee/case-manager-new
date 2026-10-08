@@ -1313,6 +1313,50 @@ register_head(
 )
 
 
+def _seed_inc8share20261008(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.incident import Incident, IncidentMessage
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    therapist = db.scalar(select(User).where(User.email == "therapist@demo.com"))
+    if not case or not therapist:
+        raise RuntimeError("Need demo case and therapist — run demo_seed first")
+    inc = db.scalar(select(Incident).where(Incident.case_id == case.id).limit(1))
+    if not inc:
+        inc = Incident(
+            case_id=case.id,
+            reported_by_user_id=therapist.id,
+            title="Migration proof incident",
+            description="proof",
+            shared_with_family=True,
+        )
+        db.add(inc)
+        db.flush()
+    else:
+        inc.shared_with_family = True
+    msg = IncidentMessage(
+        incident_id=inc.id,
+        author_user_id=inc.reported_by_user_id,
+        body="Parent-visible proof message",
+        is_internal=False,
+    )
+    db.add(msg)
+    db.flush()
+    return {"incident_id": inc.id, "message_id": msg.id}
+
+
+register_head(
+    "inc8share20261008",
+    tables_added=[],
+    columns_added=[
+        ("incidents", "shared_with_family"),
+        ("incident_messages", "is_internal"),
+    ],
+    seed=_seed_inc8share20261008,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

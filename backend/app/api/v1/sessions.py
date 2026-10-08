@@ -745,6 +745,13 @@ def cancel_session_route(
         session = session_service.cancel_session(db, session, user.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    from app.services import appointment_notification_service as appt_notify
+
+    appt_notify.notify_parents_in_progress_session_cancelled(
+        db,
+        session,
+        therapist_name=user.full_name or "Your therapist",
+    )
     meta = get_request_meta(request)
     log_audit(
         db,

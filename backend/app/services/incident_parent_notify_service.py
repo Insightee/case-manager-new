@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.permissions import RoleName
+from app.core.timezone import ensure_utc_aware, IST
 from app.models.case import Case
 from app.models.incident import Incident, IncidentMessage
 from app.models.parent import ParentGuardian
@@ -16,6 +17,20 @@ from app.services import notification_service
 from app.services.email.parent_mail import send_parent_email
 
 _REPLY_DEDUPE_MINUTES = 10
+
+
+def _incident_date_ist(incident: Incident) -> str:
+    if not incident.incident_at:
+        return ""
+    aware = ensure_utc_aware(incident.incident_at)
+    if aware is None:
+        return ""
+    return aware.astimezone(IST).date().isoformat()
+
+
+def _is_parent_only_portal(user: User) -> bool:
+    roles = list(user.role_names or [])
+    return len(roles) == 1 and roles[0] == RoleName.PARENT.value
 
 
 def _parent_users_for_case(db: Session, case_id: int) -> list[User]:
@@ -40,9 +55,7 @@ def notify_parents_incident_shared(db: Session, incident: Incident, *, backgroun
     if not case:
         return 0
     child_name = case.child.full_name if case.child else "your child"
-    incident_date = ""
-    if incident.incident_at:
-        incident_date = incident.incident_at.astimezone().date().isoformat()
+    incident_date = _incident_date_ist(incident)
     portal_url = f"{settings.frontend_url.rstrip('/')}/parent/support"
     title = "Important update from your care team"
     body = (
@@ -91,7 +104,9 @@ def notify_parents_incident_staff_reply(
     """Email + in-app only when the incident is explicitly shared with the family."""
     if not incident.shared_with_family or not incident.case_id:
         return 0
-    if staff_user.id == incident.reported_by_user_id and RoleName.PARENT.value in staff_user.role_names:
+    if getattr(message, "is_internal", False):
+        return 0
+    if _is_parent_only_portal(staff_user):
         return 0
     case = db.scalars(
         select(Case).where(Case.id == incident.case_id).options(selectinload(Case.child))

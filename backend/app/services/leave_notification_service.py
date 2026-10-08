@@ -22,7 +22,6 @@ from app.services import email_service
 from app.services import leave_migration_service as leave_migration
 from app.services import leave_service
 from app.services import notification_service
-from app.core.timezone import today_ist
 from app.services.assignment_service import resolve_primary_case_manager_user_id
 from app.services.email.parent_mail import send_parent_email
 
@@ -231,8 +230,6 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
     ).all()
 
     cancelled_by_parent: dict[int, list[str]] = defaultdict(list)
-    today_lines_by_parent: dict[int, list[str]] = defaultdict(list)
-    today = today_ist()
     for slot in booked_slots:
         if not slot.case_id or not _slot_in_leave_scope(slot, scope):
             continue
@@ -248,8 +245,6 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
             line = f"{slot.case.child.full_name} — {line}"
         for parent_user_id in _parents_for_case(db, slot.case_id):
             cancelled_by_parent[parent_user_id].append(line)
-            if slot.slot_date == today:
-                today_lines_by_parent[parent_user_id].append(line)
 
     avail_slots = db.scalars(
         select(TherapistSlot).where(
@@ -291,23 +286,22 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         count += 1
 
     portal = f"{settings.frontend_url.rstrip('/')}/parent/book"
-    for parent_user_id, lines in today_lines_by_parent.items():
+    for parent_user_id, lines in cancelled_by_parent.items():
         if not lines:
             continue
         parent_user = db.get(User, parent_user_id)
         if not parent_user:
             continue
-        detail = "Today's cancelled session(s):\n" + "\n".join(f"• {ln}" for ln in lines)
         send_parent_email(
             db,
             parent_user,
             category="appointments",
-            template_key="session_cancelled_today",
+            template_key="leave_sessions_cancelled",
             payload={
                 "parent_name": parent_user.full_name or parent_user.email,
-                "child_name": "your child",
-                "when": date_range,
-                "reason": f"Leave for {therapist.full_name} is confirmed. {detail}",
+                "therapist_name": therapist.full_name or "your therapist",
+                "date_range": date_range,
+                "cancelled_lines": lines,
                 "portal_url": portal,
             },
             entity_type="leave",

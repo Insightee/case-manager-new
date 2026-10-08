@@ -25,4 +25,5 @@ class EmailEvent(str, Enum):
     PARENT_SUPPORT_ESCALATED = "parent_support_escalated"
     PARENT_SUPPORT_TICKET_REPLY = "parent_support_ticket_reply"
     PARENT_INCIDENT_STAFF_REPLY = "parent_incident_staff_reply"
+    PARENT_CHILD_ABSENCE = "parent_child_absence"
     CM_MEETING_CANCELLED = "cm_meeting_cancelled"

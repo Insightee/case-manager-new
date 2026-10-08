@@ -53,6 +53,61 @@ def _slot_when(slot: TherapistSlot) -> str:
     return f"{slot.slot_date.isoformat()} {slot.start_time.strftime('%H:%M')}"
 
 
+def notify_parents_in_progress_session_cancelled(
+    db: Session,
+    session,
+    *,
+    therapist_name: str,
+    background_tasks=None,
+) -> int:
+    """Therapist reverted an accidental in-progress start — notify parents."""
+    case_id = session.case_id
+    if not case_id:
+        return 0
+    case = db.scalars(
+        select(Case).where(Case.id == case_id).options(selectinload(Case.child))
+    ).first()
+    child = case.child.full_name if case and case.child else "your child"
+    when = session.scheduled_date.isoformat()
+    if session.start_time:
+        when = f"{when} {session.start_time.strftime('%H:%M')}"
+    body = (
+        f"{child}'s visit on {when} was cancelled before a session log was started. "
+        "The session remains scheduled unless you hear otherwise."
+    )
+    portal = f"{settings.frontend_url.rstrip('/')}/parent/book"
+    same_day = _is_same_day_ist(session.scheduled_date)
+    count = 0
+    for parent in _parent_users_for_case(db, case_id):
+        notification_service.create_notification(
+            db,
+            user_id=parent.id,
+            title="Session visit cancelled",
+            body=body,
+            entity_type="session",
+            entity_id=session.id,
+        )
+        if same_day:
+            send_parent_email(
+                db,
+                parent,
+                category="appointments",
+                template_key="session_cancelled_today",
+                payload={
+                    "parent_name": parent.full_name or parent.email,
+                    "child_name": child,
+                    "when": when,
+                    "reason": "Your therapist cancelled today's visit before logging the session.",
+                    "portal_url": portal,
+                },
+                entity_type="session",
+                entity_id=session.id,
+                background_tasks=background_tasks,
+            )
+        count += 1
+    return count
+
+
 def notify_parents_session_cancelled(
     db: Session,
     slot: TherapistSlot,

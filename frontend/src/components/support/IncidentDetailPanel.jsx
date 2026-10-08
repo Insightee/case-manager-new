@@ -136,6 +136,7 @@ export function IncidentDetailPanel({
   const isStaff = user?.roles?.some((r) => STAFF_ROLES.has(r))
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
+  const [internalNote, setInternalNote] = useState(false)
   const [actionNote, setActionNote] = useState(incident?.action_taken_note || '')
   const [taggedUserIds, setTaggedUserIds] = useState(incident?.tagged_user_ids || [])
   const [staffUsers, setStaffUsers] = useState([])
@@ -217,16 +218,23 @@ export function IncidentDetailPanel({
       if (replyFiles.length > 0) {
         const fd = new FormData()
         fd.append('body', reply.trim())
+        if (canManage && internalNote) {
+          fd.append('is_internal', 'true')
+        }
         replyFiles.forEach((f) => fd.append('files', f))
         updated = await apiUpload(`${apiBase}/${incident.id}/messages`, fd)
       } else {
         updated = await apiFetch(`${apiBase}/${incident.id}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ body: reply.trim() }),
+          body: JSON.stringify({
+            body: reply.trim(),
+            ...(canManage && internalNote ? { is_internal: true } : {}),
+          }),
         })
       }
       setReply('')
       setReplyFiles([])
+      setInternalNote(false)
       onUpdated?.(updated)
     } catch (err) {
       setError(err.message || 'Could not send reply')
@@ -477,11 +485,14 @@ export function IncidentDetailPanel({
           return (
             <div
               key={m.id}
-              className={`ticket-bubble ${bubbleClass}`}
+              className={`ticket-bubble ${bubbleClass} ${m.is_internal ? 'ticket-bubble--internal' : ''}`}
             >
               {!isOwn && (
                 <span className="ticket-bubble__author">
                   {m.author_name}
+                  {m.is_internal ? (
+                    <span className="ticket-bubble__internal-tag">Internal</span>
+                  ) : null}
                 </span>
               )}
               <div className="ticket-bubble__body">
@@ -538,6 +549,15 @@ export function IncidentDetailPanel({
             </label>
           ) : null}
           <TicketFileInput files={replyFiles} onChange={setReplyFiles} disabled={busy} />
+          {canManage ? (
+            <label
+              className="ticket-compose__internal"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: '0.78rem' }}
+            >
+              <input type="checkbox" checked={internalNote} onChange={(e) => setInternalNote(e.target.checked)} />
+              Internal note (staff only — no parent email or portal message)
+            </label>
+          ) : null}
           {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem', marginTop: 8 }} role="alert">{error}</p> : null}
 
           {canManage && tagRole ? (

@@ -511,7 +511,7 @@ def confirm_pending_reschedule(db: Session, new_slot_id: int, therapist_user_id:
             old_slot,
             new_slot,
             case_id=record.case_id,
-            email_allowed=False,
+            email_allowed=True,
         )
     return new_slot
 

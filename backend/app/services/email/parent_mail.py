@@ -32,6 +32,8 @@ _TEMPLATE_DEFAULT_EVENTS: dict[str, EmailEvent] = {
     "parent_support_escalated": EmailEvent.PARENT_SUPPORT_ESCALATED,
     "support_ticket_reply": EmailEvent.PARENT_SUPPORT_TICKET_REPLY,
     "incident_staff_reply": EmailEvent.PARENT_INCIDENT_STAFF_REPLY,
+    "child_absence_confirmed": EmailEvent.PARENT_CHILD_ABSENCE,
+    "leave_sessions_cancelled": EmailEvent.LEAVE_APPROVED,
     "cm_meeting_cancelled": EmailEvent.CM_MEETING_CANCELLED,
 }
 

@@ -282,6 +282,7 @@ def incident_to_detail_dict(
                     "author_user_id": m.author_user_id,
                     "author_name": m.author.full_name if m.author else "Unknown",
                     "is_reporter": m.author_user_id == incident.reported_by_user_id,
+                    "is_internal": bool(getattr(m, "is_internal", False)),
                     "created_at": m.created_at.isoformat(),
                     "attachments": [
                         att_svc.attachment_to_dict(a)

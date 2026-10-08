@@ -57,6 +57,7 @@ class IncidentUpdate(BaseModel):
 
 class IncidentMessageCreate(BaseModel):
     body: str
+    is_internal: bool = False
 
 
 class IncidentFlowNote(BaseModel):
@@ -393,6 +394,8 @@ async def add_incident_message(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if RoleName.PARENT.value in user.role_names and not _has_manage(user, db):
+        raise HTTPException(status_code=403, detail="Use the parent portal to message on your incidents")
     incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -406,10 +409,13 @@ async def add_incident_message(
 
     content_type = request.headers.get("content-type", "")
     files = []
+    is_internal = False
     if "multipart/form-data" in content_type:
         form = await request.form()
         body = str(form.get("body") or "").strip()
         files = att_svc.files_from_form(form)
+        raw_internal = str(form.get("is_internal") or "").lower() in ("1", "true", "yes")
+        is_internal = raw_internal and _has_manage(user, db)
     else:
         try:
             data = await request.json()
@@ -417,6 +423,7 @@ async def add_incident_message(
             raise HTTPException(status_code=400, detail="Invalid JSON body")
         payload = IncidentMessageCreate(**data)
         body = payload.body.strip()
+        is_internal = payload.is_internal and _has_manage(user, db)
 
     if not body:
         raise HTTPException(status_code=400, detail="Message body is required")
@@ -425,6 +432,7 @@ async def add_incident_message(
         incident_id=incident_id,
         author_user_id=user.id,
         body=body,
+        is_internal=is_internal,
     )
     db.add(msg)
     db.flush()
@@ -441,16 +449,15 @@ async def add_incident_message(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    if user.id != incident.reported_by_user_id:
-        from app.services import incident_parent_notify_service as inc_parent_notify
+    from app.services import incident_parent_notify_service as inc_parent_notify
 
-        inc_parent_notify.notify_parents_incident_staff_reply(
-            db,
-            incident,
-            msg,
-            staff_user=user,
-            background_tasks=background_tasks,
-        )
+    inc_parent_notify.notify_parents_incident_staff_reply(
+        db,
+        incident,
+        msg,
+        staff_user=user,
+        background_tasks=background_tasks,
+    )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="message", entity_type="incident", entity_id=incident_id, **meta)
     db.commit()
