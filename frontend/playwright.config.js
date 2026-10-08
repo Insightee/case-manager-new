@@ -70,6 +70,14 @@ export default defineConfig({
         viewport: { width: 1280, height: 800 },
       },
     },
+    {
+      name: 'app-version-desktop-edge',
+      testMatch: '**/app-version-update.spec.js',
+      use: {
+        ...devices['Desktop Edge'],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
   ],
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined

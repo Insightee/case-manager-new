@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { usePortalInstall } from '../../context/usePortalInstall.js'
 import { usePortalInstallActions } from '../../hooks/usePortalInstallActions.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
+import { useReinstallLanding } from '../../hooks/useReinstallLanding.js'
 import { dismissInstallBanner, isInstallBannerDismissed } from '../../lib/portalPwa.js'
 import { PortalInstallSheets } from './PortalInstallSheets.jsx'
 import './portal-install.css'
@@ -16,7 +17,9 @@ export function PortalInstallBanner() {
   const dismissed = dismissedSession || isInstallBannerDismissed(portal)
   const { config, canShowInstall, installed, runInstall, sheet, closeSheet } = usePortalInstallActions('banner')
 
-  const eligible = isMobilePortal && canShowInstall && !dismissed && !installed
+  const reinstallLanding = useReinstallLanding()
+  // The ?reinstall=1 landing owns the install action; don't show a second install prompt.
+  const eligible = isMobilePortal && canShowInstall && !dismissed && !installed && !reinstallLanding.active
 
   useEffect(() => {
     if (!eligible) {
