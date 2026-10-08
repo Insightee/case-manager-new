@@ -158,7 +158,15 @@ export function ParentProfilePage() {
   const [billingSame, setBillingSame] = useState(true)
   const [billingAddr, setBillingAddr] = useState(emptyAddress())
   const [emailPreferences, setEmailPreferences] = useState(DEFAULT_PARENT_EMAIL_PREFERENCES)
+  const [initialEmailPreferences, setInitialEmailPreferences] = useState(null)
   const [homecareCases, setHomecareCases] = useState([])
+
+  useEffect(() => {
+    if (loading) return
+    if (window.location.hash === '#email-preferences') {
+      document.getElementById('email-preferences')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [loading])
 
   const loadProfile = useCallback(async () => {
     setLoading(true)
@@ -173,7 +181,9 @@ export function ParentProfilePage() {
       setSecondaryContactName(secName)
       setSecondaryContactEmail(secEmail)
       setShowExtraContact(Boolean(secName.trim() || secEmail.trim()))
-      setEmailPreferences(emailPreferencesFromApi(p.email_preferences, p.receive_log_leave_emails))
+      const prefs = emailPreferencesFromApi(p.email_preferences, p.receive_log_leave_emails)
+      setEmailPreferences(prefs)
+      setInitialEmailPreferences(prefs)
       setChildren(
         dedupeChildren(p.children).map((c) => ({
           id: c.id,
@@ -264,7 +274,6 @@ export function ParentProfilePage() {
         phone: phone.trim() || null,
         secondary_contact_name: secondaryContactName.trim() || null,
         secondary_contact_email: secondaryContactEmail.trim() || null,
-        email_preferences: emailPreferences,
         address_type: addressType,
         ...addressToPayload(homeAddr, 'home_'),
         ...addressToPayload(schoolAddr, 'school_'),
@@ -279,6 +288,17 @@ export function ParentProfilePage() {
       // Billing address — only save when it's different from service address
       if (!billingSame) {
         Object.assign(body, addressToPayload(billingAddr, 'billing_'))
+      }
+      if (initialEmailPreferences) {
+        const emailPrefDiff = {}
+        for (const key of Object.keys(emailPreferences)) {
+          if (emailPreferences[key] !== initialEmailPreferences[key]) {
+            emailPrefDiff[key] = emailPreferences[key]
+          }
+        }
+        if (Object.keys(emailPrefDiff).length > 0) {
+          body.email_preferences = emailPrefDiff
+        }
       }
       await apiFetch('/api/v1/parent/profile', {
         method: 'PATCH',

@@ -6,6 +6,31 @@ from typing import Any
 BRAND_NAME = "Insighte"
 
 
+def _parent_prefs_footer(payload: dict[str, Any]) -> tuple[str, str]:
+    url = (payload.get("manage_prefs_url") or "").strip()
+    if not url:
+        return "", ""
+    text = f"\n\nDon't want these emails? Manage your email preferences: {url}\n"
+    html = (
+        '<p style="margin-top:20px;font-size:13px;color:#6b7280;">'
+        "Don't want these emails? "
+        f'<a href="{escape(url, quote=True)}">Manage your email preferences</a>.</p>'
+    )
+    return text, html
+
+
+def _with_parent_footer(
+    subject: str,
+    text: str,
+    body_html: str,
+    payload: dict[str, Any],
+    *,
+    locale: str = "en",
+) -> tuple[str, str, str]:
+    foot_text, foot_html = _parent_prefs_footer(payload)
+    return subject, text + foot_text, _layout(title=subject, body_html=body_html + foot_html, locale=locale)
+
+
 def _layout(*, title: str, body_html: str, locale: str = "en") -> str:
     _ = locale
     return f"""<!DOCTYPE html>
@@ -69,12 +94,22 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "report_published": _report_published,
         "payment_reminder": _payment_reminder,
         "cm_meeting_invite": _cm_meeting_invite,
+        "cm_meeting_reminder": _cm_meeting_reminder,
         "session_log_submitted": _session_log_submitted,
         "session_log_published": _session_log_published,
         "session_log_reviewed": _session_log_reviewed,
         "leave_approved_parent": _leave_approved_parent,
         "leave_approved_therapist": _leave_approved_therapist,
         "ticket_escalated": _ticket_escalated,
+        "session_cancelled_today": _session_cancelled_today,
+        "session_rescheduled_today": _session_rescheduled_today,
+        "incident_family_notice": _incident_family_notice,
+        "parent_support_escalated": _parent_support_escalated,
+        "support_ticket_reply": _support_ticket_reply,
+        "incident_staff_reply": _incident_staff_reply,
+        "child_absence_confirmed": _child_absence_confirmed,
+        "leave_sessions_cancelled": _leave_sessions_cancelled,
+        "cm_meeting_cancelled": _cm_meeting_cancelled,
     }
     fn = renderers.get(template_key)
     if not fn:
@@ -171,8 +206,7 @@ def _invoice_generated(payload: dict[str, Any], *, locale: str = "en") -> tuple[
         f"{due_html}{overdue_html}"
         f"{_button(payments_url, 'View invoice')}"
     )
-    html = _layout(title=subject, body_html=body, locale=locale)
-    return subject, text, html
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
 
 
 def _report_uploaded(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -213,8 +247,7 @@ def _report_published(payload: dict[str, Any], *, locale: str = "en") -> tuple[s
         f"<strong>{escape(str(child_name))}</strong> is now available.</p>"
         f"{_button(portal_url, 'View report')}"
     )
-    html = _layout(title=subject, body_html=body, locale=locale)
-    return subject, text, html
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
 
 
 def _cm_meeting_invite(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -294,6 +327,8 @@ def _cm_meeting_invite(payload: dict[str, Any], *, locale: str = "en") -> tuple[
         f"{link_html}{calendar_html}{portal_html}"
         '<p style="color:#6b7280;font-size:14px;">You will also see this in your Insighte notifications.</p>'
     )
+    if payload.get("manage_prefs_url"):
+        return _with_parent_footer(subject, text, body, payload, locale=locale)
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html
 
@@ -345,6 +380,8 @@ def _cm_meeting_reminder(payload: dict[str, Any], *, locale: str = "en") -> tupl
         f"{join_html}{portal_html}"
         '<p style="color:#6b7280;font-size:14px;">You will also see this in your Insighte notifications.</p>'
     )
+    if payload.get("manage_prefs_url"):
+        return _with_parent_footer(subject, text, body, payload, locale=locale)
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html
 
@@ -372,9 +409,7 @@ def _session_log_submitted(payload: dict[str, Any], *, locale: str = "en") -> tu
         f"<p>Any future edits or final notes from the clinical team will show up directly in the app.</p>"
         f"{portal_html}"
     )
-    html = _layout(title=subject, body_html=body, locale=locale)
-    return subject, text, html
-
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
 
 
 def _session_log_published(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -397,8 +432,7 @@ def _session_log_published(payload: dict[str, Any], *, locale: str = "en") -> tu
         f"is now available in your portal.</p>"
         f"{_button(portal_url, 'View session log') if portal_url else ''}"
     )
-    html = _layout(title=subject, body_html=body, locale=locale)
-    return subject, text, html
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
 
 
 def _session_log_reviewed(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -423,8 +457,7 @@ def _session_log_reviewed(payload: dict[str, Any], *, locale: str = "en") -> tup
         f"<p>Any comments you posted remain visible in the log thread.</p>"
         f"{_button(portal_url, 'View session log') if portal_url else ''}"
     )
-    html = _layout(title=subject, body_html=body, locale=locale)
-    return subject, text, html
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
 
 
 def _leave_approved_parent(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -447,8 +480,7 @@ def _leave_approved_parent(payload: dict[str, Any], *, locale: str = "en") -> tu
         f"<p>{escape(str(detail))}</p>"
         f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
     )
-    html = _layout(title=subject, body_html=body, locale=locale)
-    return subject, text, html
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
 
 
 def _leave_approved_therapist(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -524,5 +556,211 @@ def _payment_reminder(payload: dict[str, Any], *, locale: str = "en") -> tuple[s
         f"on invoice <strong>{escape(str(invoice_number))}</strong>.</p>"
         f"{_button(payments_url, 'View invoice')}"
     )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _session_cancelled_today(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    when = payload.get("when", "")
+    reason = payload.get("reason", "Session cancelled")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Today's session cancelled — {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"{reason}. {child_name}'s session today ({when}) was cancelled.\n\n"
+        f"Open your portal to book another time: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>{escape(str(reason))}. <strong>{escape(str(child_name))}</strong>'s session "
+        f"<strong>today</strong> ({escape(str(when))}) was cancelled.</p>"
+        f"{_button(portal_url, 'Book or view sessions') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _session_rescheduled_today(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    old_when = payload.get("old_when", "")
+    new_when = payload.get("new_when", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Today's session changed — {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"{child_name}'s session was moved from {old_when} to {new_when}.\n\n"
+        f"Portal: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p><strong>{escape(str(child_name))}</strong>'s session was moved from "
+        f"<strong>{escape(str(old_when))}</strong> to <strong>{escape(str(new_when))}</strong>.</p>"
+        f"{_button(portal_url, 'View schedule') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _incident_family_notice(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    incident_date = payload.get("incident_date", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Important update about {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"We are reaching out regarding {child_name}"
+        + (f" (date: {incident_date})" if incident_date else "")
+        + ". Your case manager will contact you with next steps.\n\n"
+        f"Open your portal: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>We are reaching out regarding <strong>{escape(str(child_name))}</strong>"
+        + (f" on <strong>{escape(str(incident_date))}</strong>" if incident_date else "")
+        + ". Your case manager will contact you with next steps.</p>"
+        f"<p>Details are available in your secure portal — we do not include sensitive information in email.</p>"
+        f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _parent_support_escalated(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    ticket_subject = payload.get("ticket_subject", "your request")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = "Your support request was escalated"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Your support request ({ticket_subject}) was escalated for priority follow-up. "
+        f"A team member will reach out soon.\n\n"
+        f"Track updates: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Your support request (<strong>{escape(str(ticket_subject))}</strong>) was escalated "
+        f"for priority follow-up. A team member will reach out soon.</p>"
+        f"{_button(portal_url, 'Open support') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _support_ticket_reply(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    ticket_subject = payload.get("ticket_subject", "your request")
+    reply_excerpt = (payload.get("reply_excerpt") or "").strip()
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"New reply on your support request"
+    excerpt_block = ""
+    excerpt_html = ""
+    if reply_excerpt:
+        excerpt_block = f"\n\n{reply_excerpt}\n"
+        excerpt_html = f"<blockquote>{escape(reply_excerpt)}</blockquote>"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Your care team replied to your support request ({ticket_subject})."
+        f"{excerpt_block}\n"
+        f"Read the full thread: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Your care team replied to your support request "
+        f"(<strong>{escape(str(ticket_subject))}</strong>).</p>"
+        f"{excerpt_html}"
+        f"{_button(portal_url, 'Open support') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _incident_staff_reply(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Update on {child_name}'s incident report"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Your care team added an update to the incident report for {child_name}. "
+        f"Details are in your secure portal — we do not include sensitive information in email.\n\n"
+        f"Open your portal: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Your care team added an update to the incident report for "
+        f"<strong>{escape(str(child_name))}</strong>.</p>"
+        f"<p>Details are available in your secure portal — we do not include sensitive information in email.</p>"
+        f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _child_absence_confirmed(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    session_date = payload.get("session_date", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Absence recorded for {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"We recorded that {child_name} was absent for the session on {session_date}.\n\n"
+        f"View details: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>We recorded that <strong>{escape(str(child_name))}</strong> was absent "
+        f"for the session on <strong>{escape(str(session_date))}</strong>.</p>"
+        f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _leave_sessions_cancelled(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    therapist_name = payload.get("therapist_name", "your therapist")
+    date_range = payload.get("date_range", "")
+    cancelled_lines = payload.get("cancelled_lines") or []
+    portal_url = (payload.get("portal_url") or "").strip()
+    lines_text = "\n".join(f"• {ln}" for ln in cancelled_lines) if cancelled_lines else "• (see portal)"
+    subject = "Sessions cancelled — therapist on leave"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Leave for {therapist_name} ({date_range}) is confirmed. These session(s) were cancelled:\n"
+        f"{lines_text}\n\n"
+        f"Book a new time: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Leave for <strong>{escape(str(therapist_name))}</strong> "
+        f"(<strong>{escape(str(date_range))}</strong>) is confirmed.</p>"
+        f"<p>These session(s) were cancelled:</p><ul>"
+        + "".join(f"<li>{escape(str(ln))}</li>" for ln in cancelled_lines)
+        + "</ul>"
+        f"{_button(portal_url, 'Book appointment') if portal_url else ''}"
+    )
+    return _with_parent_footer(subject, text, body, payload, locale=locale)
+
+
+def _cm_meeting_cancelled(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    full_name = payload.get("full_name", "there")
+    meeting_title = payload.get("meeting_title", "Case manager meeting")
+    when = payload.get("when", "")
+    reason = payload.get("reason", "No reason provided")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Meeting cancelled — {meeting_title}"
+    text = (
+        f"Hi {full_name},\n\n"
+        f"{meeting_title} was cancelled.\n"
+        f"When: {when}\n"
+        f"Reason: {reason}\n\n"
+        f"Portal: {portal_url}\n"
+    )
+    body = (
+        f"<p>Hi {escape(str(full_name))},</p>"
+        f"<p><strong>{escape(str(meeting_title))}</strong> was cancelled.</p>"
+        f"<p><strong>When:</strong> {escape(str(when))}</p>"
+        f"<p><strong>Reason:</strong> {escape(str(reason))}</p>"
+        f"{_button(portal_url, 'Open portal') if portal_url else ''}"
+    )
+    if payload.get("manage_prefs_url"):
+        return _with_parent_footer(subject, text, body, payload, locale=locale)
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html

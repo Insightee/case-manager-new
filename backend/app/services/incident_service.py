@@ -160,6 +160,7 @@ def update_incident(
     tagged_roles: list[str] | None = None,
     tagged_user_ids: list[int] | None = None,
     action_taken_note: str | None = None,
+    shared_with_family: bool | None = None,
 ) -> Incident:
     if status is not None:
         new_status = normalize_incident_status(status)
@@ -197,6 +198,14 @@ def update_incident(
         incident.action_taken_note = action_taken_note.strip()
         if is_owner:
             incident.last_owner_activity_at = datetime.now(timezone.utc)
+
+    if shared_with_family is not None:
+        new_shared = bool(shared_with_family)
+        if new_shared and not bool(incident.shared_with_family):
+            incident.shared_with_family_at = datetime.now(timezone.utc)
+        elif not new_shared:
+            incident.shared_with_family_at = None
+        incident.shared_with_family = new_shared
 
     db.flush()
     return incident
@@ -237,6 +246,7 @@ def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
         "primary_category": incident.primary_category,
         "subcategory": incident.subcategory,
         "is_sensitive": incident.is_sensitive,
+        "shared_with_family": bool(incident.shared_with_family),
         "product_module": case.product_module if case else None,
         "reporter_name": incident.reporter.full_name if incident.reporter else None,
         "assigned_to_user_id": incident.assigned_to_user_id,
@@ -245,6 +255,14 @@ def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
         "created_at": incident.created_at.isoformat() if incident.created_at else None,
         "incident_at": incident.incident_at.isoformat() if incident.incident_at else None,
     }
+
+
+def viewer_sees_internal_incident_messages(user: User | None) -> bool:
+    """Internal incident notes are staff-only: never returned to parent-portal users (or unknown viewers)."""
+    if user is None:
+        return False
+    roles = [r for r in (user.role_names or []) if r != RoleName.PARENT.value]
+    return bool(roles)
 
 
 def incident_to_detail_dict(
@@ -257,6 +275,7 @@ def incident_to_detail_dict(
     from app.services import incident_flow_service as inc_flow
 
     base = incident_to_list_dict(incident, case)
+    show_internal = viewer_sees_internal_incident_messages(user)
     base.update(
         {
             "description": incident.description,
@@ -277,6 +296,7 @@ def incident_to_detail_dict(
                     "author_user_id": m.author_user_id,
                     "author_name": m.author.full_name if m.author else "Unknown",
                     "is_reporter": m.author_user_id == incident.reported_by_user_id,
+                    "is_internal": bool(getattr(m, "is_internal", False)),
                     "created_at": m.created_at.isoformat(),
                     "attachments": [
                         att_svc.attachment_to_dict(a)
@@ -285,6 +305,7 @@ def incident_to_detail_dict(
                     ],
                 }
                 for m in incident.messages
+                if show_internal or not bool(getattr(m, "is_internal", False))
             ],
             "attachments": [
                 att_svc.attachment_to_dict(a)

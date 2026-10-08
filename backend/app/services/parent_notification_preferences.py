@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Literal
 
 from app.core.permissions import RoleName
@@ -7,6 +8,7 @@ from app.models.user import User
 
 # Legacy single toggle (session logs + leave only)
 PARENT_LOG_LEAVE_EMAILS_KEY = "parent_log_leave_emails"
+EMAIL_PREFS_SET_AT_KEY = "email_prefs_set_at"
 
 ParentEmailCategory = Literal[
     "session_logs",
@@ -15,6 +17,7 @@ ParentEmailCategory = Literal[
     "billing",
     "reports",
     "meetings",
+    "incidents",
 ]
 
 PARENT_EMAIL_CATEGORIES: tuple[ParentEmailCategory, ...] = (
@@ -24,6 +27,7 @@ PARENT_EMAIL_CATEGORIES: tuple[ParentEmailCategory, ...] = (
     "billing",
     "reports",
     "meetings",
+    "incidents",
 )
 
 CATEGORY_STORAGE_KEYS: dict[ParentEmailCategory, str] = {
@@ -33,12 +37,11 @@ CATEGORY_STORAGE_KEYS: dict[ParentEmailCategory, str] = {
     "billing": "email_billing",
     "reports": "email_reports",
     "meetings": "email_meetings",
+    "incidents": "email_incidents",
 }
 
-# New parents: email on for care + billing + meetings; scheduling/report digests opt-in.
-DEFAULT_EMAIL_ON: frozenset[ParentEmailCategory] = frozenset(
-    {"session_logs", "therapist_leave", "billing", "meetings"}
-)
+# Parents without stored keys: email on for all care categories (scheduling emails are same-day only).
+DEFAULT_EMAIL_ON: frozenset[ParentEmailCategory] = frozenset(PARENT_EMAIL_CATEGORIES)
 
 
 def _coerce_enabled(value: object | None, *, default: bool = True) -> bool:
@@ -92,10 +95,17 @@ def read_parent_email_preferences(user: User) -> dict[str, bool]:
 
 def apply_parent_email_preferences(user: User, updates: dict[str, bool | None]) -> None:
     stored = dict(user.notification_preferences or {})
+    changed = False
     for category in PARENT_EMAIL_CATEGORIES:
         if category not in updates or updates[category] is None:
             continue
-        stored[CATEGORY_STORAGE_KEYS[category]] = bool(updates[category])
+        key = CATEGORY_STORAGE_KEYS[category]
+        new_val = bool(updates[category])
+        if stored.get(key) != new_val:
+            stored[key] = new_val
+            changed = True
+    if changed:
+        stored[EMAIL_PREFS_SET_AT_KEY] = datetime.now(timezone.utc).isoformat()
     user.notification_preferences = stored
 
 

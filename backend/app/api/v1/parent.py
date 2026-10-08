@@ -2001,16 +2001,13 @@ def parent_list_incidents(
     db: Session = Depends(get_db),
 ):
     from app.services import incident_service as inc_svc
+    from app.services import incident_parent_portal_service as inc_parent_portal
 
-    incidents = db.scalars(
-        select(Incident)
-        .where(Incident.reported_by_user_id == user.id)
-        .order_by(Incident.created_at.desc())
-    ).all()
+    incidents = db.scalars(inc_parent_portal.parent_incidents_query(db, user)).all()
     result = []
     for inc in incidents:
         case = case_service.get_case(db, inc.case_id) if inc.case_id else None
-        result.append(inc_svc.incident_to_list_dict(inc, case))
+        result.append(inc_parent_portal.incident_to_parent_list_dict(inc, case, viewer=user))
     return result
 
 
@@ -2021,12 +2018,17 @@ def parent_get_incident(
     db: Session = Depends(get_db),
 ):
     from app.services import incident_service as inc_svc
+    from app.services import incident_parent_portal_service as inc_parent_portal
 
     incident = inc_svc.get_incident_detail(db, incident_id)
-    if not incident or incident.reported_by_user_id != user.id:
+    if not incident or not inc_parent_portal.parent_can_view_incident(db, user, incident):
         raise HTTPException(status_code=404, detail="Not found")
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(db, incident, case, user)
+    if incident.reported_by_user_id == user.id:
+        detail = inc_svc.incident_to_detail_dict(db, incident, case, user)
+        detail["messages"] = [m for m in detail.get("messages", []) if not m.get("is_internal")]
+        return detail
+    return inc_parent_portal.incident_to_parent_portal_dict(db, incident, case, viewer=user)
 
 
 @router.post("/incidents", status_code=201)
@@ -2134,6 +2136,10 @@ def parent_download_incident_attachment(
     incident = db.get(Incident, att.incident_id)
     if not incident or incident.reported_by_user_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+    if att.message_id is not None:
+        msg = db.get(IncidentMessage, att.message_id)
+        if msg is not None and bool(getattr(msg, "is_internal", False)):
+            raise HTTPException(status_code=403, detail="Access denied")
     return att_svc.download_response(att)
 
 

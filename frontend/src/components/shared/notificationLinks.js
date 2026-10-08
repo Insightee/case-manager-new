@@ -71,6 +71,7 @@ export function resolveNotificationLink(entityType, entityId, portal) {
       if (portal === 'therapist') return '/therapist/support'
       return '/admin/support?tab=tickets'
     case 'incident':
+    case 'incident_notice':
       if (portal === 'therapist') return '/therapist/support'
       if (portal === 'parent') return '/parent/support'
       if (entityId) return `/admin/support?tab=incidents&incident=${entityId}`

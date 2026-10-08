@@ -19,7 +19,9 @@ from app.models.user import User
 from app.services import notification_service, parent_service
 from app.services.calendar_ics import meeting_ics_attachment
 from app.services.email.google_calendar import build_google_calendar_add_url
+from app.services.email.parent_mail import parent_manage_prefs_url
 from app.services.email.service import cm_meeting_invite_email, cm_meeting_reminder_email, send_email
+from app.services.email.templates import render_template
 from app.services.parent_notification_preferences import parent_should_receive_email
 
 
@@ -468,6 +470,7 @@ def send_meeting_invite_emails(
             case_code=case_code,
             is_update=is_update,
             attachments=[ics_attachment],
+            db=db,
         )
 
     for uid in meeting_participant_user_ids(meeting):
@@ -585,15 +588,39 @@ def notify_meeting_cancellation(
         if addr in sent_to:
             continue
         sent_to.add(addr)
+        portal_url = _portal_url_for_user(user)
+        payload = {
+            "full_name": user.full_name or user.email,
+            "meeting_title": _meeting_display_title(meeting),
+            "when": when or "",
+            "reason": reason,
+            "portal_url": portal_url,
+        }
+        if RoleName.PARENT.value in user.role_names:
+            if not parent_should_receive_email(user, "meetings"):
+                continue
+            payload["manage_prefs_url"] = parent_manage_prefs_url()
+            subject, body_text, body_html = render_template("cm_meeting_cancelled", payload)
+            send_email(
+                to=addr,
+                subject=subject,
+                body_text=body_text,
+                body_html=body_html,
+                event=None,
+                attachments=[ics_attachment],
+                db=db,
+            )
+            continue
         send_email(
             to=addr,
             subject=f"Meeting cancelled — {_meeting_display_title(meeting)}",
             body_text=(
                 f"{body}\n\n"
-                f"Insighte: {(settings.frontend_url or 'http://localhost:5173').rstrip('/')}/admin/meetings\n"
+                f"Insighte: {portal_url}\n"
             ),
             event=None,
             attachments=[ics_attachment],
+            db=db,
         )
 
 
@@ -678,6 +705,8 @@ def _deliver_meeting_reminder(
         )
         addr = (user.email or "").strip()
         if not addr:
+            continue
+        if RoleName.PARENT.value in user.role_names:
             continue
         if not parent_should_receive_email(user, "meetings"):
             continue

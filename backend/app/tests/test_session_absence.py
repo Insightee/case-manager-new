@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -201,13 +202,15 @@ def test_child_absent_admin_approve_parent_notification():
     assert child_queue.status_code == 200
     assert body["id"] in {item["id"] for item in child_queue.json().get("items", [])}
 
-    approve = client.post(
-        f"/api/v1/sessions/absence/{body['id']}/approve",
-        headers=admin_headers,
-        json={},
-    )
+    with patch("app.services.email.parent_mail.send_parent_email") as send_email:
+        approve = client.post(
+            f"/api/v1/sessions/absence/{body['id']}/approve",
+            headers=admin_headers,
+            json={},
+        )
     assert approve.status_code == 200, approve.text
     assert approve.json()["status"] == "APPROVED"
+    send_email.assert_called()
 
     inbox_after = client.get("/api/v1/parent/absence-requests", headers=parent_headers)
     assert inbox_after.status_code == 200

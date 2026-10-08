@@ -303,8 +303,8 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     published: list[dict] = []
 
     monkeypatch.setattr(
-        "app.services.session_log_service.session_log_submitted_parent_email",
-        lambda **kw: submitted.append(kw),
+        "app.services.session_log_service.send_parent_email",
+        lambda *a, **kw: submitted.append(kw),
     )
     monkeypatch.setattr(
         "app.services.session_log_service.session_log_published_parent_email",
@@ -333,7 +333,7 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     )
     assert created.status_code == 201, created.text
     assert submitted, "Expected parent email on session log submission"
-    assert submitted[0].get("to")
+    assert submitted[0].get("template_key") == "session_log_submitted"
 
     log_id = created.json()["id"]
     db = SessionLocal()

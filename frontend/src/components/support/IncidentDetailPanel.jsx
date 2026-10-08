@@ -136,6 +136,7 @@ export function IncidentDetailPanel({
   const isStaff = user?.roles?.some((r) => STAFF_ROLES.has(r))
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
+  const [internalNote, setInternalNote] = useState(false)
   const [actionNote, setActionNote] = useState(incident?.action_taken_note || '')
   const [taggedUserIds, setTaggedUserIds] = useState(incident?.tagged_user_ids || [])
   const [staffUsers, setStaffUsers] = useState([])
@@ -217,16 +218,23 @@ export function IncidentDetailPanel({
       if (replyFiles.length > 0) {
         const fd = new FormData()
         fd.append('body', reply.trim())
+        if (canManage && internalNote) {
+          fd.append('is_internal', 'true')
+        }
         replyFiles.forEach((f) => fd.append('files', f))
         updated = await apiUpload(`${apiBase}/${incident.id}/messages`, fd)
       } else {
         updated = await apiFetch(`${apiBase}/${incident.id}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ body: reply.trim() }),
+          body: JSON.stringify({
+            body: reply.trim(),
+            ...(canManage && internalNote ? { is_internal: true } : {}),
+          }),
         })
       }
       setReply('')
       setReplyFiles([])
+      setInternalNote(false)
       onUpdated?.(updated)
     } catch (err) {
       setError(err.message || 'Could not send reply')
@@ -382,6 +390,33 @@ export function IncidentDetailPanel({
         {incident.location ? <span>Location: {incident.location}</span> : null}
         {incident.child_safe ? <span>Child safe: {incident.child_safe}</span> : null}
         {incident.parent_informed ? <span>Parent informed: {incident.parent_informed}</span> : null}
+        {canManage && isStaff && incident.case_id ? (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={Boolean(incident.shared_with_family)}
+              disabled={busy}
+              onChange={async (e) => {
+                setBusy(true)
+                setError('')
+                try {
+                  const updated = await apiFetch(`${patchBase}/${incident.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ shared_with_family: e.target.checked }),
+                  })
+                  onUpdated?.(updated)
+                } catch (err) {
+                  setError(err.message || 'Could not update family sharing')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            />
+            <span>
+              Share with family (sends a generic email and portal notice — never the incident description)
+            </span>
+          </label>
+        ) : null}
         {incident.immediate_action ? <span>Immediate action: {incident.immediate_action}</span> : null}
         {incident.primary_owner_role ? <span>Owner role: {incident.primary_owner_role}</span> : null}
         {incident.assigned_to_name ? <span>Assigned owner: {incident.assigned_to_name}</span> : null}
@@ -450,11 +485,14 @@ export function IncidentDetailPanel({
           return (
             <div
               key={m.id}
-              className={`ticket-bubble ${bubbleClass}`}
+              className={`ticket-bubble ${bubbleClass} ${m.is_internal ? 'ticket-bubble--internal' : ''}`}
             >
               {!isOwn && (
                 <span className="ticket-bubble__author">
                   {m.author_name}
+                  {m.is_internal ? (
+                    <span className="ticket-bubble__internal-tag">Internal</span>
+                  ) : null}
                 </span>
               )}
               <div className="ticket-bubble__body">
@@ -511,6 +549,15 @@ export function IncidentDetailPanel({
             </label>
           ) : null}
           <TicketFileInput files={replyFiles} onChange={setReplyFiles} disabled={busy} />
+          {canManage ? (
+            <label
+              className="ticket-compose__internal"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: '0.78rem' }}
+            >
+              <input type="checkbox" checked={internalNote} onChange={(e) => setInternalNote(e.target.checked)} />
+              Internal note (staff only — no parent email or portal message)
+            </label>
+          ) : null}
           {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem', marginTop: 8 }} role="alert">{error}</p> : null}
 
           {canManage && tagRole ? (

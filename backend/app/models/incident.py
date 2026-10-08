@@ -79,6 +79,9 @@ class Incident(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
+    shared_with_family: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # When staff last shared with the family; parents only see care-team messages posted after this.
+    shared_with_family_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[IncidentStatus] = mapped_column(
         Enum(IncidentStatus, values_callable=lambda x: [e.value for e in x]),
         default=IncidentStatus.REPORTED,
@@ -124,6 +127,7 @@ class IncidentMessage(Base):
     incident_id: Mapped[int] = mapped_column(ForeignKey("incidents.id"), nullable=False, index=True)
     author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_internal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     incident: Mapped["Incident"] = relationship("Incident", back_populates="messages")

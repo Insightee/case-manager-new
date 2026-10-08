@@ -246,7 +246,14 @@ function Protected({ portal, children }) {
   const { user, portal: current, loading } = useAuth()
   if (loading) return <RouteLoading />
   if (!user) {
-    if (portal === 'parent') return <Navigate to="/clientlogin" replace />
+    if (portal === 'parent') {
+      const returnPath =
+        typeof window !== 'undefined'
+          ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+          : '/parent'
+      const next = encodeURIComponent(returnPath)
+      return <Navigate to={`/clientlogin?next=${next}`} replace />
+    }
     if (portal === 'therapist') return <Navigate to="/therapistlogin" replace />
     if (portal === 'admin') return <Navigate to={portalLoginPath('admin')} replace />
     return <Navigate to={DEFAULT_SIGN_IN_PATH} replace />

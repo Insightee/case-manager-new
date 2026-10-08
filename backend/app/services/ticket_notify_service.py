@@ -4,9 +4,23 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.departments import staff_department_label
+from app.core.permissions import RoleName
 from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.services import notification_service
+from app.models.support_ticket import TicketMessage
+from app.services.email.parent_mail import send_parent_email
+
+_REPLY_EXCERPT_MAX = 500
+_REPLY_DEDUPE_MINUTES = 10
+
+
+def parent_requester_user(db: Session, ticket: SupportTicket) -> User | None:
+    """Parent who is the ticket requester (parent-visible participant). Staff-raised tickets return None."""
+    parent = db.get(User, ticket.raised_by_user_id)
+    if not parent or RoleName.PARENT.value not in parent.role_names:
+        return None
+    return parent
 
 
 def _ticket_url(ticket_id: int) -> str:
@@ -120,6 +134,87 @@ def notify_ticket_escalated_to_department(
                 entity_id=ticket.id,
                 event=EmailEvent.TICKET_ESCALATED,
             )
+
+
+def notify_parent_ticket_escalated(
+    db: Session,
+    ticket: SupportTicket,
+    *,
+    background_tasks=None,
+) -> None:
+    parent = parent_requester_user(db, ticket)
+    if not parent:
+        return
+    subject = (ticket.subject or "Support request")[:80]
+    portal_url = f"{settings.frontend_url.rstrip('/')}/parent/support"
+    notification_service.create_notification(
+        db,
+        user_id=parent.id,
+        title="Your support request was escalated",
+        body="Your request was escalated for priority follow-up. A team member will reach out soon.",
+        entity_type="support_ticket",
+        entity_id=ticket.id,
+    )
+    send_parent_email(
+        db,
+        parent,
+        category="incidents",
+        template_key="parent_support_escalated",
+        payload={
+            "parent_name": parent.full_name or parent.email,
+            "ticket_subject": subject,
+            "portal_url": portal_url,
+        },
+        entity_type="support_ticket",
+        entity_id=ticket.id,
+        background_tasks=background_tasks,
+    )
+
+
+def notify_parent_staff_ticket_reply(
+    db: Session,
+    ticket: SupportTicket,
+    message: TicketMessage,
+    *,
+    staff_user: User,
+    background_tasks=None,
+) -> None:
+    if message.is_internal:
+        return
+    if staff_user.id == ticket.raised_by_user_id:
+        return
+    parent = parent_requester_user(db, ticket)
+    if not parent:
+        return
+    subject = (ticket.subject or "Support request")[:80]
+    portal_url = f"{settings.frontend_url.rstrip('/')}/parent/support"
+    excerpt = (message.body or "").strip()
+    if len(excerpt) > _REPLY_EXCERPT_MAX:
+        excerpt = excerpt[: _REPLY_EXCERPT_MAX - 1] + "…"
+    notification_service.create_notification(
+        db,
+        user_id=parent.id,
+        title="New reply on your support request",
+        body=f"Your care team replied to “{subject}”. Open Support in your portal to read the full message.",
+        entity_type="support_ticket",
+        entity_id=ticket.id,
+    )
+    send_parent_email(
+        db,
+        parent,
+        category="incidents",
+        template_key="support_ticket_reply",
+        payload={
+            "parent_name": parent.full_name or parent.email,
+            "ticket_subject": subject,
+            "reply_excerpt": excerpt,
+            "portal_url": portal_url,
+        },
+        entity_type="support_ticket",
+        entity_id=ticket.id,
+        background_tasks=background_tasks,
+        dedupe_window_minutes=_REPLY_DEDUPE_MINUTES,
+    )
 
 
 def notify_ticket_reopened(

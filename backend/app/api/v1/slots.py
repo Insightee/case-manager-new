@@ -250,12 +250,16 @@ def cancel_booking(
         slot = appt_booking.cancel_booking_with_session(db, slot_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if case_id_before and slot_snapshot and slot_snapshot.therapist_user_id == user.id:
+    from app.core.permissions import RoleName
+
+    is_parent_actor = RoleName.PARENT.value in user.role_names
+    if case_id_before and slot_snapshot and not is_parent_actor:
         appt_notify.notify_parents_session_cancelled(
             db,
             slot_snapshot,
+            case_id=case_id_before,
             cancelled_by_name=user.full_name,
-            reason="Your therapist cancelled the session",
+            reason="Session cancelled",
         )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="cancel_booking", entity_type="slot", entity_id=slot_id, **meta)

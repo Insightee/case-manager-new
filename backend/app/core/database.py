@@ -460,6 +460,8 @@ def ensure_sqlite_schema_patches() -> None:
                 ("immediate_action", "TEXT"),
                 ("child_safe", "VARCHAR(8)"),
                 ("parent_informed", "VARCHAR(8)"),
+                ("shared_with_family", "BOOLEAN DEFAULT 0"),
+                ("shared_with_family_at", "DATETIME"),
                 ("primary_owner_role", "VARCHAR(32)"),
                 ("tagged_roles", "TEXT"),
                 ("tagged_user_ids", "TEXT"),

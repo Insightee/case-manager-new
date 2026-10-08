@@ -6,7 +6,7 @@ from unittest.mock import patch
 from app.services.parent_notification_preferences import apply_parent_email_preferences
 
 
-def test_appointment_email_respects_opt_out():
+def test_appointment_booking_does_not_email_parent():
     from app.services.appointment_notification_service import notify_parents_therapist_booked
 
     user = SimpleNamespace(
@@ -15,8 +15,6 @@ def test_appointment_email_respects_opt_out():
         notification_preferences={},
         role_names=["PARENT"],
     )
-    apply_parent_email_preferences(user, {"appointments": False})
-
     slot = SimpleNamespace(
         id=99,
         case_id=10,
@@ -38,8 +36,8 @@ def test_appointment_email_respects_opt_out():
     ), patch(
         "app.services.appointment_notification_service.notification_service.create_notification",
     ), patch(
-        "app.services.appointment_notification_service.email_service.booking_confirmed_email",
-        side_effect=lambda **kw: sent.append(kw["to"]),
+        "app.services.appointment_notification_service.send_parent_email",
+        side_effect=lambda *a, **kw: sent.append(kw.get("template_key")),
     ):
         notify_parents_therapist_booked(FakeDb(), slot, therapist_name="Umme Asra.N")
 

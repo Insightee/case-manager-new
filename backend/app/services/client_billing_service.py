@@ -2217,7 +2217,7 @@ def send_payment_reminder(
             parent_name=parent.full_name or parent.email,
             invoice_number=inv.invoice_number,
             balance_inr=balance,
-            payments_url="/parent/billing",
+            payments_url=f"{settings.frontend_url.rstrip('/')}/parent/billing",
         )
     db.flush()
     return {"status": "sent", "balanceInr": balance}
