@@ -306,7 +306,7 @@ export function ClientBookAppointmentPage() {
         .parent-schedule-page__strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
         .parent-schedule-page__card { flex: 0 0 auto; min-width: 175px; max-width: 205px; min-height: 44px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 13px; text-align: left; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.05); -webkit-tap-highlight-color: transparent; }
         .parent-schedule-page__card--cm { background: #faf5ff; border-color: #ddd6fe; }
-        .parent-schedule-page__card-date { font-size: 0.7rem; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
+        .parent-schedule-page__card-date { font-size: 0.7rem; font-weight: 700; color: #294e3f; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
         .parent-schedule-page__card--cm .parent-schedule-page__card-date { color: #7c3aed; }
         .parent-schedule-page__card-time { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin: 0 0 4px; }
         .parent-schedule-page__card-role { font-size: 0.78rem; color: #475569; margin: 0 0 2px; font-weight: 600; }
@@ -316,11 +316,11 @@ export function ClientBookAppointmentPage() {
         .parent-appt-badge--pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
         .parent-appt-badge--cancelled { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
         .parent-appt-badge--cm { background: #ede9fe; color: #4c1d95; border-color: #c4b5fd; }
-        .parent-appt-sheet { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); pointer-events: none; }
+        .parent-appt-sheet { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); pointer-events: none; }
         @media (min-width: 640px) { .parent-appt-sheet { align-items: center; } }
         .parent-appt-sheet__backdrop { position: absolute; inset: 0; margin: 0; padding: 0; border: none; background: rgba(15,23,42,0.4); cursor: default; pointer-events: auto; }
         .parent-appt-sheet__panel { position: relative; z-index: 1; width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); pointer-events: auto; }
-        .parent-appt-sheet__eyebrow { font-size: 0.7rem; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+        .parent-appt-sheet__eyebrow { font-size: 0.7rem; font-weight: 700; color: #294e3f; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
         .parent-appt-sheet__eyebrow--cm { color: #7c3aed; }
         .parent-appt-sheet__title { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
         .parent-appt-sheet__time { font-size: 0.875rem; color: #475569; margin: 0 0 4px; }
@@ -328,7 +328,7 @@ export function ClientBookAppointmentPage() {
         .parent-appt-sheet__with { font-size: 0.8rem; color: #94a3b8; margin: 0 0 16px; }
         .parent-appt-sheet__hint { font-size: 0.8rem; color: #94a3b8; margin: 0 0 16px; }
         .parent-appt-sheet__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-        .parent-appt-sheet__reschedule { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 10px 0; font-weight: 600; font-size: 0.875rem; color: #3730a3; cursor: pointer; }
+        .parent-appt-sheet__reschedule { background: #c3ecd7; border: 1px solid #416656; border-radius: 12px; padding: 10px 0; font-weight: 600; font-size: 0.875rem; color: #0e1f19; cursor: pointer; min-height: 44px; }
         .parent-appt-sheet__reschedule:disabled { opacity: 0.45; cursor: not-allowed; }
         .parent-appt-sheet__cancel { background: #fff; border: 1px solid #fca5a5; border-radius: 12px; padding: 10px 0; font-weight: 600; font-size: 0.875rem; color: #dc2626; cursor: pointer; }
         .parent-appt-sheet__cancel:disabled { opacity: 0.45; cursor: not-allowed; }

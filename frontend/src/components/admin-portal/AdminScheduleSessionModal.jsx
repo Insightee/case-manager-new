@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { addDaysIso, todayIsoIST } from '../scheduling/recurringRange.js'
+import '../scheduling/schedule-sheet.css'
 
 export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
   const [therapistId, setTherapistId] = useState('')
   const [therapists, setTherapists] = useState([])
   const [slots, setSlots] = useState([])
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [toDate, setToDate] = useState(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 7)
-    return d.toISOString().slice(0, 10)
-  })
+  const [fromDate, setFromDate] = useState(() => todayIsoIST())
+  const [toDate, setToDate] = useState(() => addDaysIso(todayIsoIST(), 7))
   const [booking, setBooking] = useState(false)
   const [error, setError] = useState('')
 
@@ -48,10 +47,10 @@ export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold">Schedule session</h2>
+  return createPortal(
+    <div className="sched-modal" onClick={onClose}>
+      <div className="sched-modal__panel" role="dialog" aria-labelledby="admin-schedule-title" onClick={(e) => e.stopPropagation()}>
+        <h2 id="admin-schedule-title" className="text-lg font-semibold">Schedule session</h2>
         <p className="text-sm text-slate-500">
           {caseItem.case_code} · {caseItem.child_name}
         </p>
@@ -72,14 +71,14 @@ export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
               ))}
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-sm">
+          <div className="sched-sheet__times">
+            <label className="sched-sheet__field">
               From
-              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1 text-sm" />
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
             </label>
-            <label className="text-sm">
+            <label className="sched-sheet__field">
               To
-              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="mt-1 w-full rounded-lg border px-2 py-1 text-sm" />
+              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </label>
           </div>
           {therapistId && slots.length === 0 ? <p className="text-sm text-slate-500">No open slots in range.</p> : null}
@@ -98,10 +97,11 @@ export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
             ))}
           </ul>
         </div>
-        <button type="button" className="mt-4 w-full rounded-xl border py-2 text-sm font-semibold" onClick={onClose}>
+        <button type="button" className="sched-sheet__btn sched-sheet__btn--ghost" style={{ width: '100%', marginTop: 16 }} onClick={onClose}>
           Close
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

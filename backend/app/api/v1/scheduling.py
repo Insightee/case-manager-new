@@ -73,6 +73,8 @@ class BookSlotRequest(BaseModel):
     require_therapist_approval: bool = False
     admin_request_comment: Optional[str] = None
     force_unavailable: bool = False
+    # False when this book is the anchor of a recurring batch. The batch sends one summary.
+    notify_client: bool = True
 
 
 class InviteClientRequest(BaseModel):
@@ -236,13 +238,14 @@ def book_slot(
             admin_name=user.full_name,
             comment=payload.admin_request_comment,
         )
-    if source == BookingSource.THERAPIST:
-        appt_notify.notify_parents_therapist_booked(db, slot, therapist_name=user.full_name)
-    elif source == BookingSource.ADMIN:
-        th = db.get(User, slot.therapist_user_id)
-        appt_notify.notify_parents_therapist_booked(
-            db, slot, therapist_name=th.full_name if th else user.full_name
-        )
+    if payload.notify_client:
+        if source == BookingSource.THERAPIST:
+            appt_notify.notify_parents_therapist_booked(db, slot, therapist_name=user.full_name)
+        elif source == BookingSource.ADMIN:
+            th = db.get(User, slot.therapist_user_id)
+            appt_notify.notify_parents_therapist_booked(
+                db, slot, therapist_name=th.full_name if th else user.full_name
+            )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="book", entity_type="slot", entity_id=slot_id, **meta)
     db.commit()
@@ -351,7 +354,7 @@ def assign_recurring(
         raise HTTPException(status_code=404, detail="Case not found")
     ensure_case_transition_allows_write(case, db)
     try:
-        record = sched.assign_recurring_schedule(
+        result = sched.assign_recurring_schedule(
             db,
             case_id=payload.case_id,
             therapist_user_id=payload.therapist_user_id,
@@ -364,6 +367,7 @@ def assign_recurring(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    record = result.record
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -383,6 +387,8 @@ def assign_recurring(
         "weekdays": record.get_weekdays(),
         "start_date": record.start_date.isoformat(),
         "end_date": record.end_date.isoformat(),
+        "skipped": result.skipped,
+        "outside_week": result.outside_week,
     }
 
 

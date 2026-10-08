@@ -17,17 +17,19 @@ import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 import { filterUpcomingSessions, formatSessionWhen } from '../../lib/sessionDisplay.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
+import {
+  addDaysIso,
+  earlierWeekdayMessage,
+  formatSkipMessage,
+  includeEarlierSelectedDays,
+  nWeeksRange,
+  todayIsoIST,
+} from '../scheduling/recurringRange.js'
 import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { CaseDayTypeSection } from './CaseDayTypeSection.jsx'
 import { TransitionTherapistSection } from './TransitionTherapistSection.jsx'
 import './admin-scheduling-hub.css'
-
-function addDaysIso(iso, days) {
-  const d = new Date(iso + 'T12:00:00')
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
 
 // ─── Section 1: Therapist Assignment ─────────────────────────────────────────
 
@@ -49,7 +51,7 @@ function TherapistAssignSection({
   const transitionBlocked = Boolean(activeTransition)
 
   const [selectedId, setSelectedId] = useState(assignedTherapistId)
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [startDate, setStartDate] = useState(() => todayIsoIST())
   const [reason, setReason] = useState('')
   const [flagOutgoingTherapist, setFlagOutgoingTherapist] = useState(false)
   const [billingReady, setBillingReady] = useState(false)
@@ -427,8 +429,8 @@ export function CaseSchedulingHub({
   const [bookingSuccess, setBookingSuccess] = useState(null)
   const [productRules, setProductRules] = useState([])
 
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [toDate, setToDate] = useState(() => addDaysIso(new Date().toISOString().slice(0, 10), 14))
+  const [fromDate, setFromDate] = useState(() => todayIsoIST())
+  const [toDate, setToDate] = useState(() => addDaysIso(todayIsoIST(), 14))
   const [availSlots, setAvailSlots] = useState([])
   const [booking, setBooking] = useState(false)
   const [adminComment, setAdminComment] = useState('')
@@ -448,15 +450,20 @@ export function CaseSchedulingHub({
   }, [caseItem, productRules])
 
   const recurRange = useMemo(() => {
-    const start = recurStart || new Date().toISOString().slice(0, 10)
+    const start = recurStart || todayIsoIST()
     if (rangeMode === 'ongoing') {
-      return { start, end: addDaysIso(start, ONGOING_MATERIALIZE_WEEKS * 7) }
+      return { start, end: addDaysIso(start, ONGOING_MATERIALIZE_WEEKS * 7 - 1) }
     }
     if (rangeMode === 'weeks') {
-      return { start, end: addDaysIso(start, Math.max(1, rangeWeeks) * 7) }
+      const range = nWeeksRange(start, rangeWeeks)
+      return { start: range.from, end: range.to }
     }
     return { start, end: start }
   }, [recurStart, rangeMode, rangeWeeks])
+  const earlierNote = useMemo(
+    () => (rangeMode === 'weeks' || rangeMode === 'ongoing' ? earlierWeekdayMessage(weekdays, recurRange.start) : ''),
+    [rangeMode, weekdays, recurRange.start],
+  )
 
   const loadUpcoming = useCallback(() => {
     if (!caseItem?.id) return
@@ -485,8 +492,7 @@ export function CaseSchedulingHub({
 
   useEffect(() => {
     if (assignedTherapistId) setTherapistId(assignedTherapistId)
-    const today = new Date().toISOString().slice(0, 10)
-    setRecurStart(today)
+    setRecurStart(todayIsoIST())
   }, [assignedTherapistId, primaryAssignment?.id])
 
   useEffect(() => {
@@ -586,7 +592,13 @@ export function CaseSchedulingHub({
           end_date: recurRange.end,
         }),
       })
-      setSuccess(`Recurring schedule created (${res.booked_slot_count || 0} sessions).`)
+      const skipNote = formatSkipMessage(res.booked_slot_count, res.skipped)
+      const outside = res.outside_week?.length
+        ? ` Earlier this week was left off: ${res.outside_week.join(', ')}.`
+        : ''
+      setSuccess(
+        (skipNote || `Recurring schedule created (${res.booked_slot_count || 0} sessions).`) + outside,
+      )
       setRecurPreview(null)
       setCalendarRefresh((k) => k + 1)
       onDone?.()
@@ -712,6 +724,18 @@ export function CaseSchedulingHub({
                   Scheduling through {recurRange.end}
                   {rangeMode === 'ongoing' ? ` (${ONGOING_MATERIALIZE_WEEKS} weeks materialized)` : ''}
                 </p>
+                {earlierNote ? (
+                  <p className="admin-alert" style={{ marginTop: 8 }}>
+                    {earlierNote}{' '}
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={() => setRecurStart(includeEarlierSelectedDays(recurRange.start, weekdays))}
+                    >
+                      Include them
+                    </button>
+                  </p>
+                ) : null}
               </div>
 
               {selectedRule ? (
@@ -731,6 +755,17 @@ export function CaseSchedulingHub({
                 </div>
               ) : null}
 
+              {recurPreview?.outside_week?.length ? (
+                <p className="admin-muted" style={{ marginTop: 8, fontSize: '0.8rem' }}>
+                  Before the start date: {recurPreview.outside_week.join(', ')}.
+                </p>
+              ) : null}
+              {recurPreview?.skipped?.length ? (
+                <p className="admin-muted" style={{ marginTop: 8, fontSize: '0.8rem' }}>
+                  {recurPreview.skipped.length} date{recurPreview.skipped.length === 1 ? '' : 's'} would stay as they are
+                  {recurPreview.planned_count ? ` (${recurPreview.planned_count} can still be booked)` : ''}.
+                </p>
+              ) : null}
               {recurPreview?.conflicts?.length ? (
                 <div className="admin-alert" style={{ marginTop: 12, color: '#b45309' }}>
                   <strong>{recurPreview.conflicts.length} conflict(s):</strong>

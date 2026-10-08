@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { ScheduleWeekdayPicker } from './ScheduleWeekdayPicker.jsx'
 import { ONGOING_MATERIALIZE_WEEKS } from './scheduleTemplateUtils.js'
 import { dateStr, weekEndContaining } from './slotCalendarUtils.js'
+import {
+  addDaysIso,
+  earlierWeekdayMessage,
+  formatSkipMessage,
+  todayIsoIST,
+} from './recurringRange.js'
+import './schedule-sheet.css'
 
 const DURATION_CHIPS = [
   { label: '30 min', mins: 30 },
@@ -39,9 +47,7 @@ function diffMins(start, end) {
 
 // 3-months from today
 function defaultEndDate() {
-  const d = new Date()
-  d.setMonth(d.getMonth() + 3)
-  return d.toISOString().slice(0, 10)
+  return addDaysIso(todayIsoIST(), 90)
 }
 
 export function SlotEditSheet({
@@ -84,12 +90,16 @@ export function SlotEditSheet({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [meId, setMeId] = useState(null)
 
   const slotDate = mode === 'edit' && slot ? slot.slot_date : cellDate ? dateStr(cellDate) : ''
 
   useEffect(() => {
     if (!open) return
     setError('')
+    apiFetch('/api/v1/auth/me')
+      .then((u) => setMeId(u.id))
+      .catch(() => {})
     setSaving(false)
     setRecurring(false)
     setRecurWeekdays([])
@@ -127,6 +137,11 @@ export function SlotEditSheet({
       .catch(() => setCases([]))
   }, [open, bookClient, therapistId])
 
+  const earlierNote = useMemo(
+    () => (recurring && recurScope !== 'this_week' ? earlierWeekdayMessage(recurWeekdays, slotDate) : ''),
+    [recurring, recurScope, recurWeekdays, slotDate],
+  )
+
   if (!open) return null
 
   const durMins = diffMins(startTime, endTime)
@@ -137,11 +152,7 @@ export function SlotEditSheet({
 
   function resolveRecurEndDate(fromDate) {
     if (recurScope === 'this_week') return weekEndContaining(fromDate)
-    if (recurScope === 'ongoing') {
-      const d = new Date(`${fromDate}T12:00:00`)
-      d.setDate(d.getDate() + ONGOING_MATERIALIZE_WEEKS * 7)
-      return dateStr(d)
-    }
+    if (recurScope === 'ongoing') return addDaysIso(fromDate, ONGOING_MATERIALIZE_WEEKS * 7 - 1)
     return recurEndDate
   }
 
@@ -210,9 +221,13 @@ export function SlotEditSheet({
       let bookedForCalendar = null
       if (bookClient && newSlotId) {
         if (bookTab === 'existing' && caseId) {
+          const alsoRecurring = recurring && recurWeekdays.length > 0
           await apiFetch(`/api/v1/scheduling/slots/${newSlotId}/book`, {
             method: 'POST',
-            body: JSON.stringify({ case_id: Number(caseId) }),
+            body: JSON.stringify({
+              case_id: Number(caseId),
+              notify_client: !alsoRecurring,
+            }),
           })
           bookedForCalendar = {
             id: newSlotId,
@@ -240,18 +255,31 @@ export function SlotEditSheet({
 
       // ------- If recurring + case selected, also assign recurring -------
       if (recurring && recurWeekdays.length > 0 && bookClient && caseId) {
-        await apiFetch('/api/v1/scheduling/assign-recurring', {
+        const tid = Number(therapistId || meId)
+        if (!tid) {
+          setError('Looks like we still need the therapist on this schedule before we can save the repeating days.')
+          setSaving(false)
+          return
+        }
+        const result = await apiFetch('/api/v1/scheduling/assign-recurring', {
           method: 'POST',
           body: JSON.stringify({
             case_id: Number(caseId),
-            therapist_user_id: therapistId || undefined,
+            therapist_user_id: tid,
             weekdays: recurWeekdays,
             start_time: startTime,
             end_time: endTime,
             start_date: slotDate,
             end_date: resolveRecurEndDate(slotDate),
           }),
-        }).catch(() => {}) // best-effort
+        })
+        const skipped = result?.skipped || []
+        if (skipped.length) {
+          setError(formatSkipMessage(result?.booked_slot_count, skipped))
+          onSaved?.()
+          setSaving(false)
+          return
+        }
       }
 
       if (bookedForCalendar) {
@@ -275,39 +303,40 @@ export function SlotEditSheet({
     }
   }
 
-  return (
+  return createPortal(
     <>
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
-      <div className="w-full max-w-md rounded-t-2xl bg-white shadow-xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
-        {/* Header */}
-        <div className="sticky top-0 bg-white px-6 pt-5 pb-3 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">{mode === 'add' ? 'Add slot' : 'Edit slot'}</h2>
-          <p className="mt-0.5 text-sm text-slate-500">{slotDate}</p>
-          {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+    <div className="sched-sheet" onClick={onClose}>
+      <div
+        className="sched-sheet__panel"
+        role="dialog"
+        aria-labelledby="slot-edit-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sched-sheet__header">
+          <h2 id="slot-edit-title" className="sched-sheet__title">{mode === 'add' ? 'Add slot' : 'Edit slot'}</h2>
+          <p className="sched-sheet__sub">{slotDate}</p>
+          {error ? <p className="sched-sheet__note" style={{ marginTop: 8 }}>{error}</p> : null}
         </div>
 
-        <form className="px-6 pb-6 space-y-5 pt-4" onSubmit={handleSave}>
-          {/* ── Section A: When ── */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Time</p>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm font-medium text-slate-700">
+        <form id="slot-edit-form" className="sched-sheet__body" onSubmit={handleSave}>
+          <div className="sched-sheet__card">
+            <p className="sched-sheet__eyebrow">Time</p>
+            <div className="sched-sheet__times">
+              <label className="sched-sheet__field">
                 Start
                 <input
                   type="time"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   required
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="sched-sheet__field">
                 End
                 <input
                   type="time"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   required
                 />
               </label>
@@ -322,11 +351,7 @@ export function SlotEditSheet({
                   key={c.mins}
                   type="button"
                   onClick={() => applyChip(c.mins)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                    durMins === c.mins
-                      ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-200 text-slate-600 hover:border-indigo-300'
-                  }`}
+                  className={`sched-chip${durMins === c.mins ? ' is-on' : ''}`}
                 >
                   {c.label}
                 </button>
@@ -343,11 +368,7 @@ export function SlotEditSheet({
                   key={s.value}
                   type="button"
                   onClick={() => setServiceType(serviceType === s.value ? '' : s.value)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                    serviceType === s.value
-                      ? 'border-indigo-600 bg-indigo-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-indigo-300'
-                  }`}
+                  className={`sched-chip${serviceType === s.value ? ' is-on' : ''}`}
                 >
                   {s.label}
                 </button>
@@ -364,15 +385,9 @@ export function SlotEditSheet({
                 role="switch"
                 aria-checked={bookClient}
                 onClick={() => setBookClient((v) => !v)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  bookClient ? 'bg-indigo-600' : 'bg-slate-200'
-                }`}
+                className={`sched-switch${bookClient ? ' is-on' : ''}`}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    bookClient ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
+                <span />
               </button>
             </label>
 
@@ -413,7 +428,7 @@ export function SlotEditSheet({
                             href={selectedCase.maps_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="mt-1 inline-block text-xs font-semibold text-indigo-600 hover:underline"
+                            className="mt-1 inline-block text-xs font-semibold" style={{ color: '#294e3f' }}
                           >
                             Open in Maps ↗
                           </a>
@@ -439,21 +454,16 @@ export function SlotEditSheet({
                 role="switch"
                 aria-checked={recurring}
                 onClick={() => setRecurring((v) => !v)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  recurring ? 'bg-indigo-600' : 'bg-slate-200'
-                }`}
+                className={`sched-switch${recurring ? ' is-on' : ''}`}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    recurring ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
+                <span />
               </button>
             </label>
 
             {recurring && (
               <div className="mt-4 space-y-3">
                 <ScheduleWeekdayPicker value={recurWeekdays} onChange={setRecurWeekdays} compact />
+                {earlierNote ? <p className="sched-sheet__note">{earlierNote}</p> : null}
                 <div className="space-y-2">
                   {[
                     { id: 'this_week', label: 'This week only' },
@@ -504,24 +514,20 @@ export function SlotEditSheet({
             />
           </label>
 
-          {/* Actions */}
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-[44px] flex-1 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="min-h-[44px] flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {saving ? 'Saving…' : mode === 'add' ? 'Save slot' : 'Update slot'}
-            </button>
-          </div>
         </form>
+        <div className="sched-sheet__footer">
+          <button type="button" onClick={onClose} className="sched-sheet__btn sched-sheet__btn--ghost">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="slot-edit-form"
+            disabled={saving}
+            className="sched-sheet__btn sched-sheet__btn--primary"
+          >
+            {saving ? 'Saving…' : mode === 'add' ? 'Save slot' : 'Update slot'}
+          </button>
+        </div>
       </div>
     </div>
     <BookingSuccessSheet
@@ -534,6 +540,7 @@ export function SlotEditSheet({
         onClose()
       }}
     />
-    </>
+    </>,
+    document.body,
   )
 }

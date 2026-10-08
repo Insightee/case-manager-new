@@ -173,6 +173,61 @@ test.describe('Therapist portal mobile', () => {
     await expect(page.locator('#portal-nav-drawer').getByRole('link', { name: 'My profile' })).toBeVisible()
   })
 
+  test('book recurring sheet stays above the bottom nav', async ({ page }) => {
+    await loginTherapist(page)
+    await page.goto('/therapist/slots')
+    const continueBtn = page.getByRole('button', { name: 'Continue to sessions' })
+    const bookBtn = page.getByRole('button', { name: 'Book recurring' })
+    await continueBtn.or(bookBtn).first().waitFor({ state: 'visible' })
+    if (await continueBtn.isVisible()) {
+      await continueBtn.click()
+    }
+    await expect(page.getByRole('heading', { name: 'Scheduling' })).toBeVisible()
+    await bookBtn.click()
+    const dialog = page.getByRole('dialog', { name: 'Schedule' })
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel('For N weeks from start date').check()
+    const cancel = dialog.getByRole('button', { name: 'Cancel' })
+    const start = dialog.locator('input[type="time"]').first()
+    const end = dialog.locator('input[type="time"]').nth(1)
+    await expect(dialog.getByRole('tab', { name: 'Book recurring' })).toBeVisible()
+    await expect(dialog.getByRole('combobox', { name: 'Case' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Mo', pressed: true })).toBeVisible()
+    await expect(dialog.getByRole('spinbutton', { name: 'Weeks' })).toBeVisible()
+    await expect(dialog.getByRole('textbox', { name: 'Start date', exact: true })).toBeVisible()
+    await expect(start).toBeVisible()
+    await expect(end).toBeVisible()
+    await expect(cancel).toBeVisible()
+
+    const boxes = await page.evaluate(() => {
+      const dialog = document.querySelector('.sched-sheet__panel')
+      const pick = (el) => {
+        const r = el.getBoundingClientRect()
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height }
+      }
+      const times = [...dialog.querySelectorAll('input[type="time"]')].map(pick)
+      const cancel = [...dialog.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Cancel')
+      const cancelBox = pick(cancel)
+      const point = document.elementFromPoint(cancelBox.left + cancelBox.width / 2, cancelBox.top + cancelBox.height / 2)
+      return {
+        title: pick(dialog.querySelector('.sched-sheet__title')),
+        times,
+        cancel: cancelBox,
+        cancelHit: cancel.contains(point),
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      }
+    })
+    expect(boxes.cancel.bottom).toBeLessThanOrEqual(boxes.viewport.height + 1)
+    expect(boxes.cancel.top).toBeGreaterThanOrEqual(0)
+    expect(boxes.cancelHit).toBe(true)
+    expect(boxes.title.bottom).toBeLessThanOrEqual(boxes.times[0].top + 1)
+    expect(boxes.times[1].top).toBeGreaterThanOrEqual(boxes.times[0].bottom - 1)
+    expect(boxes.times[0].right).toBeLessThanOrEqual(boxes.viewport.width + 1)
+    if (process.env.SCHEDULE_SHEET_SHOT) {
+      await page.screenshot({ path: process.env.SCHEDULE_SHEET_SHOT })
+    }
+  })
+
   test('open slots page fits viewport without horizontal scroll', async ({ page }) => {
     await loginTherapist(page)
     await navigateTherapist(page, 'Scheduling')
