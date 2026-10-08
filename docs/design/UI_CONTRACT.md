@@ -23,6 +23,11 @@
 | Observation blocks | `ObservationStitchBlocks.jsx` | Observation only |
 | **Case overview (therapist)** | `TherapistCaseOverviewDashboard.jsx` + `case-overview-v2.css` | Case profile → Overview tab |
 | **Case reports tab (therapist)** | `CaseReportsTab.jsx` + `case-reports-tab.css` | Case profile → Reports tab (default section) |
+| **Schedule / recurring sheet** | `WeeklyScheduleDrawer.jsx` + `schedule-sheet.css` + `ScheduleWeekdayPicker.jsx` | Therapist Scheduling, admin Quick recurring, add-slot sheet |
+
+## Schedule sheet (Forest Light — mandatory)
+
+Therapist Scheduling, admin Quick recurring, and the add-slot sheet share one Forest sheet (`sched-sheet`, portaled to `document.body`, `z-index: 80`). Bottom navigation stays at `z-index: 40`. Start and end times stack in one column under 480px. Chips, tabs, and primary actions use Forest (`#0e1f19`, `#416656`, `#c3ecd7`), not indigo `ClinicalCard` surfaces. Parent booking keeps its page form and appointment sheet, with the same Forest actions and safe-area padding. Weekday ranges use `recurringRange.js` (calendar dates, Asia/Kolkata “today”).
 
 ## Case overview (Forest Light — mandatory)
 

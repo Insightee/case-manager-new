@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
-import { WEEKDAY_KEYS, WEEKDAY_LABELS } from '../scheduling/slotCalendarUtils.js'
+import { ScheduleWeekdayPicker } from '../scheduling/ScheduleWeekdayPicker.jsx'
 import { QuickRecurringModal } from '../scheduling/QuickRecurringModal.jsx'
+import {
+  addDaysIso,
+  earlierWeekdayMessage,
+  formatSkipMessage,
+  includeEarlierSelectedDays,
+  todayIsoIST,
+} from '../scheduling/recurringRange.js'
 
 export function AdminAssignSchedulePanel({ caseItem, assignments, onDone }) {
   const [therapistId, setTherapistId] = useState('')
@@ -20,16 +27,10 @@ export function AdminAssignSchedulePanel({ caseItem, assignments, onDone }) {
   useEffect(() => {
     const active = (assignments || []).find((a) => a.status === 'ACTIVE')
     if (active) setTherapistId(String(active.therapist_user_id))
-    const today = new Date()
-    const end = new Date(today)
-    end.setMonth(end.getMonth() + 1)
-    setStartDate(today.toISOString().slice(0, 10))
-    setEndDate(end.toISOString().slice(0, 10))
+    const today = todayIsoIST()
+    setStartDate(today)
+    setEndDate(addDaysIso(today, 30))
   }, [assignments])
-
-  function toggleDay(key) {
-    setWeekdays((prev) => (prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]))
-  }
 
   async function handleConfirm() {
     if (!caseItem || !therapistId) return
@@ -94,19 +95,7 @@ export function AdminAssignSchedulePanel({ caseItem, assignments, onDone }) {
 
       {step === 1 && (
         <div className="admin-form-stack">
-          <p className="admin-form-hint">Select days</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {WEEKDAY_KEYS.map((key, i) => (
-              <button
-                key={key}
-                type="button"
-                className={`admin-btn admin-btn--sm ${weekdays.includes(key) ? 'admin-btn--primary' : ''}`}
-                onClick={() => toggleDay(key)}
-              >
-                {WEEKDAY_LABELS[i]}
-              </button>
-            ))}
-          </div>
+          <ScheduleWeekdayPicker value={weekdays} onChange={setWeekdays} label="Repeat on" />
           <div className="admin-btn-group">
             <button type="button" className="admin-btn" onClick={() => setStep(0)}>
               Back
@@ -164,6 +153,18 @@ export function AdminAssignSchedulePanel({ caseItem, assignments, onDone }) {
             <p>
               {startDate} → {endDate}
             </p>
+            {earlierWeekdayMessage(weekdays, startDate) ? (
+              <p>
+                {earlierWeekdayMessage(weekdays, startDate)}{' '}
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                  onClick={() => setStartDate(includeEarlierSelectedDays(startDate, weekdays))}
+                >
+                  Include them
+                </button>
+              </p>
+            ) : null}
           </div>
           <div className="admin-btn-group">
             <button type="button" className="admin-btn" onClick={() => setStep(2)}>
@@ -181,6 +182,12 @@ export function AdminAssignSchedulePanel({ caseItem, assignments, onDone }) {
           <p className="admin-success">
             Booked {result.booked_slot_count} session(s). Group ID: {result.recurrence_group_id}
           </p>
+          {formatSkipMessage(result.booked_slot_count, result.skipped) ? (
+            <p className="admin-form-hint">{formatSkipMessage(result.booked_slot_count, result.skipped)}</p>
+          ) : null}
+          {result.outside_week?.length ? (
+            <p className="admin-form-hint">Earlier this week was left off: {result.outside_week.join(', ')}.</p>
+          ) : null}
           <button type="button" className="admin-btn admin-btn--primary" onClick={() => setStep(0)}>
             Assign another
           </button>

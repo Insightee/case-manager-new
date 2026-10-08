@@ -20,6 +20,13 @@ from app.services import appointment_booking_service as appt_booking
 from app.services import appointment_notification_service as appt_notify
 from app.services import appointment_policy as policy
 from app.services import slot_calendar_service as cal
+from app.services.recurring_expansion import (
+    RecurringAssignResult,
+    dates_before_start,
+    expand_weekday_dates,
+    normalize_weekdays,
+    weekday_key,
+)
 
 
 def _slot_to_dict(slot: TherapistSlot) -> dict[str, Any]:
@@ -222,6 +229,10 @@ def reschedule_appointment(
     return booked
 
 
+def _skip(day: date, reason: str, **extra: Any) -> dict:
+    return {"date": day.isoformat(), "weekday": weekday_key(day), "reason": reason, **extra}
+
+
 def preview_recurring_schedule(
     db: Session,
     *,
@@ -236,20 +247,16 @@ def preview_recurring_schedule(
     """Dry-run recurring assignment; returns planned bookings and conflicts."""
     conflicts: list[dict] = []
     planned: list[dict] = []
-    if end_date < start_date:
-        raise ValueError("end_date must be on or after start_date")
+    skipped: list[dict] = []
     if end_time <= start_time:
         raise ValueError("end_time must be after start_time")
-    if not weekdays:
-        raise ValueError("Select at least one weekday")
-    d = start_date
-    while d <= end_date:
-        if cal._weekday_key(d) not in weekdays:
-            d += timedelta(days=1)
-            continue
+    normalized = normalize_weekdays(weekdays)
+    outside = dates_before_start(start_date, normalized)
+    for d in expand_weekday_dates(start_date, end_date, normalized):
         if cal.is_therapist_wide_leave_day(db, therapist_user_id, d):
+            row = _skip(d, "leave")
+            skipped.append(row)
             planned.append({"date": d.isoformat(), "status": "skipped_leave"})
-            d += timedelta(days=1)
             continue
         slot = db.scalars(
             select(TherapistSlot).where(
@@ -259,6 +266,8 @@ def preview_recurring_schedule(
             )
         ).first()
         if slot and slot.status == SlotStatus.BOOKED and slot.case_id != case_id:
+            row = _skip(d, "other_case", slot_id=slot.id, other_case_id=slot.case_id)
+            skipped.append(row)
             conflicts.append(
                 {
                     "date": d.isoformat(),
@@ -269,7 +278,13 @@ def preview_recurring_schedule(
                     "other_case_id": slot.case_id,
                 }
             )
-        elif slot and slot.status not in (SlotStatus.AVAILABLE, SlotStatus.CANCELLED, SlotStatus.BOOKED):
+        elif slot and slot.status == SlotStatus.BOOKED and slot.case_id == case_id:
+            row = _skip(d, "already_booked", slot_id=slot.id)
+            skipped.append(row)
+            planned.append({"date": d.isoformat(), "status": "already_booked"})
+        elif slot and slot.status not in (SlotStatus.AVAILABLE, SlotStatus.CANCELLED):
+            row = _skip(d, "unavailable", status=slot.status.value, slot_id=slot.id)
+            skipped.append(row)
             conflicts.append(
                 {
                     "date": d.isoformat(),
@@ -280,8 +295,13 @@ def preview_recurring_schedule(
             )
         else:
             planned.append({"date": d.isoformat(), "start": start_time.strftime("%H:%M"), "status": "ok"})
-        d += timedelta(days=1)
-    return {"conflicts": conflicts, "planned": planned, "planned_count": len([p for p in planned if p.get("status") == "ok"])}
+    return {
+        "conflicts": conflicts,
+        "planned": planned,
+        "planned_count": len([p for p in planned if p.get("status") == "ok"]),
+        "skipped": skipped,
+        "outside_week": outside,
+    }
 
 
 def assign_recurring_schedule(
@@ -295,13 +315,10 @@ def assign_recurring_schedule(
     start_date: date,
     end_date: date,
     created_by_user_id: int,
-) -> RecurringScheduleAssignment:
-    if end_date < start_date:
-        raise ValueError("end_date must be on or after start_date")
+) -> RecurringAssignResult:
     if end_time <= start_time:
         raise ValueError("end_time must be after start_time")
-    if not weekdays:
-        raise ValueError("Select at least one weekday")
+    normalized = normalize_weekdays(weekdays)
     if not get_active_assignment(db, case_id, therapist_user_id):
         raise ValueError("Therapist is not actively assigned to this case")
 
@@ -316,13 +333,11 @@ def assign_recurring_schedule(
     )
     existing_keys = cal._existing_slot_keys(db, therapist_user_id, start_date, end_date)
     booked_count = 0
-    d = start_date
-    while d <= end_date:
-        if cal._weekday_key(d) not in weekdays:
-            d += timedelta(days=1)
-            continue
+    skipped: list[dict] = []
+    outside = dates_before_start(start_date, normalized)
+    for d in expand_weekday_dates(start_date, end_date, normalized):
         if cal.is_therapist_wide_leave_day(db, therapist_user_id, d):
-            d += timedelta(days=1)
+            skipped.append(_skip(d, "leave"))
             continue
         key = (d, start_time)
         slot = db.scalars(
@@ -333,13 +348,14 @@ def assign_recurring_schedule(
             )
         ).first()
         if slot:
-            if slot.status == SlotStatus.BOOKED:
-                if slot.case_id == case_id:
-                    d += timedelta(days=1)
-                    continue
-                raise ValueError(f"Slot on {d.isoformat()} is booked for another case")
+            if slot.status == SlotStatus.BOOKED and slot.case_id == case_id:
+                skipped.append(_skip(d, "already_booked", slot_id=slot.id))
+                continue
+            if slot.status == SlotStatus.BOOKED and slot.case_id != case_id:
+                skipped.append(_skip(d, "other_case", slot_id=slot.id, other_case_id=slot.case_id))
+                continue
             if slot.status not in (SlotStatus.AVAILABLE, SlotStatus.CANCELLED):
-                d += timedelta(days=1)
+                skipped.append(_skip(d, "unavailable", status=slot.status.value, slot_id=slot.id))
                 continue
             if slot.status == SlotStatus.CANCELLED:
                 slot.status = SlotStatus.AVAILABLE
@@ -360,13 +376,11 @@ def assign_recurring_schedule(
             db.flush()
             existing_keys.add(key)
 
-        if slot:
-            slot.recurrence_group_id = group_id
-            slot.end_time = end_time
-            slot.slot_duration_minutes = duration
-            appt_booking.book_with_session(db, slot.id, case_id, created_by_user_id, BookingSource.ADMIN)
-            booked_count += 1
-        d += timedelta(days=1)
+        slot.recurrence_group_id = group_id
+        slot.end_time = end_time
+        slot.slot_duration_minutes = duration
+        appt_booking.book_with_session(db, slot.id, case_id, created_by_user_id, BookingSource.ADMIN)
+        booked_count += 1
 
     assignment_row = db.scalars(
         select(CaseAssignment).where(
@@ -377,7 +391,7 @@ def assign_recurring_schedule(
     ).first()
     if assignment_row:
         assignment_row.booking_mode = BookingMode.FIXED.value
-        assignment_row.set_fixed_weekdays(weekdays)
+        assignment_row.set_fixed_weekdays(normalized)
         assignment_row.fixed_start_time = start_time
         assignment_row.fixed_end_time = end_time
         assignment_row.fixed_recurrence_group_id = group_id
@@ -395,13 +409,13 @@ def assign_recurring_schedule(
         created_by_user_id=created_by_user_id,
         booked_slot_count=booked_count,
     )
-    record.set_weekdays(weekdays)
+    record.set_weekdays(normalized)
     db.add(record)
     db.flush()
 
     therapist = db.get(User, therapist_user_id)
-    appt_notify.notify_recurring_assigned(db, case, therapist, record)
-    return record
+    appt_notify.notify_recurring_assigned(db, case, therapist, record, skipped=skipped)
+    return RecurringAssignResult(record, skipped, outside)
 
 
 def preview_conflicts(
