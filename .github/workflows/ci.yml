@@ -90,6 +90,8 @@ jobs:
           node-version: "24"
       # npm ci fails on Linux when optional deps (rolldown/wasm) differ from the lock snapshot; install then verify build.
       - run: npm install --no-audit --no-fund
+      - run: npm run lint:guard
+      - run: npm run test:unit
       - run: npm run build
 
   # Mirrors Vercel project insightes-projects/frontend (repo root + vercel.json).

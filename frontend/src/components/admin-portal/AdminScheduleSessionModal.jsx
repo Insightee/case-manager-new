@@ -4,6 +4,12 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { addDaysIso, todayIsoIST } from '../scheduling/recurringRange.js'
 import '../scheduling/schedule-sheet.css'
+import {
+  handoverBookingHintForTherapist,
+  handoverPolicyFromTherapists,
+  normalizeBookingErrorMessage,
+  TRANSITION_HANDOVER_BANNER,
+} from '../../lib/therapistTransitionBooking.js'
 
 export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
   const [therapistId, setTherapistId] = useState('')
@@ -22,11 +28,16 @@ export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
   }, [open, caseItem])
 
   useEffect(() => {
-    if (!therapistId || !open) return
-    apiFetch(`/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${fromDate}&to_date=${toDate}`)
+    if (!therapistId || !open || !caseItem?.id) return
+    apiFetch(
+      `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${fromDate}&to_date=${toDate}&case_id=${caseItem.id}`,
+    )
       .then(setSlots)
       .catch(() => setSlots([]))
-  }, [therapistId, fromDate, toDate, open])
+  }, [therapistId, fromDate, toDate, open, caseItem?.id])
+
+  const handoverPolicy = handoverPolicyFromTherapists(therapists)
+  const handoverHint = handoverBookingHintForTherapist(handoverPolicy, therapistId)
 
   if (!open || !caseItem) return null
 
@@ -41,7 +52,7 @@ export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
       onDone?.()
       onClose()
     } catch (err) {
-      setError(err.message || 'Booking failed')
+      setError(normalizeBookingErrorMessage(err.message) || 'Booking failed')
     } finally {
       setBooking(false)
     }
@@ -54,6 +65,12 @@ export function AdminScheduleSessionModal({ open, caseItem, onClose, onDone }) {
         <p className="text-sm text-slate-500">
           {caseItem.case_code} · {caseItem.child_name}
         </p>
+        {handoverPolicy ? (
+          <p className="mt-2 text-sm text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2" role="status">
+            {TRANSITION_HANDOVER_BANNER}
+            {handoverHint ? ` ${handoverHint}` : ''}
+          </p>
+        ) : null}
         {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
         <div className="mt-4 space-y-3">
           <label className="block text-sm font-medium">

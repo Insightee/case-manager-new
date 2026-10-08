@@ -13,6 +13,11 @@ import {
   todayIsoIST,
 } from './recurringRange.js'
 import './schedule-sheet.css'
+import {
+  handoverBookingHintForTherapist,
+  normalizeBookingErrorMessage,
+  TRANSITION_HANDOVER_BANNER,
+} from '../../lib/therapistTransitionBooking.js'
 
 const DURATION_CHIPS = [
   { label: '30 min', mins: 30 },
@@ -91,6 +96,7 @@ export function SlotEditSheet({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [meId, setMeId] = useState(null)
+  const [handoverPolicy, setHandoverPolicy] = useState(null)
 
   const slotDate = mode === 'edit' && slot ? slot.slot_date : cellDate ? dateStr(cellDate) : ''
 
@@ -141,6 +147,17 @@ export function SlotEditSheet({
     () => (recurring && recurScope !== 'this_week' ? earlierWeekdayMessage(recurWeekdays, slotDate) : ''),
     [recurring, recurScope, recurWeekdays, slotDate],
   )
+  useEffect(() => {
+    if (!caseId) {
+      setHandoverPolicy(null)
+      return
+    }
+    apiFetch(`/api/v1/cases/${caseId}/transitions/active`)
+      .then((row) => setHandoverPolicy(row?.booking_policy || null))
+      .catch(() => setHandoverPolicy(null))
+  }, [caseId])
+
+  const handoverHint = handoverBookingHintForTherapist(handoverPolicy, therapistId)
 
   if (!open) return null
 
@@ -216,19 +233,25 @@ export function SlotEditSheet({
       }
 
       const newSlotId = savedSlot?.id || slot?.id
+      const createdNewSlot = mode !== 'edit' && Boolean(savedSlot?.id)
 
       // ------- Book client (if toggle on) -------
       let bookedForCalendar = null
       if (bookClient && newSlotId) {
         if (bookTab === 'existing' && caseId) {
-          const alsoRecurring = recurring && recurWeekdays.length > 0
-          await apiFetch(`/api/v1/scheduling/slots/${newSlotId}/book`, {
-            method: 'POST',
-            body: JSON.stringify({
-              case_id: Number(caseId),
-              notify_client: !alsoRecurring,
-            }),
-          })
+          // Always notify the family about this booked session. The recurring call below can still
+          // fail (e.g. handover window 409), and a suppressed anchor notice would then never be sent.
+          try {
+            await apiFetch(`/api/v1/scheduling/slots/${newSlotId}/book`, {
+              method: 'POST',
+              body: JSON.stringify({ case_id: Number(caseId) }),
+            })
+          } catch (bookErr) {
+            if (createdNewSlot) {
+              await apiFetch(`/api/v1/scheduling/slots/${newSlotId}`, { method: 'DELETE' }).catch(() => {})
+            }
+            throw bookErr
+          }
           bookedForCalendar = {
             id: newSlotId,
             slot_date: slotDate,
@@ -273,7 +296,10 @@ export function SlotEditSheet({
             end_date: resolveRecurEndDate(slotDate),
           }),
         })
-        const skipped = result?.skipped || []
+        // The anchor slot booked above always comes back as already_booked — that's success, not a skip.
+        const skipped = (result?.skipped || []).filter(
+          (row) => !(row?.reason === 'already_booked' && row?.date === slotDate),
+        )
         if (skipped.length) {
           setError(formatSkipMessage(result?.booked_slot_count, skipped))
           onSaved?.()
@@ -297,7 +323,7 @@ export function SlotEditSheet({
       onSaved?.()
       onClose()
     } catch (err) {
-      setError(err.message || 'Could not save slot')
+      setError(normalizeBookingErrorMessage(err.message) || 'Could not save slot')
     } finally {
       setSaving(false)
     }
@@ -419,6 +445,12 @@ export function SlotEditSheet({
                         ))}
                       </select>
                     </label>
+                    {handoverPolicy ? (
+                      <p className="text-xs text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2" role="status">
+                        {TRANSITION_HANDOVER_BANNER}
+                        {handoverHint ? ` ${handoverHint}` : ''}
+                      </p>
+                    ) : null}
                     {selectedCase?.service_address?.formatted ? (
                       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                         <p className="font-medium text-slate-800 text-xs uppercase tracking-wide mb-1">Visit address</p>

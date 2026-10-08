@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, apiUpload } from '../../lib/apiClient.js'
-import { fetchAllPages } from '../../lib/listApi.js'
+import { fetchAllPages, unwrapList } from '../../lib/listApi.js'
 import { INCIDENT_STATUS_META, isOpenIncidentStatus, PRIORITY_META } from '../../lib/incidentCatalog.js'
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
@@ -40,13 +40,16 @@ export function TherapistIncidentsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [formSuccess, setFormSuccess] = useState('')
+  const [listError, setListError] = useState('')
 
   const loadIncidents = useCallback(async () => {
     setLoading(true)
+    setListError('')
     try {
       setIncidents(unwrapList(await apiFetch('/api/v1/incidents?page_size=100')))
-    } catch {
+    } catch (err) {
       setIncidents([])
+      setListError(err?.message || 'Could not load incident reports')
     } finally {
       setLoading(false)
     }
@@ -214,6 +217,9 @@ export function TherapistIncidentsPage() {
       </section>
 
       <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 12 }}>Active reports ({openIncidents.length})</h2>
+      {listError ? (
+        <p style={{ color: '#b91c1c', fontSize: '0.875rem', marginBottom: 12 }} role="alert">{listError}</p>
+      ) : null}
       {loading ? (
         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 24 }}>Loading…</p>
       ) : openIncidents.length === 0 ? (

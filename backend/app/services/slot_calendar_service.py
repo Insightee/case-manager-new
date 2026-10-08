@@ -651,6 +651,8 @@ def list_available_slots_public(
     therapist_user_id: int,
     from_date: date,
     to_date: date,
+    *,
+    case_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Parent-facing: only AVAILABLE slots on non-leave days within staff availability."""
     slots = db.scalars(
@@ -675,6 +677,16 @@ def list_available_slots_public(
             duration,
         ):
             continue
+        if case_id is not None:
+            from app.services import therapist_transition_service
+
+            if not therapist_transition_service.slot_allowed_for_case_handover(
+                db,
+                case_id=case_id,
+                therapist_user_id=therapist_user_id,
+                slot_date=slot.slot_date,
+            ):
+                continue
         result.append(
             {
                 "id": slot.id,
@@ -694,16 +706,32 @@ def list_therapists_for_case(db: Session, case_id: int) -> list[dict[str, Any]]:
         )
     ).all()
     from app.models.user import User
+    from app.services import therapist_transition_service
+
+    transition = therapist_transition_service.active_transition_for_case(db, case_id)
+    booking_policy = (
+        therapist_transition_service.transition_booking_policy(transition) if transition else None
+    )
 
     result = []
     for a in assignments:
         user = db.get(User, a.therapist_user_id)
         if user:
+            role = None
+            if transition:
+                if user.id == transition.outgoing_therapist_user_id:
+                    role = "outgoing"
+                elif user.id == transition.incoming_therapist_user_id:
+                    role = "incoming"
             result.append(
                 {
                     "therapist_user_id": user.id,
                     "full_name": user.full_name,
                     "email": user.email,
+                    "transition_role": role,
                 }
             )
+    if booking_policy:
+        for entry in result:
+            entry["handover_booking_policy"] = booking_policy
     return result

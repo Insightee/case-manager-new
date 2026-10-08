@@ -56,6 +56,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [Cursor_Handover_Finance_Dashboard_Stage2.md](./Cursor_Handover_Finance_Dashboard_Stage2.md) | Stage 2 engine-aware client billing + Forest Light reskin |
 | [Cursor_Handover_Finance_Merge_Local_Runbook.md](./Cursor_Handover_Finance_Merge_Local_Runbook.md) | Post-merge local runbook results (flags off/on) |
 | [finance_control_tower_stage1_human_uat_script.md](./finance_control_tower_stage1_human_uat_script.md) | Timed human finance UAT script (blank results) |
+| [THERAPIST_TRANSITION_OPERATIONAL.md](./THERAPIST_TRANSITION_OPERATIONAL.md) | Therapist handover — booking windows, portals, payouts |
 | [RBAC_SCOPE.md](./RBAC_SCOPE.md) | Roles, permissions, module access |
 | [REVIEW_ROLE_MATRIX.md](./REVIEW_ROLE_MATRIX.md) | Role review matrix |
 | [ROLE_MODEL_PHASES.md](./ROLE_MODEL_PHASES.md) | Role model rollout phases |

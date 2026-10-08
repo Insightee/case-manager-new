@@ -168,6 +168,8 @@ def _recurring_summary_body(case: Case, therapist: User | None, record, skipped:
         f"Recurring sessions for {child} with {therapist_name} were scheduled: "
         f"{weekdays} at {when}, {range_str} ({record.booked_slot_count} sessions)."
     )
+    # Dates already booked for this case are not "left off" (e.g. the anchor session booked just before).
+    skipped = [row for row in (skipped or []) if row.get("reason") != "already_booked"]
     if skipped:
         bits = []
         for row in skipped[:8]:

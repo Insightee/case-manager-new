@@ -38,3 +38,28 @@ def test_eight_week_mon_wed_fri_is_inclusive():
     assert date(2026, 10, 7) not in days
     assert all(weekday_key(day) in {"mon", "wed", "fri"} for day in days)
     assert len(days) == 24
+
+
+def test_recurring_summary_does_not_list_already_booked_as_left_off():
+    from datetime import date, time
+    from types import SimpleNamespace
+
+    from app.services.appointment_notification_service import _recurring_summary_body
+
+    case = SimpleNamespace(child=SimpleNamespace(full_name="Kid A"), case_code="C-1")
+    record = SimpleNamespace(
+        get_weekdays=lambda: ["mon", "wed"],
+        start_time=time(10, 0),
+        end_time=time(11, 0),
+        start_date=date(2026, 10, 12),
+        end_date=date(2026, 11, 8),
+        booked_slot_count=7,
+    )
+    skipped = [
+        {"date": "2026-10-12", "reason": "already_booked"},
+        {"date": "2026-10-14", "reason": "other_case", "other_case_id": 99},
+    ]
+    body = _recurring_summary_body(case, None, record, skipped)
+    assert "2026-10-12" not in body.split("Left off:")[-1]
+    assert "2026-10-14 (that time is booked for another case)" in body
+    assert "99" not in body.split("Left off:")[-1]

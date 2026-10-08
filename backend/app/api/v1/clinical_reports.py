@@ -414,6 +414,11 @@ def return_report(report_id: int, payload: ReturnBody, user: User = Depends(get_
 def evidence_summary(report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     report = _report_or_404(db, report_id)
     _case_for_user(db, user, report.case_id)
+    if report_engine_service.user_is_parent(user):
+        # Staff workspace tool: raw session-log snippets (incl. pending/unapproved logs) and
+        # draft section status are not parent-safe. Parents read shared reports via the
+        # parent-safe serializers instead.
+        raise HTTPException(status_code=403, detail="Evidence summary is available to the care team only")
     return report_evidence_service.evidence_summary(db, report)
 
 

@@ -9,7 +9,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+import logging
+
 from app.core.audit import log_audit
+from app.core.billing_calc_errors import MissingPackageCountError
 from app.core.timezone import IST
 from app.models.assignment import CaseAssignment
 from app.models.invoice import Invoice
@@ -22,6 +25,8 @@ from app.services.invoice_billing_service import (
 AUTO_SUBMIT_NOTE = (
     "Auto-submitted at month close. This payout had not been submitted by the last day of the month."
 )
+
+logger = logging.getLogger(__name__)
 
 
 def billing_month_due_at_close(now: datetime) -> str | None:
@@ -98,8 +103,31 @@ def auto_submit_unsubmitted_invoices(db: Session, month: str) -> dict:
                     "amount_inr": float(invoice.amount_inr or 0),
                 }
             )
+        except MissingPackageCountError as exc:
+            db.rollback()
+            skip = {
+                "therapist_user_id": therapist_user_id,
+                "reason": "missing_package_session_count",
+                "case_id": exc.case_id,
+                "case_code": exc.case_code,
+                "message": exc.user_message(),
+            }
+            logger.warning(
+                "[invoice_month_end] skipped therapist %s for %s: case %s (%s) missing package_session_count",
+                therapist_user_id,
+                ym,
+                exc.case_code,
+                exc.case_id,
+            )
+            skipped.append(skip)
         except Exception as exc:
             db.rollback()
+            logger.exception(
+                "[invoice_month_end] skipped therapist %s for %s: %s",
+                therapist_user_id,
+                ym,
+                exc,
+            )
             skipped.append(
                 {
                     "therapist_user_id": therapist_user_id,
