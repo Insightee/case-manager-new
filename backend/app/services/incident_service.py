@@ -200,7 +200,12 @@ def update_incident(
             incident.last_owner_activity_at = datetime.now(timezone.utc)
 
     if shared_with_family is not None:
-        incident.shared_with_family = bool(shared_with_family)
+        new_shared = bool(shared_with_family)
+        if new_shared and not bool(incident.shared_with_family):
+            incident.shared_with_family_at = datetime.now(timezone.utc)
+        elif not new_shared:
+            incident.shared_with_family_at = None
+        incident.shared_with_family = new_shared
 
     db.flush()
     return incident
@@ -252,6 +257,14 @@ def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
     }
 
 
+def viewer_sees_internal_incident_messages(user: User | None) -> bool:
+    """Internal incident notes are staff-only: never returned to parent-portal users (or unknown viewers)."""
+    if user is None:
+        return False
+    roles = [r for r in (user.role_names or []) if r != RoleName.PARENT.value]
+    return bool(roles)
+
+
 def incident_to_detail_dict(
     db: Session,
     incident: Incident,
@@ -262,6 +275,7 @@ def incident_to_detail_dict(
     from app.services import incident_flow_service as inc_flow
 
     base = incident_to_list_dict(incident, case)
+    show_internal = viewer_sees_internal_incident_messages(user)
     base.update(
         {
             "description": incident.description,
@@ -291,6 +305,7 @@ def incident_to_detail_dict(
                     ],
                 }
                 for m in incident.messages
+                if show_internal or not bool(getattr(m, "is_internal", False))
             ],
             "attachments": [
                 att_svc.attachment_to_dict(a)

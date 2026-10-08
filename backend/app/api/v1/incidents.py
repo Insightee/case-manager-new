@@ -116,6 +116,10 @@ def download_incident_attachment(
     incident = db.get(Incident, att.incident_id)
     if not incident or not att_svc.can_access_incident(db, user, incident):
         raise HTTPException(status_code=403, detail="Access denied")
+    if att.message_id is not None and not inc_svc.viewer_sees_internal_incident_messages(user):
+        msg = db.get(IncidentMessage, att.message_id)
+        if msg is not None and bool(getattr(msg, "is_internal", False)):
+            raise HTTPException(status_code=403, detail="Access denied")
     return att_svc.download_response(att)
 
 

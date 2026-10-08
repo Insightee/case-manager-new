@@ -2007,7 +2007,7 @@ def parent_list_incidents(
     result = []
     for inc in incidents:
         case = case_service.get_case(db, inc.case_id) if inc.case_id else None
-        result.append(inc_svc.incident_to_list_dict(inc, case))
+        result.append(inc_parent_portal.incident_to_parent_list_dict(inc, case, viewer=user))
     return result
 
 
@@ -2136,6 +2136,10 @@ def parent_download_incident_attachment(
     incident = db.get(Incident, att.incident_id)
     if not incident or incident.reported_by_user_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+    if att.message_id is not None:
+        msg = db.get(IncidentMessage, att.message_id)
+        if msg is not None and bool(getattr(msg, "is_internal", False)):
+            raise HTTPException(status_code=403, detail="Access denied")
     return att_svc.download_response(att)
 
 

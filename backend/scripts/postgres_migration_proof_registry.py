@@ -6,6 +6,7 @@ Each Alembic head revision that adds schema must register:
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from sqlalchemy import inspect, select
@@ -1330,11 +1331,13 @@ def _seed_inc8share20261008(db: Session) -> dict[str, Any]:
             title="Migration proof incident",
             description="proof",
             shared_with_family=True,
+            shared_with_family_at=datetime.now(timezone.utc),
         )
         db.add(inc)
         db.flush()
     else:
         inc.shared_with_family = True
+        inc.shared_with_family_at = datetime.now(timezone.utc)
     msg = IncidentMessage(
         incident_id=inc.id,
         author_user_id=inc.reported_by_user_id,
@@ -1351,6 +1354,7 @@ register_head(
     tables_added=[],
     columns_added=[
         ("incidents", "shared_with_family"),
+        ("incidents", "shared_with_family_at"),
         ("incident_messages", "is_internal"),
     ],
     seed=_seed_inc8share20261008,

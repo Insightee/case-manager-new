@@ -80,6 +80,8 @@ class Incident(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     shared_with_family: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # When staff last shared with the family; parents only see care-team messages posted after this.
+    shared_with_family_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[IncidentStatus] = mapped_column(
         Enum(IncidentStatus, values_callable=lambda x: [e.value for e in x]),
         default=IncidentStatus.REPORTED,

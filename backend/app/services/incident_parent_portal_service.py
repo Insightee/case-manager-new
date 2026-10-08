@@ -67,6 +67,7 @@ def incident_to_parent_portal_dict(
     from app.services import incident_flow_service as inc_flow
 
     messages = []
+    shared_at = ensure_utc_aware(incident.shared_with_family_at) if incident.shared_with_family_at else None
     for m in incident.messages:
         if getattr(m, "is_internal", False):
             continue
@@ -74,6 +75,11 @@ def incident_to_parent_portal_dict(
         is_parent_author = RoleName.PARENT.value in author_roles
         if is_parent_author and m.author_user_id != viewer.id:
             continue
+        if m.author_user_id != viewer.id:
+            # Staff discussion from before the family was given access stays staff-only.
+            created = ensure_utc_aware(m.created_at) if m.created_at else None
+            if shared_at is None or created is None or created < shared_at:
+                continue
         messages.append(
             {
                 "id": m.id,
@@ -92,7 +98,8 @@ def incident_to_parent_portal_dict(
         "case_id": incident.case_id,
         "case_code": case.case_code if case else None,
         "child_name": case_service.case_child_display_name(case),
-        "title": incident.title,
+        # Staff-written free-text title is not shown to non-reporting parents (may name others).
+        "title": _category_label(incident),
         "incident_type_label": _category_label(incident),
         "incident_date_ist": _incident_date_ist(incident),
         "status": incident.status.value if hasattr(incident.status, "value") else str(incident.status),
@@ -105,3 +112,16 @@ def incident_to_parent_portal_dict(
         "attachments": [],
         **flow,
     }
+
+
+def incident_to_parent_list_dict(incident: Incident, case: Case | None, *, viewer: User) -> dict:
+    """Parent list row. Reporter rows keep the existing shape; shared (non-reporter) rows are trimmed."""
+    from app.services import incident_service as inc_svc
+
+    row = inc_svc.incident_to_list_dict(incident, case)
+    if incident.reported_by_user_id == viewer.id:
+        return row
+    row["title"] = _category_label(incident)
+    for key in ("is_sensitive", "assigned_to_user_id", "assigned_to_name", "primary_owner_role"):
+        row.pop(key, None)
+    return row
