@@ -90,6 +90,40 @@ def notify_parents_session_cancelled(
     return count
 
 
+def notify_therapist_parent_meeting_requested(
+    db: Session,
+    request_row,
+    *,
+    parent_name: str,
+) -> None:
+    from app.models.parent_meeting_request import ParentMeetingRequest
+
+    if not isinstance(request_row, ParentMeetingRequest):
+        return
+    case = db.get(Case, request_row.case_id) if request_row.case_id else None
+    child = case.child.full_name if case and case.child else "their child"
+    when = request_row.requested_date.strftime("%d %b %Y")
+    notification_service.create_notification(
+        db,
+        user_id=request_row.therapist_user_id,
+        title="Meeting requested",
+        body=f"{parent_name} asked to meet about {child} on {when}. Open scheduling to add a slot.",
+        entity_type="parent_meeting_request",
+        entity_id=request_row.id,
+        dedupe_key=f"parent_meeting_request:{request_row.id}:PENDING",
+    )
+    therapist = db.get(User, request_row.therapist_user_id)
+    if therapist:
+        email_service.send_email(
+            to=therapist.email,
+            subject=f"Meeting request — {child}",
+            body_text=(
+                f"{parent_name} requested a session on {when}.\n"
+                f"{settings.frontend_url}/therapist/slots?date={request_row.requested_date.isoformat()}\n"
+            ),
+        )
+
+
 def notify_therapist_parent_booked(
     db: Session,
     slot: TherapistSlot,

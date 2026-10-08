@@ -29,7 +29,7 @@
 .parent-support__form-toggle {
   padding: 8px 16px;
   min-height: 44px;
-  background: #6366f1;
+  background: var(--parent-primary, #166534);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -142,7 +142,7 @@
 }
 
 .parent-support__topic.is-selected {
-  border-color: #6366f1;
+  border-color: var(--parent-primary, #166534);
   background: #eef2ff;
   color: #4338ca;
   font-weight: 600;
@@ -334,7 +334,7 @@
 
 .parent-support-hub__tab.is-active {
   color: #4338ca;
-  border-bottom-color: #6366f1;
+  border-bottom-color: var(--parent-primary, #166534);
 }
 
 .parent-support-hub__panel[hidden] {
@@ -465,7 +465,7 @@
 .incident-report-form__file-empty {
   margin: 10px 0 0;
   font-size: 0.78rem;
-  color: #94a3b8;
+  color: var(--parent-text-secondary, #526057);
 }
 
 .incident-report-form__error {

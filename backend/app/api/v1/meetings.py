@@ -1863,10 +1863,26 @@ def list_meeting_documents(
 
 @router.get("/parent/cm-meetings")
 def parent_cm_meetings_compat(
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
+    meeting_type: Optional[str] = None,
+    case_manager_user_id: Optional[int] = None,
+    search: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Point directly to list_meetings
-    return list_meetings(year=year, month=month, user=user, db=db)
+    return list_meetings(
+        case_id=case_id,
+        status=status,
+        year=year,
+        month=month,
+        meeting_type=meeting_type,
+        case_manager_user_id=case_manager_user_id,
+        participant_role=None,
+        participant_user_ids=None,
+        search=search,
+        user=user,
+        db=db,
+    )

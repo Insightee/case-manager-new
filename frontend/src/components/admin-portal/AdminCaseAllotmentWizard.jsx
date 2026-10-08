@@ -406,7 +406,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     name="familyMode"
                     checked={familyMode === opt.id}
                     onChange={() => setFamilyMode(opt.id)}
-                    className="h-4 w-4 accent-indigo-600 flex-shrink-0"
+                    className="h-4 w-4 accent-emerald-700 flex-shrink-0"
                   />
                   <span className="text-sm text-slate-700">{opt.label}</span>
                 </label>

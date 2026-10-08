@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -200,6 +200,11 @@ def parent_calendar_view(
 
     leave_days = cal._leave_dates(db, therapist_user_id, from_date, to_date)
     visible: list[dict[str, Any]] = []
+    # Therapist handover: hide open slots the booking guard would reject (same rule as
+    # /booking/availability?case_id=…), so the parent hub and next-open-slot stay consistent.
+    from app.services import therapist_transition_service as transition_svc
+
+    transition = transition_svc.active_transition_for_case(db, case_id)
 
     for s in slots:
         overlay = leave_days.get(s.slot_date.isoformat())
@@ -210,6 +215,14 @@ def parent_calendar_view(
 
         entry = cal._slot_to_dict(s)
         is_mine = s.status == SlotStatus.BOOKED and s.case_id == case_id
+        if (
+            not is_mine
+            and transition is not None
+            and not transition_svc.therapist_may_book_during_transition(
+                transition, therapist_user_id, s.slot_date
+            )
+        ):
+            continue
         entry["is_mine"] = is_mine
         entry["display_status"] = "mine" if is_mine else "available"
         if is_mine:
@@ -233,6 +246,32 @@ def parent_calendar_view(
         "day_overlays": leave_days,
         "slots": visible,
         "reschedules_left": policy.reschedules_remaining(db, case_id, from_date),
+    }
+
+
+def find_next_open_parent_slot(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    parent_user_id: int,
+    *,
+    horizon_days: int = 7,
+) -> dict[str, Any] | None:
+    from app.core.timezone import today_ist
+
+    today = today_ist()
+    to_date = today + timedelta(days=horizon_days)
+    view = parent_calendar_view(db, case_id, therapist_user_id, today, to_date, parent_user_id)
+    available = [s for s in view["slots"] if s.get("display_status") == "available"]
+    available.sort(key=lambda s: (s["slot_date"], s["start_time"]))
+    if not available:
+        return None
+    s = available[0]
+    return {
+        "id": s["id"],
+        "slot_date": s["slot_date"],
+        "start_time": s["start_time"],
+        "end_time": s["end_time"],
     }
 
 

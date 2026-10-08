@@ -9,9 +9,17 @@
 | System | Scope | Tokens / CSS | Components |
 |--------|--------|--------------|------------|
 | **Forest Light** | Therapist portal revamp (dashboard, my cases, case profile tabs, documents drive, case overview) | `forest-light-theme.css`, `docs/design/FOREST_LIGHT_TYPOGRAPHY.md`, surface `*-v2.css` | `cov-*`, `mc-*`, `td-*`, Material Symbols |
+| **Parent Forest Light** | Client / parent portal (`/parent/*`) | `parent-portal-theme.css` on `.app-shell--parent`, `docs/design/stitch/parent-portal/DESIGN.md` | Existing `parent-*` / `Client*` components — no `ClinicalCard` |
+| **Admin Forest Light** | Staff `/admin/*`, `/adminlogin` | `admin-forest-theme.css` on `.app-shell--admin.forest-light`, `admin-portal.css`, `docs/design/stitch/admin-portal/DESIGN.md` | `AdminDataList` / `AdminTaskCard` / `StatusBadge`; Stitch project `319822486393192441` |
 | **Legacy clinical** | Admin clinical dashboards, older purple surfaces | `clinical-theme.css`, `clinical-components.css` | `ClinicalCard`, `ClinicalMetricCard`, `ClinicalStatusBadge` |
 
-**Conflict rule:** Forest surfaces must **not** import or render legacy `ClinicalCard` / metric grids. If a Stitch mock exists, implement with Forest tokens and the screen’s `cov-*` / `td-*` / `mc-*` prefix — not purple clinical cards.
+**Admin refresh rule:** Primary chrome on `/admin` uses forest green (`#166534`), not indigo gradients. Legacy purple `ClinicalCard` may remain on deep clinical tools until migrated; new dashboard/reports chrome follows `admin-forest-theme.css`.
+
+**Conflict rule:** Forest surfaces must **not** import or render legacy `ClinicalCard` / metric grids on **new** overview surfaces (therapist case overview, parent home, admin leadership home). If a Stitch mock exists, implement with Forest tokens and the screen’s `cov-*` / `td-*` / `mc-*` prefix — not purple clinical cards.
+
+**Parent portal rule:** Shell class `app-shell--parent forest-light`. Primary UI colour is forest green (`#166534`), not indigo/purple dashboard gradients. Stitch project `5257107495041753907` is the visual reference for home, session updates, and reports; see `docs/design/stitch/parent-portal/DESIGN.md`. Therapist reuse of `parent-support.css` keeps legacy accent until that surface migrates separately.
+
+**PWA stale recovery (all portals):** After deploys, home-screen apps may run an old JS bundle. Use `PwaStaleRecoveryListener` (global), `PwaStaleRecoveryHelp` on portal logins and `PortalShell`, and `refreshApp()` from `pwaUpdate.js`. Copy must guide **Get latest**, **Open in browser**, and **Re-add shortcut** — never “Invalid Form” or blame the user. Admin dashboard load failures in standalone should offer the same panel (`AdminDashboardPage`).
 
 ## Shared surfaces (one implementation each)
 

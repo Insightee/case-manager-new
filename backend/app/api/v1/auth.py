@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.security import decode_refresh_token, is_refresh_token_valid, revoke_refresh_token
+from app.core.security import (
+    decode_refresh_token,
+    is_refresh_token_valid,
+    revoke_all_refresh_tokens_for_user,
+    revoke_refresh_token,
+)
 from app.models.role import Role
 from app.models.user import InviteToken, User
 from app.models.app_usage_chunk import AppUsageChunk
@@ -35,6 +40,8 @@ from app.schemas.auth import (
     RefreshRequest,
     ResetPasswordPreviewResponse,
     ResetPasswordRequest,
+    ChangePasswordRequest,
+    ChangePasswordResponse,
     TherapistProfileCompletionRead,
     TokenResponse,
     UserMeResponse,
@@ -385,6 +392,52 @@ def clinical_services_catalog(
         }
         for cat in rows
     ]
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.core.security import hash_password, verify_password
+
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Pick a password with at least 8 characters.",
+        )
+    if auth_service.is_change_password_rate_limited(user.id):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many tries with the wrong current password. Wait a bit, then try again.",
+        )
+    if not user.password_hash or not verify_password(payload.current_password, user.password_hash):
+        auth_service.record_change_password_failure(user.id)
+        raise HTTPException(
+            status_code=400,
+            detail="Current password does not match. Try again or use forgot password on the sign-in page.",
+        )
+    auth_service.clear_change_password_failures(user.id)
+    if verify_password(payload.new_password, user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a new password that is different from your current one.",
+        )
+    user.password_hash = hash_password(payload.new_password)
+    revoke_all_refresh_tokens_for_user(user.id)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="change_password",
+        entity_type="user",
+        entity_id=user.id,
+        **meta,
+    )
+    db.commit()
+    return ChangePasswordResponse()
 
 
 @router.get("/me", response_model=UserMeResponse)

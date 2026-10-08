@@ -1,0 +1,198 @@
+/**
+ * Parent / client portal — Forest Light (product-wide target palette).
+ * Scoped to `.app-shell--parent` so therapist/admin legacy surfaces stay unchanged.
+ * Stitch reference: project 5257107495041753907, design system assets/1374043857434626850
+ */
+
+.app-shell--parent {
+  --parent-bg-page: #f7f8f5;
+  --parent-bg-surface: #ffffff;
+  --parent-text: #17211b;
+  --parent-text-secondary: #526057;
+  --parent-border-decorative: #dde4de;
+  --parent-border-control: #8a968d;
+  --parent-primary: #166534;
+  --parent-primary-hover: #14532d;
+  --parent-primary-container: #eaf3ec;
+  --parent-secondary: #416656;
+  --parent-radius-control: 8px;
+  --parent-radius-surface: 12px;
+  --parent-touch-min: 44px;
+  --parent-font-headline: var(--font-headline, Manrope, ui-sans-serif, system-ui, sans-serif);
+  --parent-font-body: var(--font-body, Inter, ui-sans-serif, system-ui, sans-serif);
+
+  font-family: var(--parent-font-body);
+  color: var(--parent-text);
+}
+
+.app-shell--parent .content {
+  background: var(--parent-bg-page);
+}
+
+.app-shell--parent .ic-page-head__title {
+  font-family: var(--parent-font-headline);
+  font-weight: 600;
+  color: var(--parent-text);
+  letter-spacing: -0.02em;
+}
+
+.app-shell--parent .ic-page-head__sub {
+  color: var(--parent-text-secondary);
+}
+
+/* Primary / secondary actions (legacy admin-btn classes reused in parent routes) */
+.app-shell--parent .admin-btn--primary,
+.app-shell--parent .ic-btn-cta {
+  background: var(--parent-primary);
+  border-color: var(--parent-primary);
+  color: #fff;
+  min-height: var(--parent-touch-min);
+  border-radius: var(--parent-radius-control);
+}
+
+.app-shell--parent .admin-btn--primary:hover:not(:disabled),
+.app-shell--parent .ic-btn-cta:hover:not(:disabled) {
+  background: var(--parent-primary-hover);
+  border-color: var(--parent-primary-hover);
+}
+
+.app-shell--parent .admin-btn--secondary {
+  background: var(--parent-bg-surface);
+  border: 1px solid var(--parent-border-decorative);
+  color: var(--parent-text);
+  min-height: var(--parent-touch-min);
+  border-radius: var(--parent-radius-control);
+}
+
+.app-shell--parent .admin-btn--secondary:hover:not(:disabled) {
+  border-color: var(--parent-border-control);
+  background: var(--parent-primary-container);
+}
+
+.app-shell--parent .admin-btn--ghost {
+  color: var(--parent-primary);
+  min-height: var(--parent-touch-min);
+}
+
+.app-shell--parent .admin-btn:focus-visible,
+.app-shell--parent .ic-btn-cta:focus-visible,
+.app-shell--parent .parent-case-card__btn:focus-visible {
+  outline: 2px solid var(--parent-primary);
+  outline-offset: 2px;
+}
+
+.app-shell--parent input[type='checkbox'],
+.app-shell--parent input[type='radio'] {
+  accent-color: var(--parent-primary);
+}
+
+/* Mobile bottom tabs — forest green active (replaces indigo app tab strip) */
+@media (max-width: 900px) {
+  .app-shell--parent .app-mobile-tabs--app .app-mobile-tabs__link.is-active {
+    color: var(--parent-primary);
+  }
+
+  .app-shell--parent .app-mobile-tabs--app .app-mobile-tabs__link.is-active::after {
+    background: var(--parent-primary);
+  }
+
+  .app-shell--parent .app-mobile-tabs--app .app-mobile-tabs__link.is-active .app-mobile-tabs__icon {
+    color: var(--parent-primary);
+  }
+
+  .app-shell--parent .app-sidebar--drawer .app-sidebar__link.is-active {
+    color: var(--parent-primary);
+    background: var(--parent-primary-container);
+  }
+}
+
+/* Support hub when rendered inside parent shell */
+.app-shell--parent .parent-support-hub__tab.is-active {
+  border-bottom-color: var(--parent-primary);
+  color: var(--parent-primary);
+}
+
+.app-shell--parent .parent-support-hub__tabs {
+  border-bottom-color: var(--parent-border-decorative);
+}
+
+.app-shell--parent .parent-support__form-toggle,
+.app-shell--parent .parent-support__submit,
+.app-shell--parent .parent-support__btn--primary {
+  background: var(--parent-primary);
+  border-color: var(--parent-primary);
+  color: #fff;
+}
+
+.app-shell--parent .parent-support__form-toggle:hover,
+.app-shell--parent .parent-support__submit:hover:not(:disabled),
+.app-shell--parent .parent-support__btn--primary:hover:not(:disabled) {
+  background: var(--parent-primary-hover);
+}
+
+.app-shell--parent .parent-support__topic.is-selected {
+  border-color: var(--parent-primary);
+  background: var(--parent-primary-container);
+  color: var(--parent-primary);
+}
+
+.app-shell--parent .parent-support__footer-links a {
+  color: var(--parent-primary);
+}
+
+/* Schedule / book inline styles */
+.app-shell--parent .parent-schedule-page__card--cm .parent-schedule-page__card-date,
+.app-shell--parent .parent-appt-sheet__eyebrow--cm {
+  color: var(--parent-secondary);
+}
+
+.app-shell--parent .session-card[style*='7c3aed'] {
+  border-left-color: var(--parent-secondary) !important;
+}
+
+.app-shell--parent .parent-reports__case-code {
+  color: var(--parent-primary) !important;
+}
+
+.app-shell--parent .card:focus-within,
+.app-shell--parent article.session-card:focus-within {
+  box-shadow: 0 0 0 2px var(--parent-primary-container), 0 0 0 3px var(--parent-primary);
+}
+
+.app-shell--parent .parent-portal-link {
+  font-size: 0.875rem;
+  color: var(--parent-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-shell--parent .parent-portal-link:hover {
+  color: var(--parent-primary-hover);
+  text-decoration: underline;
+}
+
+.app-shell--parent .parent-case-hub__eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--parent-primary);
+  text-transform: uppercase;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.app-shell--parent .parent-case-hub__title {
+  font-family: var(--parent-font-headline);
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 4px 0;
+  color: var(--parent-text);
+  letter-spacing: -0.02em;
+}
+
+.app-shell--parent .session-card--cm-highlight {
+  border-left: 3px solid var(--parent-secondary);
+}
+
+.app-shell--parent .session-card--highlighted {
+  box-shadow: 0 0 0 2px var(--parent-primary);
+}

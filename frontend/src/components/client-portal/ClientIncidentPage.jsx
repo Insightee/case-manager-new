@@ -154,8 +154,7 @@ export function ClientIncidentPage({ cases = [] }) {
     return (
       <div
         key={inc.id}
-        className="parent-support__ticket"
-        style={{ boxShadow: isExpanded ? '0 0 0 2px #6366f1' : undefined }}
+        className={`parent-support__ticket${isExpanded ? ' session-card--highlighted' : ''}`}
       >
         <div
           className="parent-support__ticket-head"

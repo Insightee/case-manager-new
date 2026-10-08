@@ -9,10 +9,12 @@ export function ClientPortalLayout({
   actionLabel,
   onAction,
   hideSearch = true,
+  hidePageHead = false,
   children,
 }) {
   return (
     <>
+      {!hidePageHead && title ? (
       <header className="ic-page-head client-portal-page-head">
         <div className="ic-page-head__text">
           <h1 className="ic-page-head__title">{title}</h1>
@@ -35,6 +37,7 @@ export function ClientPortalLayout({
           </div>
         ) : null}
       </header>
+      ) : null}
       {children}
     </>
   )

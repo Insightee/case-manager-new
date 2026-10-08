@@ -62,3 +62,60 @@ def create_user(
     db.add(user)
     db.flush()
     return user
+
+
+_CHANGE_PWD_FAIL_PREFIX = "change_pwd_fail:"
+_memory_change_pwd_fail: dict[str, list[float]] = {}
+_CHANGE_PWD_FAIL_LIMIT = 8
+_CHANGE_PWD_FAIL_WINDOW_SEC = 3600
+
+
+def _change_pwd_fail_key(user_id: int) -> str:
+    return str(user_id)
+
+
+def is_change_password_rate_limited(user_id: int) -> bool:
+    from datetime import datetime, timezone
+
+    from app.core.security import get_redis
+
+    key = _change_pwd_fail_key(user_id)
+    r = get_redis()
+    if r:
+        count = int(r.get(f"{_CHANGE_PWD_FAIL_PREFIX}{key}") or 0)
+        return count >= _CHANGE_PWD_FAIL_LIMIT
+    now = datetime.now(timezone.utc).timestamp()
+    window_start = now - _CHANGE_PWD_FAIL_WINDOW_SEC
+    hits = [t for t in _memory_change_pwd_fail.get(key, []) if t >= window_start]
+    _memory_change_pwd_fail[key] = hits
+    return len(hits) >= _CHANGE_PWD_FAIL_LIMIT
+
+
+def record_change_password_failure(user_id: int) -> None:
+    from datetime import datetime, timezone
+
+    from app.core.security import get_redis
+
+    key = _change_pwd_fail_key(user_id)
+    r = get_redis()
+    if r:
+        redis_key = f"{_CHANGE_PWD_FAIL_PREFIX}{key}"
+        count = r.incr(redis_key)
+        if count == 1:
+            r.expire(redis_key, _CHANGE_PWD_FAIL_WINDOW_SEC)
+        return
+    now = datetime.now(timezone.utc).timestamp()
+    hits = _memory_change_pwd_fail.get(key, [])
+    hits.append(now)
+    _memory_change_pwd_fail[key] = hits
+
+
+def clear_change_password_failures(user_id: int) -> None:
+    from app.core.security import get_redis
+
+    key = _change_pwd_fail_key(user_id)
+    r = get_redis()
+    if r:
+        r.delete(f"{_CHANGE_PWD_FAIL_PREFIX}{key}")
+        return
+    _memory_change_pwd_fail.pop(key, None)

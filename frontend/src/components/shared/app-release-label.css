@@ -1,0 +1,47 @@
+.app-release-label {
+  margin: 0;
+  padding: 8px 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--text-muted, #64748b);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.app-release-label--menu {
+  padding: 8px 14px 4px;
+  border-top: 1px solid var(--line, #e2e8f0);
+  margin-top: 4px;
+}
+
+.app-release-label__tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.app-release-label__latest {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.6875rem;
+  color: #166534;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.app-shell--parent .app-release-label {
+  color: var(--parent-text-secondary, #526057);
+}
+
+.app-shell--parent .app-release-label__latest {
+  color: var(--parent-primary, #166534);
+}
+
+@media (max-width: 900px) {
+  .app-release-label--footer {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+}

@@ -5,8 +5,8 @@ test.describe('Parent portal smoke', () => {
   test('dashboard and navigation load with API data', async ({ page }) => {
     await loginParent(page)
 
-    await expect(page.getByRole('heading', { name: 'Family dashboard', level: 1 })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Family summary' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Upcoming sessions & meetings', level: 2 })).toBeVisible()
 
     await sidebarLink(page, 'Session updates').click()
     await expect(page).toHaveURL(/\/parent\/session-logs/)

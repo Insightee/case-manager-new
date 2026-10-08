@@ -277,7 +277,8 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
                   type="button"
                   className="session-card__notes-toggle"
                   onClick={() => setShowReason((prev) => !prev)}
-                  style={{ fontSize: '0.78rem', color: '#4f46e5', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                  className="parent-portal-link"
+                  style={{ fontSize: '0.78rem', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
                 >
                   {showReason ? 'Hide reason' : 'Show reason'}
                 </button>

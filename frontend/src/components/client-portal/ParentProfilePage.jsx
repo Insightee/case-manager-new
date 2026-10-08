@@ -18,6 +18,7 @@ import {
   DEFAULT_PARENT_EMAIL_PREFERENCES,
   emailPreferencesFromApi,
 } from './ParentEmailPreferencesSection.jsx'
+import { ParentChangePasswordSection } from './ParentChangePasswordSection.jsx'
 
 function dedupeChildren(list) {
   const byId = new Map()
@@ -107,7 +108,7 @@ function ChildRow({ child, caseService, onEditSave }) {
               type="button"
               disabled={saving}
               onClick={save}
-              style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 16px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+              className="admin-btn admin-btn--primary admin-btn--sm"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -148,6 +149,7 @@ export function ParentProfilePage() {
   const [phone, setPhone] = useState('')
   const [secondaryContactName, setSecondaryContactName] = useState('')
   const [secondaryContactEmail, setSecondaryContactEmail] = useState('')
+  const [showExtraContact, setShowExtraContact] = useState(false)
   const [children, setChildren] = useState([])
   const [services, setServices] = useState([])
   const [homeAddr, setHomeAddr] = useState(emptyAddress())
@@ -166,8 +168,11 @@ export function ParentProfilePage() {
       setFullName(p.full_name || '')
       setLoginEmail(p.email || '')
       setPhone(p.phone || '')
-      setSecondaryContactName(p.secondary_contact_name || '')
-      setSecondaryContactEmail(p.secondary_contact_email || '')
+      const secName = p.secondary_contact_name || ''
+      const secEmail = p.secondary_contact_email || ''
+      setSecondaryContactName(secName)
+      setSecondaryContactEmail(secEmail)
+      setShowExtraContact(Boolean(secName.trim() || secEmail.trim()))
       setEmailPreferences(emailPreferencesFromApi(p.email_preferences, p.receive_log_leave_emails))
       setChildren(
         dedupeChildren(p.children).map((c) => ({
@@ -352,38 +357,64 @@ export function ParentProfilePage() {
               </p>
             </div>
           </div>
-        </section>
 
-        <section className="parent-profile__card">
-          <h3>Additional contact for communication</h3>
-          <p className="parent-profile__hint">
-            Optional — another person we can reach for appointments or updates (e.g. spouse, co-parent).
-          </p>
-          <div className="parent-profile__grid">
-            <div className="parent-profile__field">
-              <label>
-                Name
-                <input
-                  value={secondaryContactName}
-                  onChange={(e) => setSecondaryContactName(e.target.value)}
-                  placeholder="e.g. Alex Jenkins"
-                  autoComplete="name"
-                />
-              </label>
+          {!showExtraContact ? (
+            <button
+              type="button"
+              className="parent-profile__add-contact"
+              onClick={() => setShowExtraContact(true)}
+            >
+              <span className="parent-profile__add-contact-icon" aria-hidden>
+                +
+              </span>
+              Add another contact (phone or email for someone else)
+            </button>
+          ) : (
+            <div className="parent-profile__extra-contact">
+              <div className="parent-profile__extra-contact-head">
+                <p className="parent-profile__extra-contact-title">Another contact</p>
+                <button
+                  type="button"
+                  className="parent-profile__extra-contact-remove"
+                  onClick={() => {
+                    setSecondaryContactName('')
+                    setSecondaryContactEmail('')
+                    setShowExtraContact(false)
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+              <p className="parent-profile__hint parent-profile__hint--flush">
+                Optional — e.g. spouse or co-parent we can cc on updates.
+              </p>
+              <div className="parent-profile__grid">
+                <div className="parent-profile__field">
+                  <label>
+                    Name
+                    <input
+                      value={secondaryContactName}
+                      onChange={(e) => setSecondaryContactName(e.target.value)}
+                      placeholder="e.g. Alex Jenkins"
+                      autoComplete="name"
+                    />
+                  </label>
+                </div>
+                <div className="parent-profile__field">
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={secondaryContactEmail}
+                      onChange={(e) => setSecondaryContactEmail(e.target.value)}
+                      placeholder="e.g. alex@example.com"
+                      autoComplete="email"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
-            <div className="parent-profile__field">
-              <label>
-                Email
-                <input
-                  type="email"
-                  value={secondaryContactEmail}
-                  onChange={(e) => setSecondaryContactEmail(e.target.value)}
-                  placeholder="e.g. alex@example.com"
-                  autoComplete="email"
-                />
-              </label>
-            </div>
-          </div>
+          )}
         </section>
 
         {/* ── Children ── */}
@@ -477,7 +508,7 @@ export function ParentProfilePage() {
                 type="checkbox"
                 checked={billingSame}
                 onChange={(e) => setBillingSame(e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: '#6366f1', flexShrink: 0 }}
+                style={{ width: 16, height: 16, flexShrink: 0 }}
               />
               <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a' }}>
                 Use this address as billing address
@@ -498,6 +529,8 @@ export function ParentProfilePage() {
             )}
           </div>
         </section>
+
+        <ParentChangePasswordSection />
 
         <ParentEmailPreferencesSection
           preferences={emailPreferences}

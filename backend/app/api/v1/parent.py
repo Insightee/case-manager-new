@@ -122,6 +122,13 @@ class ParentRescheduleRequest(BaseModel):
     new_slot_id: int
 
 
+class ParentMeetingRequestCreate(BaseModel):
+    case_id: int
+    therapist_user_id: int
+    requested_date: date
+    note: Optional[str] = None
+
+
 @router.get("/profile", response_model=ParentProfileRead)
 def parent_profile_get(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_parent(user)
@@ -1480,6 +1487,59 @@ def parent_booking_calendar(
     return appt_booking.parent_calendar_view(db, case_id, therapist_id, from_date, to_date, user.id)
 
 
+@router.get("/booking/next-open-slot")
+def parent_next_open_slot(
+    case_id: int,
+    therapist_id: int = Query(...),
+    horizon_days: int = Query(7, ge=1, le=14),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    from app.services import parent_meeting_request_service as pmr
+
+    return pmr.next_open_slot_summary(
+        db, case_id, therapist_id, user.id, horizon_days=horizon_days
+    )
+
+
+@router.post("/booking/meeting-requests", status_code=201)
+def parent_create_meeting_request(
+    payload: ParentMeetingRequestCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    _parent_case_or_404(db, user, payload.case_id)
+    from app.services import parent_meeting_request_service as pmr
+
+    try:
+        row = pmr.create_meeting_request(
+            db,
+            case_id=payload.case_id,
+            parent_user=user,
+            therapist_user_id=payload.therapist_user_id,
+            requested_date=payload.requested_date,
+            note=payload.note,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="parent_meeting_request",
+        entity_type="parent_meeting_request",
+        entity_id=row.id,
+        **meta,
+    )
+    db.commit()
+    case = case_service.get_case(db, payload.case_id)
+    return pmr.serialize_request(row, case=case, parent=user)
+
+
 @router.get("/appointments")
 def parent_appointments(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_parent(user)
@@ -1821,6 +1881,68 @@ def parent_ticket_rate(
 
 class ParentTicketEscalateRequest(BaseModel):
     reason: Optional[str] = None
+
+
+class ParentTherapistChatLoopIn(BaseModel):
+    note: Optional[str] = None
+
+
+class ParentTherapistChatStart(BaseModel):
+    case_id: int
+    message: str
+
+
+@router.get("/therapist-chat")
+def parent_therapist_chat_get(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    from app.services import parent_therapist_chat_service as pt_chat
+
+    try:
+        row = pt_chat.get_therapist_chat(db, user, case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return row
+
+
+@router.post("/therapist-chat", status_code=201)
+def parent_therapist_chat_start(
+    payload: ParentTherapistChatStart,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    _parent_case_or_404(db, user, payload.case_id)
+    from app.services import parent_therapist_chat_service as pt_chat
+
+    try:
+        row = pt_chat.start_therapist_chat_with_message(db, user, payload.case_id, payload.message)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return row
+
+
+@router.post("/therapist-chat/{ticket_id}/loop-in-case-manager")
+def parent_therapist_chat_loop_in_cm(
+    ticket_id: int,
+    payload: ParentTherapistChatLoopIn = ParentTherapistChatLoopIn(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    from app.services import parent_therapist_chat_service as pt_chat
+
+    try:
+        row = pt_chat.loop_in_case_manager(db, user, ticket_id, note=payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return row
 
 
 @router.post("/support/tickets/{ticket_id}/escalate")

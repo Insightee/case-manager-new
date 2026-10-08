@@ -9,6 +9,7 @@ import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
 import '../cases/my-cases.css'
 import '../documents/case-documents.css'
 import '../reports/report-editor.css'
+import './parent-case-hub.css'
 import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
@@ -203,29 +204,36 @@ export function ParentCaseDetailPage() {
 
   return (
     <div className="parent-case-hub">
-      <p style={{ marginBottom: 8 }}>
-        <Link to="/parent/reports" style={{ fontSize: '0.875rem', color: '#6366f1', fontWeight: 600 }}>
-          ← Reports & documents
-        </Link>
-      </p>
-      <header style={{ marginBottom: 16 }}>
-        <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', margin: 0 }}>
-          Case {caseRow.caseId}
-        </p>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: '4px 0' }}>{caseRow.childName}</h1>
-        <p style={{ color: '#6b7280', margin: 0 }}>
-          {caseRow.serviceType} · Therapist: {caseRow.therapistName || '—'} · Case manager:{' '}
-          {caseRow.caseManagerName || '—'}
-        </p>
+      <Link to="/parent/reports" className="parent-portal-link parent-case-hub__back">
+        ← Reports & documents
+      </Link>
+      <header className="parent-case-hub__header">
+        <div className="parent-case-hub__title-row">
+          <p className="parent-case-hub__eyebrow">Case {caseRow.caseId}</p>
+          <h1 className="parent-case-hub__title">{caseRow.childName}</h1>
+        </div>
+        {caseRow.serviceType ? (
+          <span className="parent-case-hub__service-pill">{caseRow.serviceType}</span>
+        ) : null}
+        <dl className="parent-case-hub__care-team">
+          <div className="parent-case-hub__care-item">
+            <dt>Therapist</dt>
+            <dd>{caseRow.therapistName || '—'}</dd>
+          </div>
+          <div className="parent-case-hub__care-item">
+            <dt>Case manager</dt>
+            <dd>{caseRow.caseManagerName || '—'}</dd>
+          </div>
+        </dl>
       </header>
 
       {message ? (
-        <p style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: 8, color: '#047857', marginBottom: 12 }}>
+        <p className="parent-case-hub__flash parent-case-hub__flash--success" role="status">
           {message}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c', marginBottom: 12 }}>
+        <p className="parent-case-hub__flash parent-case-hub__flash--error" role="alert">
           {error}
         </p>
       ) : null}
@@ -252,35 +260,35 @@ export function ParentCaseDetailPage() {
       </nav>
 
       {tab === 'overview' && (
-        <section className="card" style={{ padding: 16 }}>
-          <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: 12, lineHeight: 1.45 }}>
-            This is your child&apos;s care record with Insighte. Use the tabs above for session notes, clinical reports,
-            IEP, goals, and shared documents.
+        <section className="parent-case-hub__profile card">
+          <p className="parent-case-hub__profile-lead">
+            Your child&apos;s care record in one place. Open the tabs above for session notes, reports, IEP, goals, and
+            shared documents.
           </p>
-          <dl style={{ display: 'grid', gap: 8, margin: 0 }}>
-            <div>
-              <dt style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Case number</dt>
-              <dd style={{ margin: 0, fontWeight: 600 }}>{caseRow.caseId}</dd>
+          <dl className="parent-case-hub__facts">
+            <div className="parent-case-hub__fact">
+              <dt>Case number</dt>
+              <dd>{caseRow.caseId}</dd>
             </div>
-            <div>
-              <dt style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Service</dt>
-              <dd style={{ margin: 0 }}>{caseRow.serviceType}</dd>
+            <div className="parent-case-hub__fact">
+              <dt>Service</dt>
+              <dd>{caseRow.serviceType || '—'}</dd>
             </div>
-            <div>
-              <dt style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Latest monthly report</dt>
-              <dd style={{ margin: 0 }}>{caseRow.latestApprovedReportMonth || '—'}</dd>
+            <div className="parent-case-hub__fact">
+              <dt>Latest monthly report</dt>
+              <dd>{caseRow.latestApprovedReportMonth || '—'}</dd>
             </div>
-            <div>
-              <dt style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>IEP status</dt>
-              <dd style={{ margin: 0 }}>{caseRow.iepStatus || '—'}</dd>
+            <div className="parent-case-hub__fact">
+              <dt>IEP status</dt>
+              <dd>{caseRow.iepStatus || '—'}</dd>
             </div>
           </dl>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-            <Link to="/parent/book" className="admin-btn admin-btn--primary" style={{ textDecoration: 'none' }}>
+          <div className="parent-case-hub__profile-actions">
+            <Link to="/parent/book" className="admin-btn admin-btn--primary">
               Book session
             </Link>
             {caseRow.isHomecare ? (
-              <Link to="/parent/profile" className="admin-btn admin-btn--secondary" style={{ textDecoration: 'none' }}>
+              <Link to="/parent/profile" className="admin-btn admin-btn--secondary">
                 Service address
               </Link>
             ) : null}
@@ -501,46 +509,6 @@ export function ParentCaseDetailPage() {
         </div>
       )}
 
-      <style>{`
-        .parent-case-hub .ic-case-tabs {
-          display: flex;
-          flex-wrap: nowrap;
-          gap: 6px;
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-          margin-bottom: 16px;
-          padding: 4px;
-          border-bottom: none;
-          background: #f1f5f9;
-          border-radius: 12px;
-          border: 1px solid #e2e8f0;
-        }
-        .parent-case-hub .ic-case-tabs__btn {
-          flex: 0 0 auto;
-          min-height: 44px;
-          padding: 10px 14px;
-          border: none;
-          border-radius: 8px;
-          background: transparent;
-          font-size: 0.8125rem;
-          font-weight: 600;
-          color: #64748b;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-        .parent-case-hub .ic-case-tabs__btn:hover {
-          color: #334155;
-          background: rgba(255, 255, 255, 0.6);
-        }
-        .parent-case-hub .ic-case-tabs__btn.is-active {
-          background: #fff;
-          color: #4f46e5;
-          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-        }
-        .parent-case-hub__modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
-        .parent-case-hub__modal-panel { background: #fff; border-radius: 16px; padding: 24px; max-width: 640px; width: 100%; max-height: 90vh; overflow: auto; }
-        .parent-case-hub .session-card { margin-bottom: 12px; }
-      `}</style>
     </div>
   )
 }

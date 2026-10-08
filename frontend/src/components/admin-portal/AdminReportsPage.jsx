@@ -589,7 +589,7 @@ export function AdminReportsPage() {
     drawerType || (drawerId && rows.find((r) => r.id === drawerId)?.report_type) || 'monthly'
 
   return (
-    <div>
+    <div className="admin-page admin-reports">
       <AdminPageHeader
         title="Report management"
         subtitle={

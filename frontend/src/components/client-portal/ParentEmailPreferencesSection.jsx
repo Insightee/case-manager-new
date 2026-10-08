@@ -3,9 +3,9 @@
 export const DEFAULT_PARENT_EMAIL_PREFERENCES = {
   session_logs: true,
   therapist_leave: true,
-  appointments: true,
+  appointments: false,
   billing: true,
-  reports: true,
+  reports: false,
   meetings: true,
 }
 
@@ -60,9 +60,9 @@ export function emailPreferencesFromApi(raw, legacyLogLeaveEmails) {
     return {
       session_logs: src.session_logs !== false,
       therapist_leave: src.therapist_leave !== false,
-      appointments: src.appointments !== false,
+      appointments: src.appointments === true,
       billing: src.billing !== false,
-      reports: src.reports !== false,
+      reports: src.reports === true,
       meetings: src.meetings !== false,
     }
   }

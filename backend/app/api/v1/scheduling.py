@@ -123,6 +123,46 @@ def get_calendar(
     return cal
 
 
+@router.get("/parent-meeting-requests")
+def therapist_parent_meeting_requests(
+    therapist_id: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tid = _resolve_therapist_id(user, therapist_id)
+    from app.services import parent_meeting_request_service as pmr
+
+    return pmr.list_pending_for_therapist(db, tid)
+
+
+@router.post("/parent-meeting-requests/{request_id}/dismiss")
+def dismiss_parent_meeting_request(
+    request_id: int,
+    request: Request,
+    therapist_id: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tid = _resolve_therapist_id(user, therapist_id)
+    from app.services import parent_meeting_request_service as pmr
+
+    try:
+        row = pmr.dismiss_request(db, tid, request_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="dismiss",
+        entity_type="parent_meeting_request",
+        entity_id=request_id,
+        **meta,
+    )
+    db.commit()
+    return row
+
+
 @router.post("/slots", status_code=status.HTTP_201_CREATED)
 def create_slot(
     payload: SlotCreate,
@@ -254,6 +294,15 @@ def book_slot(
             appt_notify.notify_parents_therapist_booked(
                 db, slot, therapist_name=th.full_name if th else user.full_name
             )
+    if source == BookingSource.THERAPIST and slot.slot_date and slot.case_id:
+        from app.services import parent_meeting_request_service as pmr
+
+        pmr.fulfill_pending_for_case_date(
+            db,
+            case_id=slot.case_id,
+            therapist_user_id=slot.therapist_user_id,
+            booked_date=slot.slot_date,
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="book", entity_type="slot", entity_id=slot_id, **meta)
     db.commit()

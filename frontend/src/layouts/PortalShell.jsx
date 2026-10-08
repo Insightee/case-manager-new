@@ -14,6 +14,8 @@ import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
 import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.jsx'
+import { AppVersionNotice } from '../components/shared/AppVersionNotice.jsx'
+import { AppReleaseLabel } from '../components/shared/AppReleaseLabel.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
@@ -260,7 +262,6 @@ export function PortalShell({ portal }) {
   const profileIncomplete = portal === 'therapist' && isProfileCompletionIncomplete(user?.profile_completion)
   const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false)
   const [profileLogoutOpen, setProfileLogoutOpen] = useState(false)
-
   useEffect(() => {
     if (!profileIncomplete) {
       setProfileWelcomeOpen(false)
@@ -372,7 +373,11 @@ export function PortalShell({ portal }) {
 
   const showNavIcons = portal === 'admin'
   const shellClass = [
-    portal === 'admin' ? 'app-shell app-shell--admin' : 'app-shell',
+    portal === 'admin'
+      ? 'app-shell app-shell--admin forest-light'
+      : portal === 'parent'
+        ? 'app-shell app-shell--parent forest-light'
+        : 'app-shell',
     financeRoute ? 'app-shell--finance-workspace' : '',
     financeRoute && sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
   ]
@@ -477,6 +482,7 @@ export function PortalShell({ portal }) {
                   >
                     Logout
                   </button>
+                  <AppReleaseLabel variant="menu" />
                 </div>
               ) : null}
             </div>
@@ -639,6 +645,7 @@ export function PortalShell({ portal }) {
             </div>
           )}
 
+          <AppReleaseLabel variant="footer" />
           <button type="button" className="app-sidebar__logout" onClick={requestLogout}>
             <svg
               className="app-sidebar__logout-icon"
@@ -704,6 +711,10 @@ export function PortalShell({ portal }) {
             . Edit actions are disabled for those programmes.
           </div>
         ) : null}
+        <AppVersionNotice
+          portalId={portal === 'parent' ? 'parent' : portal === 'admin' ? 'admin' : 'therapist'}
+          variant="banner"
+        />
         {isClientPortalDashboard ? <PortalModuleRolloutNotice portal={portal} /> : null}
         {portal === 'therapist' ? (
           <TherapistProfileCompletionBanner completion={user?.profile_completion} />

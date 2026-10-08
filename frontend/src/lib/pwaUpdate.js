@@ -10,9 +10,20 @@ export function setPwaUpdateHandler(fn) {
  * Apply a waiting service worker when present, otherwise reload the page.
  * @param {{ reload?: () => void, update?: ((reloadPage?: boolean) => unknown) | null }} [opts]
  */
+async function clearWorkboxCaches() {
+  if (typeof caches === 'undefined') return
+  try {
+    const keys = await caches.keys()
+    await Promise.all(keys.map((key) => caches.delete(key)))
+  } catch {
+    // Best-effort — reload still helps.
+  }
+}
+
 export async function refreshApp(opts = {}) {
   const reload = opts.reload || (() => window.location.reload())
   const update = opts.update !== undefined ? opts.update : applyUpdate
+  await clearWorkboxCaches()
   if (typeof update === 'function') {
     try {
       await update(true)

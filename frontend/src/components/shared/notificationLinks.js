@@ -80,6 +80,10 @@ export function resolveNotificationLink(entityType, entityId, portal) {
       if (portal === 'parent') return '/parent/book'
       if (portal === 'therapist') return '/therapist/meetings'
       return '/admin/meetings'
+    case 'parent_meeting_request':
+      if (portal === 'therapist') return '/therapist/slots'
+      if (portal === 'parent') return '/parent/book'
+      return '/admin/meetings'
     case 'user':
     case 'invite_token':
       return '/admin/people'

@@ -89,7 +89,7 @@
 }
 
 .parent-reports__modal-close:focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid var(--parent-primary, #166534);
   outline-offset: 2px;
 }
 
@@ -127,7 +127,7 @@
 }
 
 .parent-reports__btn--primary {
-  background: #4f46e5;
+  background: var(--parent-primary, #166534);
   color: #fff;
 }
 
@@ -207,7 +207,7 @@
 }
 
 .parent-reports__list-btn:focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid var(--parent-primary, #166534);
   outline-offset: 2px;
 }
 
@@ -238,7 +238,7 @@
   margin: 4px 0 0;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #6366f1;
+  color: var(--parent-primary, #166534);
   letter-spacing: 0.01em;
 }
 

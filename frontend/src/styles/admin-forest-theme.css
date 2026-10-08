@@ -1,0 +1,324 @@
+/**
+ * Admin Forest Light — operational density with parent/therapist-aligned tokens.
+ * Scope: `.app-shell--admin.forest-light`
+ */
+
+.app-shell--admin.forest-light {
+  --admin-accent: #166534;
+  --admin-accent-hover: #14532d;
+  --admin-accent-soft: #eaf3ec;
+  --admin-accent-border: #b8d4be;
+  --admin-accent-muted: #526057;
+  --admin-page-bg: #f7f8f5;
+  --admin-surface: #ffffff;
+  --admin-border: #dde4de;
+  --admin-border-strong: #c5d0c8;
+  --text-main: #17211b;
+  --text-muted: #526057;
+  --line: #e8ece9;
+  --primary-soft: #eaf3ec;
+  --primary-border: #c5dcc8;
+  --shadow-soft: 0 1px 3px rgba(23, 33, 27, 0.06);
+  --kpi-radius: 12px;
+  --kpi-grid-gap: 10px;
+  --kpi-grid-min: 128px;
+  --kpi-value-size: 1.375rem;
+  --kpi-label-size: 0.6875rem;
+}
+
+.app-shell--admin.forest-light .content {
+  background: var(--admin-page-bg);
+}
+
+/* —— Headers —— */
+.app-shell--admin.forest-light .admin-page-header__eyebrow {
+  color: var(--admin-accent);
+  letter-spacing: 0.08em;
+}
+
+.app-shell--admin.forest-light .admin-page-header__title {
+  font-family: Manrope, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--text-main);
+}
+
+.app-shell--admin.forest-light .admin-page-header__sub {
+  color: var(--admin-accent-muted);
+  max-width: 48ch;
+  line-height: 1.55;
+}
+
+/* —— Buttons —— */
+.app-shell--admin.forest-light .admin-btn {
+  min-height: 44px;
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.app-shell--admin.forest-light .admin-btn--primary {
+  background: var(--admin-accent);
+  box-shadow: none;
+  border-color: var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .admin-btn--primary:hover {
+  background: var(--admin-accent-hover);
+  filter: none;
+}
+
+.app-shell--admin.forest-light .admin-btn--secondary {
+  border-color: var(--admin-border-strong);
+  background: var(--admin-surface);
+}
+
+.app-shell--admin.forest-light .admin-btn--secondary:hover {
+  background: var(--admin-accent-soft);
+  border-color: var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-btn--ghost {
+  background: var(--admin-accent-soft);
+  border-color: var(--admin-accent-border);
+  color: var(--admin-accent-hover);
+}
+
+.app-shell--admin.forest-light .admin-btn--ghost:hover {
+  background: #dcebe0;
+}
+
+.app-shell--admin.forest-light .admin-btn:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 2px;
+}
+
+/* —— Panels —— */
+.app-shell--admin.forest-light .admin-panel {
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.app-shell--admin.forest-light .admin-panel__title {
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.app-shell--admin.forest-light .admin-panel__sub {
+  color: var(--admin-accent-muted);
+  font-size: 0.8125rem;
+}
+
+/* —— KPI / stat cards —— */
+.app-shell--admin.forest-light .admin-stat {
+  border-color: var(--admin-border);
+  border-radius: var(--kpi-radius);
+  box-shadow: none;
+}
+
+.app-shell--admin.forest-light .admin-stat--link:hover,
+.app-shell--admin.forest-light .admin-stat--link:focus-visible {
+  transform: none;
+  border-color: var(--admin-accent-border);
+  box-shadow: 0 0 0 1px var(--admin-accent-soft);
+}
+
+.app-shell--admin.forest-light .admin-stat--link.is-active {
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.15);
+}
+
+.app-shell--admin.forest-light .admin-stat__value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--text-main);
+}
+
+.app-shell--admin.forest-light .admin-stat__label {
+  color: var(--admin-accent-muted);
+  font-weight: 600;
+}
+
+.app-shell--admin.forest-light .admin-stat--teal .admin-stat__value {
+  color: var(--admin-accent);
+}
+
+/* —— Tables —— */
+.app-shell--admin.forest-light .admin-table-wrap {
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-surface);
+}
+
+.app-shell--admin.forest-light .admin-table {
+  min-width: 520px;
+}
+
+.app-shell--admin.forest-light .admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f4f7f5;
+  color: var(--admin-accent-muted);
+  border-bottom: 1px solid var(--admin-border);
+  font-size: 0.6875rem;
+  letter-spacing: 0.07em;
+  padding: 12px 14px;
+}
+
+.app-shell--admin.forest-light .admin-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef2ee;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  vertical-align: top;
+}
+
+.app-shell--admin.forest-light .admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.app-shell--admin.forest-light .admin-table tbody tr:hover td {
+  background: #f9fbf9;
+}
+
+.app-shell--admin.forest-light .admin-table__primary {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.app-shell--admin.forest-light .admin-table td[data-numeric='true'],
+.app-shell--admin.forest-light .admin-table .tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  text-align: right;
+}
+
+/* —— Tabs (reports + global) —— */
+.app-shell--admin.forest-light .portal-tabs.admin-page__tabs-scroll .portal-tabs__tab.is-active {
+  color: var(--admin-accent);
+  border-bottom-color: var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .portal-tabs.admin-page__tabs-scroll .portal-tabs__tab {
+  font-weight: 600;
+  min-height: 44px;
+}
+
+.app-shell--admin.forest-light .admin-reports__modes {
+  background: var(--admin-accent-soft);
+  border-color: var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-reports__mode.is-active {
+  color: var(--admin-accent-hover);
+  box-shadow: var(--shadow-soft);
+}
+
+.app-shell--admin.forest-light .admin-reports__kpi.is-active {
+  border-color: var(--admin-accent);
+  background: var(--admin-accent-soft);
+  box-shadow: 0 0 0 1px var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-reports__kpi:hover {
+  border-color: var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-reports__kpi:focus-visible {
+  outline-color: var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .admin-link-btn {
+  color: var(--admin-accent);
+}
+
+/* —— Dashboard queues —— */
+.app-shell--admin.forest-light .admin-home-queue {
+  border-color: var(--admin-border);
+  background: var(--admin-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.app-shell--admin.forest-light .admin-home-queue__eyebrow {
+  color: var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .admin-home-queue__role-pill {
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent-hover);
+  border-color: var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-home-queue-card:hover {
+  border-color: var(--admin-accent-border);
+  box-shadow: var(--shadow-soft);
+}
+
+.app-shell--admin.forest-light .admin-home-queue-card__count {
+  background: var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .admin-home-queue-card__link {
+  color: var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .admin-home-queue-item:focus-visible {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--admin-accent);
+}
+
+.app-shell--admin.forest-light .admin-leadership-queues__item {
+  border-color: var(--admin-border);
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.app-shell--admin.forest-light .admin-leadership-queues__item:hover {
+  border-color: var(--admin-accent-border);
+  background: #f9fbf9;
+}
+
+.app-shell--admin.forest-light .admin-leadership-dir__card {
+  border-color: var(--admin-border);
+  border-radius: 12px;
+}
+
+.app-shell--admin.forest-light .admin-leadership-dir__card:hover {
+  border-color: var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-breakdown__fill {
+  background: linear-gradient(90deg, var(--admin-accent), #22854a);
+}
+
+.app-shell--admin.forest-light .admin-queue__item:hover {
+  border-color: var(--admin-accent-border);
+}
+
+.app-shell--admin.forest-light .admin-badge--info {
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent-hover);
+}
+
+/* —— Mobile task cards —— */
+@media (max-width: 900px) {
+  .app-shell--admin.forest-light .admin-task-card {
+    border-color: var(--admin-border);
+    border-radius: 12px;
+  }
+
+  .app-shell--admin.forest-light .admin-task-card__title {
+    color: var(--text-main);
+  }
+
+  .app-shell--admin.forest-light .admin-task-card__details summary {
+    color: var(--admin-accent);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}

@@ -5,6 +5,7 @@ import { PathnameSanitizer } from './components/PathnameSanitizer.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { AppRoutes } from './routes/AppRoutes.jsx'
 import { queryClient } from './lib/queryClient.js'
+import { PwaStaleRecoveryListener } from './components/shared/PwaStaleRecoveryListener.jsx'
 import './App.css'
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
       <PathnameSanitizer>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
+            <PwaStaleRecoveryListener />
             <AppRoutes />
             <Analytics />
           </AuthProvider>

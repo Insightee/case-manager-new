@@ -447,3 +447,42 @@ def test_booking_availability_parent_cannot_probe_foreign_case_id():
         },
     )
     assert res.status_code == 404, res.text
+
+
+
+def _create_parent_length_slot(token: str, slot_date: date, hour: int) -> int:
+    res = client.post(
+        "/api/v1/scheduling/slots",
+        headers=_headers(token),
+        json={
+            "slot_date": slot_date.isoformat(),
+            "start_time": f"{hour:02d}:00:00",
+            "end_time": f"{hour + 1:02d}:00:00",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+def test_parent_calendar_view_hides_slots_outside_handover_window(transition_case):
+    """Parent hub calendar / next-open-slot use the same handover window as booking."""
+    from app.services import appointment_booking_service as appt_booking
+
+    ctx = transition_case
+    incoming_id = ctx["incoming"]["therapist_user_id"]
+    too_early = ctx["start"] - timedelta(days=2)
+    in_window = ctx["start"] + timedelta(days=2)
+    blocked_slot = _create_parent_length_slot(ctx["incoming_token"], too_early, 19)
+    allowed_slot = _create_parent_length_slot(ctx["incoming_token"], in_window, 19)
+    db = SessionLocal()
+    try:
+        parent = db.scalar(select(User).where(User.email == "parent@demo.com"))
+        assert parent is not None
+        view = appt_booking.parent_calendar_view(
+            db, ctx["case_id"], incoming_id, too_early, in_window, parent.id
+        )
+    finally:
+        db.close()
+    ids = {row["id"] for row in view["slots"]}
+    assert allowed_slot in ids
+    assert blocked_slot not in ids
