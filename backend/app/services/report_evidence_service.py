@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.clinical_report import ClinicalReport, ClinicalReportEvidence, ClinicalReportSection
 from app.models.daily_log import DailyLog
 from app.models.session import Session as TherapySession
 from app.report_engine_constants import REQUIRED_OBSERVATION_SECTION_KEYS
+from app.services.daily_log_narrative import (
+    daily_log_has_narrative,
+    daily_log_has_nonempty_narrative_column,
+    daily_log_narrative_snippet,
+)
 
 
 def attach_case_document(
@@ -43,19 +48,6 @@ def attach_case_document(
     db.flush()
     return row
 
-    for field in (log.observations, log.session_notes, log.activities_done, log.goals_addressed):
-        if field and str(field).strip():
-            return True
-    return False
-
-
-def _log_snippet(log: DailyLog, limit: int = 120) -> str:
-    for field in (log.observations, log.session_notes, log.activities_done, log.goals_addressed):
-        text = (field or "").strip()
-        if text:
-            return text if len(text) <= limit else f"{text[:limit].rstrip()}…"
-    return ""
-
 
 def evidence_summary(db: Session, report: ClinicalReport) -> dict:
     sections = list(
@@ -76,14 +68,7 @@ def evidence_summary(db: Session, report: ClinicalReport) -> dict:
         select(func.count(DailyLog.id))
         .join(TherapySession, DailyLog.session_id == TherapySession.id)
         .where(TherapySession.case_id == report.case_id)
-        .where(
-            or_(
-                func.length(func.trim(func.coalesce(DailyLog.observations, ""))) > 0,
-                func.length(func.trim(func.coalesce(DailyLog.session_notes, ""))) > 0,
-                func.length(func.trim(func.coalesce(DailyLog.activities_done, ""))) > 0,
-                func.length(func.trim(func.coalesce(DailyLog.goals_addressed, ""))) > 0,
-            )
-        )
+        .where(daily_log_has_nonempty_narrative_column())
     ) or 0
 
     recent_rows = list(
@@ -99,14 +84,14 @@ def evidence_summary(db: Session, report: ClinicalReport) -> dict:
     recent_sessions = []
     for log in recent_rows:
         sess = log.session
-        snippet = _log_snippet(log)
+        snippet = daily_log_narrative_snippet(log)
         recent_sessions.append(
             {
                 "log_id": log.id,
                 "session_date": sess.scheduled_date.isoformat() if sess and sess.scheduled_date else None,
                 "attendance": log.attendance_status,
                 "snippet": snippet or "Session logged — narrative not added yet",
-                "has_notes": _log_has_narrative(log),
+                "has_notes": daily_log_has_narrative(log),
             }
         )
 
