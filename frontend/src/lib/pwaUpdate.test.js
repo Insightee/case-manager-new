@@ -2,17 +2,19 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { refreshApp, setPwaUpdateHandler } from './pwaUpdate.js'
 
-test('refreshApp calls injected update(true) when provided', async () => {
+test('refreshApp calls injected update(true) then reloads (autoUpdate: update is a no-op)', async () => {
   let called = null
+  let reloaded = false
   await refreshApp({
     update: (reloadPage) => {
       called = reloadPage
     },
     reload: () => {
-      throw new Error('reload should not run')
+      reloaded = true
     },
   })
   assert.equal(called, true)
+  assert.equal(reloaded, true)
 })
 
 test('refreshApp reloads when update is missing', async () => {
@@ -41,14 +43,16 @@ test('refreshApp reloads when update throws', async () => {
 
 test('refreshApp uses registered handler when opts.update is omitted', async () => {
   let called = null
+  let reloaded = false
   setPwaUpdateHandler((reloadPage) => {
     called = reloadPage
   })
   await refreshApp({
     reload: () => {
-      throw new Error('reload should not run')
+      reloaded = true
     },
   })
   assert.equal(called, true)
+  assert.equal(reloaded, true)
   setPwaUpdateHandler(null)
 })

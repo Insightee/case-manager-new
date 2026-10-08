@@ -7,7 +7,7 @@ export function setPwaUpdateHandler(fn) {
 }
 
 /**
- * Apply a waiting service worker when present, otherwise reload the page.
+ * Apply a waiting service worker when present, then reload the page.
  * @param {{ reload?: () => void, update?: ((reloadPage?: boolean) => unknown) | null }} [opts]
  */
 export async function refreshApp(opts = {}) {
@@ -16,10 +16,11 @@ export async function refreshApp(opts = {}) {
   if (typeof update === 'function') {
     try {
       await update(true)
-      return
     } catch {
       // Fall through to a hard reload so field therapists are never stuck.
     }
   }
+  // registerType 'autoUpdate': updateSW(true) is a no-op (vite-plugin-pwa only reloads on its own
+  // 'activated' event), so always reload. The navigation also makes the browser re-check sw.js.
   reload()
 }
