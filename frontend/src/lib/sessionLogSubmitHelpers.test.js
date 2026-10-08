@@ -3,8 +3,10 @@ import { describe, it } from 'node:test'
 
 import {
   evaluateSessionLogSubmitReadiness,
+  isSessionExpiredError,
   isSessionLateForSubmit,
   planSessionLogSubmitFailureActions,
+  sessionLogSubmitFailureMessage,
   shouldQueueOfflineDraft,
 } from './sessionLogSubmitHelpers.js'
 
@@ -73,4 +75,18 @@ describe('sessionLogSubmitHelpers submit failure plan', () => {
       true,
     )
   })
+})
+
+it('403 permission denial is not treated as session expiry', () => {
+  const err = Object.assign(new Error('Case access denied'), { status: 403 })
+  assert.equal(isSessionExpiredError(err), false)
+  assert.equal(sessionLogSubmitFailureMessage(err), 'Case access denied')
+  const plan = planSessionLogSubmitFailureActions(err, { sessionId: 7, hasBody: true })
+  assert.equal(plan.saveLocalDraft, false)
+  assert.equal(plan.queueOffline, false)
+})
+
+it('401 is treated as session expiry', () => {
+  const err = Object.assign(new Error('Not authenticated'), { status: 401 })
+  assert.equal(isSessionExpiredError(err), true)
 })

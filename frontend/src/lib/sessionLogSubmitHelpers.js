@@ -25,7 +25,9 @@ export function isLateReasonApiError(err) {
 
 export function isSessionExpiredError(err) {
   if (err?.isAuthError || err?.isAuthSessionError) return true
-  if (err?.status === 401 || err?.status === 403) return true
+  // 403 is a business/permission denial on log submit (e.g. "Case access denied" after a
+  // handover, view-only, module access) — show the server reason, not "session expired".
+  if (err?.status === 401) return true
   return /session expired/i.test(String(err?.message || ''))
 }
 
