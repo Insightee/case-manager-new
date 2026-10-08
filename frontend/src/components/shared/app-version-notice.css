@@ -1,50 +1,177 @@
+.app-version-notice {
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #c5d0c8;
+  background: #f4f7f5;
+  color: #17211b;
+  box-shadow: 0 1px 2px rgba(15, 61, 46, 0.06);
+}
+
 .app-version-notice--banner {
   margin-bottom: 12px;
+}
+
+.app-version-notice__title {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f3d2e;
+}
+
+.app-version-notice__lead {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: #526057;
+}
+
+.app-version-notice__url-line {
+  margin: 0 0 12px;
+  word-break: break-all;
+}
+
+.app-version-notice__url {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #166534;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.app-version-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.app-version-notice__later {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: #526057;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.app-version-notice__note {
+  margin: 10px 0 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #166534;
+}
+
+.app-version-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.app-version-btn--primary {
+  background: #166534;
+  color: #fff;
+}
+
+.app-version-btn--secondary {
+  background: #fff;
+  color: #14532d;
+  border-color: #c5d0c8;
+}
+
+.app-version-btn--ghost {
+  background: transparent;
+  color: #14532d;
+  border-color: #c5d0c8;
+}
+
+.app-version-btn--inline {
+  display: inline-flex;
+  margin-top: 4px;
 }
 
 .app-version-sheet {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 220;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 16px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  background: rgba(15, 23, 42, 0.45);
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  background: rgba(15, 61, 46, 0.42);
 }
 
 .app-version-sheet__panel {
   width: 100%;
   max-width: 28rem;
-  max-height: min(90dvh, 90vh);
+  max-height: min(85dvh, 85vh);
   overflow-y: auto;
-  border-radius: 16px;
-  background: #fff;
+  border-radius: 16px 16px 12px 12px;
+  background: #f7f8f5;
   padding: 20px 18px 18px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+  box-shadow: 0 20px 40px rgba(15, 61, 46, 0.22);
+  border: 1px solid #dde4de;
 }
 
 .app-version-sheet__title {
   margin: 0 0 8px;
   font-size: 1.125rem;
   font-weight: 700;
-  color: #0f172a;
+  color: #0f3d2e;
 }
 
 .app-version-sheet__lead {
-  margin: 0 0 14px;
-  font-size: 0.9375rem;
+  margin: 0 0 10px;
+  font-size: 1rem;
   line-height: 1.45;
-  color: #475569;
+  color: #526057;
+}
+
+.app-version-sheet__url-line {
+  margin: 0 0 14px;
+  word-break: break-all;
+}
+
+.app-version-sheet__url {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #166534;
 }
 
 .app-version-sheet__steps {
   margin: 0 0 16px;
-  padding-left: 1.1rem;
-  font-size: 0.875rem;
+  padding-left: 0;
+  list-style: none;
+  font-size: 1rem;
   line-height: 1.45;
   color: #334155;
+}
+
+.app-version-sheet__steps li {
+  margin-bottom: 12px;
+}
+
+.app-version-sheet__step-num {
+  font-weight: 700;
+  color: #0f3d2e;
+  margin-right: 6px;
+}
+
+.app-version-sheet__step-hint {
+  margin: 6px 0 0;
+  font-size: 0.9375rem;
+  color: #526057;
 }
 
 .app-version-sheet__actions {
@@ -53,8 +180,24 @@
   gap: 8px;
 }
 
-.app-version-sheet__actions a {
-  text-align: center;
+.app-version-sheet__actions--top {
+  margin-bottom: 12px;
+}
+
+.app-version-sheet__note {
+  margin: 0 0 12px;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: #166534;
+}
+
+@media (max-width: 900px) {
+  .app-version-notice__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-version-notice__later {
+    align-self: flex-start;
+  }
 }

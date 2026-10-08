@@ -19,6 +19,7 @@ const billingFrontendEnv = {
   VITE_ENABLE_CLIENT_BILLING: 'true',
   VITE_ENABLE_BILLING: 'true',
   VITE_ENABLE_FINANCE_DASHBOARD_V1: 'true',
+  VITE_APP_ORIGIN: 'https://www.insighte.org',
 }
 
 export default defineConfig({
@@ -45,6 +46,30 @@ export default defineConfig({
       name: 'mobile-chrome',
       use: { ...devices['Pixel 7'] },
     },
+    {
+      name: 'app-version-iphone',
+      testMatch: '**/app-version-update.spec.js',
+      use: {
+        ...devices['iPhone 13'],
+        viewport: { width: 375, height: 812 },
+      },
+    },
+    {
+      name: 'app-version-android',
+      testMatch: '**/app-version-update.spec.js',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { width: 412, height: 915 },
+      },
+    },
+    {
+      name: 'app-version-desktop',
+      testMatch: '**/app-version-update.spec.js',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
   ],
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
@@ -52,7 +77,7 @@ export default defineConfig({
         {
           command: '../backend/scripts/e2e-dev-server.sh',
           url: `${apiURL}/health`,
-          reuseExistingServer: false,
+          reuseExistingServer: !process.env.CI,
           timeout: 180_000,
           cwd: __dirname,
           env: {
@@ -65,7 +90,7 @@ export default defineConfig({
         {
           command: 'npm run dev -- --host 127.0.0.1 --port 5173',
           url: baseURL,
-          reuseExistingServer: false,
+          reuseExistingServer: !process.env.CI,
           timeout: 120_000,
           env: {
             ...process.env,
