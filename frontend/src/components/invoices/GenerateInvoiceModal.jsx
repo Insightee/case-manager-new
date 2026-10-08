@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { BillingCalcErrorNotice } from '../shared/BillingCalcErrorNotice.jsx'
 import { formatInr, recentMonthOptions } from './invoiceUtils.js'
 
 export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
@@ -29,7 +30,7 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
       .catch((e) => {
         if (!cancelled) {
           setPreviewSummary(null)
-          setError(e.message || 'Could not load preview')
+          setError(e)
         }
       })
       .finally(() => {
@@ -100,7 +101,7 @@ export function GenerateInvoiceModal({ open, onClose, onPreviewReady }) {
           {loading ? (
             <p className="text-sm text-slate-500">Loading validated sessions…</p>
           ) : error ? (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</p>
+            <BillingCalcErrorNotice error={error} audience="therapist" />
           ) : previewSummary ? (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/80 p-4">
               <dl className="grid gap-3 text-sm">

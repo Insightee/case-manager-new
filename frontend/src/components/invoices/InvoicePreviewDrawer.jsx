@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { BillingCalcErrorNotice } from '../shared/BillingCalcErrorNotice.jsx'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
 import { StatementSummary } from './StatementSummary.jsx'
 import { StatementDisputePanel } from './StatementDisputePanel.jsx'
@@ -23,7 +24,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
       const data = await apiFetch(`/api/v1/invoices/preview?month=${encodeURIComponent(month)}`)
       setServerPreview(data)
     } catch (e) {
-      setError(e.message || 'Could not refresh preview')
+      setError(e)
     } finally {
       setRefreshing(false)
     }
@@ -94,7 +95,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
       onSubmitted?.(inv)
       onClose()
     } catch (e) {
-      setError(e.message || 'Submit failed')
+      setError(e)
     } finally {
       setSubmitting(false)
     }
@@ -138,7 +139,7 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
-          {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
+          {error ? <BillingCalcErrorNotice error={error} audience="therapist" className="mb-4" tone="error" /> : null}
           <StatementSummary data={preview} cutover={false} />
           <div className="mt-6">
             <InvoiceBreakdownView
