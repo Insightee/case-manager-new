@@ -75,14 +75,20 @@ export function shouldOfferReinstallFallback(buildKey, remoteNewer) {
 }
 
 /**
- * @param {'ios' | 'android' | 'desktop'} platform
+ * @param {'ios' | 'android' | 'android-samsung' | 'android-firefox' | 'mac-safari' | 'desktop' | 'desktop-firefox'} platform
  * @param {{ portalUrl: string, appName: string }} ctx
  */
 export function getReinstallSteps(platform, { portalUrl, appName }) {
   const link = portalUrl || 'your InsighteCase link'
+  const copyStep = { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' }
+  const androidRemove = {
+    id: 'remove',
+    kind: 'text',
+    text: `Remove the old ${appName} home screen shortcut (press and hold the icon → Uninstall or Remove).`,
+  }
   if (platform === 'ios') {
     return [
-      { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' },
+      copyStep,
       {
         id: 'remove',
         kind: 'text',
@@ -93,29 +99,61 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
         kind: 'action',
         action: 'open_safari',
         label: 'Open in Safari',
-        hint: 'Paste the link in Safari if it does not open automatically.',
+        hint: 'Paste the link in Safari if it does not open automatically. Chrome or Edge on iPhone also work: paste the link there instead.',
       },
       {
         id: 'add',
         kind: 'text',
-        text: 'Tap Share → Add to Home Screen → Add.',
+        text: 'Tap Share (square with an arrow; in Chrome or Edge it is in the address bar or ⋯ menu) → Add to Home Screen → Add.',
+      },
+    ]
+  }
+  if (platform === 'android-samsung') {
+    return [
+      copyStep,
+      androidRemove,
+      {
+        id: 'open-browser',
+        kind: 'action',
+        action: 'open_browser',
+        label: 'Open in Samsung Internet',
+        hint: `Paste ${link} in Samsung Internet if needed.`,
+      },
+      {
+        id: 'install',
+        kind: 'text',
+        text: 'Tap the install icon in the address bar, or the ☰ menu → Add page to → Home screen.',
+      },
+    ]
+  }
+  if (platform === 'android-firefox') {
+    return [
+      copyStep,
+      androidRemove,
+      {
+        id: 'open-browser',
+        kind: 'action',
+        action: 'open_browser',
+        label: 'Open in Firefox',
+        hint: `Paste ${link} in Firefox if needed.`,
+      },
+      {
+        id: 'install',
+        kind: 'text',
+        text: 'Tap ⋮ → Add app to Home screen (may read Install or Add to Home screen) → Add.',
       },
     ]
   }
   if (platform === 'android') {
     return [
-      { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' },
+      copyStep,
+      androidRemove,
       {
-        id: 'remove',
-        kind: 'text',
-        text: `Remove the old ${appName} home screen shortcut (press and hold the icon → Uninstall or Remove).`,
-      },
-      {
-        id: 'open-chrome',
+        id: 'open-browser',
         kind: 'action',
         action: 'open_browser',
-        label: 'Open in Chrome',
-        hint: `Paste ${link} in Chrome if needed.`,
+        label: 'Open in browser',
+        hint: `Paste ${link} in Chrome (or Brave / Edge) if needed.`,
       },
       {
         id: 'install',
@@ -124,31 +162,75 @@ export function getReinstallSteps(platform, { portalUrl, appName }) {
       },
     ]
   }
+  if (platform === 'mac-safari') {
+    return [
+      copyStep,
+      {
+        id: 'remove',
+        kind: 'text',
+        text: `Quit the old ${appName} app, then in Finder open Applications (or your home folder → Applications) and move ${appName} to the Trash (Bin).`,
+      },
+      {
+        id: 'open',
+        kind: 'action',
+        action: 'open_browser',
+        label: 'Open in Safari',
+        hint: 'Paste the link in a normal Safari window if it does not open automatically.',
+      },
+      {
+        id: 'install',
+        kind: 'text',
+        text: 'In Safari choose File → Add to Dock (or Share → Add to Dock) → Add.',
+      },
+    ]
+  }
+  if (platform === 'desktop-firefox') {
+    return [
+      copyStep,
+      {
+        id: 'open',
+        kind: 'action',
+        action: 'open_browser',
+        label: 'Open in a browser tab',
+        hint: 'Use a normal browser tab, not the shortcut window.',
+      },
+      {
+        id: 'remove',
+        kind: 'text',
+        text: `Remove the old ${appName} shortcut (right-click it on the taskbar or desktop → Unpin / Delete).`,
+      },
+      {
+        id: 'install',
+        kind: 'text',
+        text: 'Firefox cannot re-add the app on most computers: bookmark the link, or open it in Chrome or Edge and use the install icon in the address bar.',
+      },
+    ]
+  }
   return [
-    { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' },
+    copyStep,
     {
       id: 'open',
       kind: 'action',
       action: 'open_browser',
-      label: 'Open in Chrome or Edge tab',
-      hint: 'Use a normal browser tab — not the installed shortcut window.',
+      label: 'Open in a browser tab',
+      hint: 'Use a normal Chrome, Edge or Brave tab, not the installed shortcut window.',
     },
     {
       id: 'remove',
       kind: 'text',
-      text: `Remove the old ${appName} shortcut. Chrome: in the app window, open the ⋮ menu → Uninstall ${appName}, or visit chrome://apps, right‑click the icon → Remove. Edge: … → Apps → Manage apps → remove the old shortcut.`,
+      text: `Remove the old ${appName} shortcut. Chrome / Brave: in the app window, open the ⋮ menu → Uninstall ${appName} (or visit chrome://apps / brave://apps, right‑click the icon → Remove). Edge: … → Apps → Manage apps → remove the old shortcut.`,
     },
     {
       id: 'install',
       kind: 'text',
-      text: 'Re-add the shortcut: use the install icon in the address bar, or Chrome ⋮ → Save and share → Install page as app (Edge: Apps → Install this site as an app).',
+      text: 'Re-add the shortcut: use the install icon in the address bar, or Chrome ⋮ → Cast, save and share → Install page as app (Edge: Apps → Install this site as an app; Brave: ≡ → Install InsighteCase).',
     },
   ]
 }
 
 /**
  * @param {string | { userAgent?: string, platform?: string, maxTouchPoints?: number }} [input]
- * @returns {'ios' | 'android' | 'desktop'}
+ * @returns {'ios' | 'android' | 'android-samsung' | 'android-firefox' | 'mac-safari' | 'desktop' | 'desktop-firefox'}
  */
 export function detectReinstallPlatform(input) {
   const env =
@@ -163,9 +245,18 @@ export function detectReinstallPlatform(input) {
   const maxTouchPoints =
     env.maxTouchPoints ?? (typeof navigator !== 'undefined' ? navigator.maxTouchPoints : 0)
 
+  // Every iOS / iPadOS browser (Safari, CriOS, FxiOS, EdgiOS) uses WebKit and the same Add to Home Screen flow.
   if (/iPad|iPhone|iPod/i.test(ua)) return 'ios'
   if (platform === 'MacIntel' && maxTouchPoints > 1) return 'ios'
-  if (/Android/i.test(ua)) return 'android'
+  if (/Android/i.test(ua)) {
+    if (/SamsungBrowser/i.test(ua)) return 'android-samsung'
+    if (/Firefox\//i.test(ua)) return 'android-firefox'
+    return 'android'
+  }
+  if (/Firefox\//i.test(ua)) return 'desktop-firefox'
+  if (/Macintosh|Mac OS X/i.test(ua) && /Safari\//i.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/i.test(ua)) {
+    return 'mac-safari'
+  }
   return 'desktop'
 }
 

@@ -77,7 +77,7 @@ export function AppVersionReinstallSheet({
   }, [onClose, promptInstall])
 
   const showInstallNow =
-    canNativeInstall && (platform === 'android' || platform === 'desktop')
+    canNativeInstall && (platform.startsWith('android') || platform === 'desktop')
 
   if (!open) return null
 
