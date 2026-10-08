@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { markServiceWorkerUpdateWaiting } from '../../lib/appVersionUpdate.js'
 import { isLikelyStaleAppError, markPwaStaleHint } from '../../lib/pwaStaleRecovery.js'
 
 let preloadReloadScheduled = false
@@ -9,8 +8,6 @@ export function PwaStaleRecoveryListener() {
   useEffect(() => {
     function onPreloadError() {
       markPwaStaleHint()
-      markServiceWorkerUpdateWaiting()
-      window.dispatchEvent(new CustomEvent('insightcase:sw-waiting'))
       if (preloadReloadScheduled) return
       preloadReloadScheduled = true
       window.setTimeout(() => {

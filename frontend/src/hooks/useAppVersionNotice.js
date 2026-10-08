@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  clearServiceWorkerUpdateWaiting,
+  clearPriorStaleBuild,
   dismissVersionNoticeForSession,
   fetchRemoteVersionMeta,
   getEmbeddedReleaseLabel,
-  hasServiceWorkerUpdateWaiting,
-  markHardRecoveryShown,
-  recordRefreshAttempt,
+  shouldOfferReinstallFallback,
   shouldShowVersionNotice,
 } from '../lib/appVersionUpdate.js'
 import { hasPwaStaleHint, isLikelyStaleAppError } from '../lib/pwaStaleRecovery.js'
 import { isStandaloneDisplay } from '../lib/portalPwa.js'
+import { isDeployedReleaseNewer } from '../lib/releaseLabel.js'
 
 /**
- * Tracks deploy / chunk / service-worker stale state for PWA update prompts.
+ * Tracks deploy label for optional update notice (auto-update handled by the service worker).
  * @param {{ pollMs?: number }} [opts]
  */
 export function useAppVersionNotice(opts = {}) {
@@ -21,7 +20,7 @@ export function useAppVersionNotice(opts = {}) {
   const embeddedReleaseLabel = getEmbeddedReleaseLabel()
   const [remoteReleaseLabel, setRemoteReleaseLabel] = useState(null)
   const [chunkStale, setChunkStale] = useState(() => hasPwaStaleHint())
-  const [swWaiting, setSwWaiting] = useState(() => hasServiceWorkerUpdateWaiting())
+  const [reinstallFallback, setReinstallFallback] = useState(false)
 
   const refreshRemote = useCallback(async () => {
     const meta = await fetchRemoteVersionMeta()
@@ -40,15 +39,6 @@ export function useAppVersionNotice(opts = {}) {
   }, [pollMs, refreshRemote])
 
   useEffect(() => {
-    function onSwWaiting() {
-      setSwWaiting(true)
-      void refreshRemote()
-    }
-    window.addEventListener('insightcase:sw-waiting', onSwWaiting)
-    return () => window.removeEventListener('insightcase:sw-waiting', onSwWaiting)
-  }, [refreshRemote])
-
-  useEffect(() => {
     function onRejection(event) {
       const reason = event?.reason
       if (isLikelyStaleAppError(reason)) {
@@ -59,6 +49,17 @@ export function useAppVersionNotice(opts = {}) {
     return () => window.removeEventListener('unhandledrejection', onRejection)
   }, [])
 
+  useEffect(() => {
+    const remoteNewer = isDeployedReleaseNewer(embeddedReleaseLabel, remoteReleaseLabel)
+    if (!remoteNewer && !chunkStale) {
+      clearPriorStaleBuild()
+      setReinstallFallback(false)
+      return
+    }
+    const buildKey = remoteReleaseLabel || embeddedReleaseLabel || 'unknown'
+    setReinstallFallback(shouldOfferReinstallFallback(buildKey, remoteNewer || chunkStale))
+  }, [chunkStale, embeddedReleaseLabel, remoteReleaseLabel])
+
   const standalone = isStandaloneDisplay()
 
   const notice = useMemo(
@@ -67,36 +68,21 @@ export function useAppVersionNotice(opts = {}) {
         embeddedReleaseLabel,
         remoteReleaseLabel,
         chunkStale,
-        swWaiting,
         standalone,
       }),
-    [chunkStale, embeddedReleaseLabel, remoteReleaseLabel, standalone, swWaiting],
+    [chunkStale, embeddedReleaseLabel, remoteReleaseLabel, standalone],
   )
 
   const dismissForSession = useCallback(() => {
     dismissVersionNoticeForSession(notice.buildKey)
     setChunkStale(false)
-    setSwWaiting(false)
-    clearServiceWorkerUpdateWaiting()
   }, [notice.buildKey])
-
-  const noteRefreshAttempt = useCallback(() => {
-    recordRefreshAttempt()
-    clearServiceWorkerUpdateWaiting()
-    setSwWaiting(false)
-  }, [])
-
-  const showHardRecovery = useCallback(() => {
-    markHardRecoveryShown()
-  }, [])
 
   return {
     embeddedReleaseLabel,
     remoteReleaseLabel,
-    notice,
+    notice: { ...notice, reinstallFallback },
     dismissForSession,
-    noteRefreshAttempt,
-    showHardRecovery,
     setChunkStale,
     refreshRemote,
   }

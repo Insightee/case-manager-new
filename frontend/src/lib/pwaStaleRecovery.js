@@ -1,5 +1,7 @@
 /** Detect stale PWA / cached bundle issues after deploys (field therapists & parents). */
 
+import { getCanonicalPortalUrl } from './canonicalAppUrl.js'
+
 export const PWA_STALE_HINT_KEY = 'insightcase:pwa-stale-hint'
 
 const STALE_MESSAGE_FRAGMENTS = [
@@ -67,13 +69,15 @@ function isGenericNetworkFailureMessage(msg) {
   return false
 }
 
-export function portalUrlForBrowser() {
+export function portalUrlForBrowser(portalId = 'parent') {
   if (typeof window === 'undefined') return ''
+  const canonical = getCanonicalPortalUrl(portalId)
+  if (canonical) return canonical
   return window.location.href
 }
 
-export async function copyPortalUrlForBrowser() {
-  const url = portalUrlForBrowser()
+export async function copyPortalUrlForBrowser(portalId = 'parent') {
+  const url = portalUrlForBrowser(portalId)
   if (!url) return { ok: false }
   try {
     if (navigator.clipboard?.writeText) {
@@ -84,4 +88,8 @@ export async function copyPortalUrlForBrowser() {
     // fall through
   }
   return { ok: false, url }
+}
+
+export async function copyCanonicalPortalUrl(portalId = 'parent') {
+  return copyPortalUrlForBrowser(portalId)
 }

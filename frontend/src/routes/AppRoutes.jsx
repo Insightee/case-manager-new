@@ -29,6 +29,7 @@ import { TherapistSlotsPage } from '../components/therapist/TherapistSlotsPage.j
 import { NotificationCenterPage } from '../components/shared/NotificationCenterPage.jsx'
 import { RouteLoading } from '../components/shared/RouteLoading.jsx'
 import { PortalRouteError } from '../components/shared/PortalRouteError.jsx'
+import { AppVersionUpdateHarness } from '../pages/e2e/AppVersionUpdateHarness.jsx'
 
 const ReportEditPage = lazy(() =>
   import('../components/reports/ReportEditPage.jsx').then((m) => ({ default: m.ReportEditPage }))
@@ -725,6 +726,10 @@ export function AppRoutes() {
       <Route path="/hr/memos" element={<Navigate to="/admin/support?tab=memos" replace />} />
       <Route path="/hr/tickets" element={<Navigate to="/admin/support?tab=tickets" replace />} />
       <Route path="/hr/*" element={<Navigate to="/admin/people" replace />} />
+
+      {import.meta.env.DEV ? (
+        <Route path="/e2e/app-version-update" element={<AppVersionUpdateHarness />} />
+      ) : null}
 
       <Route path="*" element={<Navigate to={DEFAULT_SIGN_IN_PATH} replace />} />
     </Routes>

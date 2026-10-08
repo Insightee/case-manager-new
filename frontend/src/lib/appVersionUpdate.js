@@ -1,4 +1,4 @@
-/** Build / service-worker version detection for PWA update prompts (all portals). */
+/** Build / version labels for optional update notice (all portals). Auto-update is handled in main.jsx. */
 
 import { isStandaloneDisplay } from './portalPwa.js'
 import {
@@ -7,13 +7,10 @@ import {
 } from './releaseLabel.js'
 
 export const VERSION_DISMISS_KEY = 'insightcase:version-notice-dismissed'
-export const VERSION_REFRESH_ATTEMPTS_KEY = 'insightcase:version-refresh-attempts'
-export const SW_UPDATE_WAITING_KEY = 'insightcase:sw-update-waiting'
+export const VERSION_PRIOR_STALE_KEY = 'insightcase:version-prior-stale-build'
 export const VERSION_CHECK_TS_KEY = 'insightcase:version-last-check'
-export const HARD_RECOVERY_SHOWN_KEY = 'insightcase:version-hard-shown'
 
 const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000
-const MAX_SOFT_REFRESH_ATTEMPTS = 2
 
 export function getEmbeddedBuildId() {
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BUILD_ID) {
@@ -25,6 +22,7 @@ export function getEmbeddedBuildId() {
 export { getEmbeddedReleaseLabel }
 
 export function shouldPollRemoteVersion() {
+  if (import.meta.env?.VITE_VERSION_POLL === 'true') return true
   return Boolean(import.meta.env?.PROD)
 }
 
@@ -50,33 +48,101 @@ export function isGenericNetworkError(err) {
 export function formatVersionNoticeLead(embedded, remote) {
   const you = embedded || 'unknown'
   const latest = remote || 'unknown'
-  return `You're on ${you}, latest is ${latest}. Tap Refresh now to load the latest build.`
+  return `You're on ${you}, latest is ${latest}.`
+}
+
+export function clearPriorStaleBuild() {
+  if (typeof localStorage === 'undefined') return
+  localStorage.removeItem(VERSION_PRIOR_STALE_KEY)
 }
 
 /**
- * @param {'ios' | 'android' | 'other'} platform
+ * After auto-update, offer reinstall guidance only if this build was already stale on a prior visit.
+ * @param {string} buildKey
+ * @param {boolean} remoteNewer
+ */
+export function shouldOfferReinstallFallback(buildKey, remoteNewer) {
+  if (!remoteNewer) {
+    clearPriorStaleBuild()
+    return false
+  }
+  if (typeof localStorage === 'undefined') return false
+  const key = buildKey || 'unknown'
+  const prior = localStorage.getItem(VERSION_PRIOR_STALE_KEY)
+  if (prior === key) return true
+  localStorage.setItem(VERSION_PRIOR_STALE_KEY, key)
+  return false
+}
+
+/**
+ * @param {'ios' | 'android' | 'desktop'} platform
  * @param {{ portalUrl: string, appName: string }} ctx
  */
 export function getReinstallSteps(platform, { portalUrl, appName }) {
-  const url = portalUrl || 'your portal link'
+  const link = portalUrl || 'your InsighteCase link'
   if (platform === 'ios') {
     return [
-      `Press and hold the ${appName} icon on your home screen and choose Remove App, then Delete from Home Screen.`,
-      `Open ${url} in Safari.`,
-      'Tap the Share button, then Add to Home Screen.',
+      { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' },
+      {
+        id: 'remove',
+        kind: 'text',
+        text: `Remove the old ${appName} shortcut from your home screen (press and hold the icon → Remove App → Delete App).`,
+      },
+      {
+        id: 'open-safari',
+        kind: 'action',
+        action: 'open_safari',
+        label: 'Open in Safari',
+        hint: `Open Safari, paste ${link}, and sign in.`,
+      },
+      {
+        id: 'add',
+        kind: 'text',
+        text: 'Tap Share → Add to Home Screen → Add to re-add the web app shortcut.',
+      },
     ]
   }
   if (platform === 'android') {
     return [
-      `Press and hold the ${appName} icon and choose Uninstall or Remove.`,
-      `Open ${url} in Chrome.`,
-      'Tap the ⋮ menu, then Install app or Add to Home screen.',
+      { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' },
+      {
+        id: 'remove',
+        kind: 'text',
+        text: `Remove the old ${appName} home screen shortcut (press and hold the icon → Uninstall or Remove).`,
+      },
+      {
+        id: 'open-chrome',
+        kind: 'action',
+        action: 'open_browser',
+        label: 'Open in Chrome',
+        hint: `Paste ${link} in Chrome if needed.`,
+      },
+      {
+        id: 'install',
+        kind: 'text',
+        text: 'Tap ⋮ → Install app or Add to Home screen to add the shortcut again.',
+      },
     ]
   }
   return [
-    `Remove the old ${appName} shortcut from your home screen or dock.`,
-    `Open ${url} in your browser.`,
-    'Add the portal to your home screen again from the browser menu.',
+    { id: 'copy', kind: 'action', action: 'copy', label: 'Copy link' },
+    {
+      id: 'open',
+      kind: 'action',
+      action: 'open_browser',
+      label: 'Open in Chrome or Edge tab',
+      hint: 'Use a normal browser tab — not the installed shortcut window.',
+    },
+    {
+      id: 'remove',
+      kind: 'text',
+      text: `Remove the old ${appName} shortcut. Chrome: in the app window, open the ⋮ menu → Uninstall ${appName}, or visit chrome://apps, right‑click the icon → Remove. Edge: … → Apps → Manage apps → remove the old shortcut.`,
+    },
+    {
+      id: 'install',
+      kind: 'text',
+      text: 'Re-add the shortcut: use the install icon in the address bar, or Chrome ⋮ → Save and share → Install page as app (Edge: Apps → Install this site as an app).',
+    },
   ]
 }
 
@@ -90,36 +156,19 @@ export function detectReinstallPlatform(userAgent = '') {
       navigator.maxTouchPoints > 1)
   if (isIos) return 'ios'
   if (/Android/i.test(ua)) return 'android'
-  return 'other'
+  return 'desktop'
 }
 
-export function markServiceWorkerUpdateWaiting() {
-  if (typeof sessionStorage === 'undefined') return
-  sessionStorage.setItem(SW_UPDATE_WAITING_KEY, String(Date.now()))
-}
-
-export function hasServiceWorkerUpdateWaiting() {
-  if (typeof sessionStorage === 'undefined') return false
-  return Boolean(sessionStorage.getItem(SW_UPDATE_WAITING_KEY))
-}
-
-export function clearServiceWorkerUpdateWaiting() {
-  if (typeof sessionStorage === 'undefined') return
-  sessionStorage.removeItem(SW_UPDATE_WAITING_KEY)
-}
-
-export function getRefreshAttemptCount() {
-  if (typeof sessionStorage === 'undefined') return 0
-  const raw = sessionStorage.getItem(VERSION_REFRESH_ATTEMPTS_KEY)
-  const n = Number(raw)
-  return Number.isFinite(n) ? n : 0
-}
-
-export function recordRefreshAttempt() {
-  if (typeof sessionStorage === 'undefined') return 0
-  const next = getRefreshAttemptCount() + 1
-  sessionStorage.setItem(VERSION_REFRESH_ATTEMPTS_KEY, String(next))
-  return next
+/**
+ * @param {string} httpsUrl
+ * @returns {string}
+ */
+export function buildIosSafariOpenUrl(httpsUrl) {
+  const raw = String(httpsUrl || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('x-safari-https://')) return raw
+  const stripped = raw.replace(/^https:\/\//i, '')
+  return `x-safari-https://${stripped}`
 }
 
 export function dismissVersionNoticeForSession(releaseKey) {
@@ -131,16 +180,6 @@ export function isVersionNoticeDismissed(releaseKey) {
   if (typeof sessionStorage === 'undefined') return false
   const dismissed = sessionStorage.getItem(VERSION_DISMISS_KEY)
   return dismissed && releaseKey && dismissed === releaseKey
-}
-
-export function markHardRecoveryShown() {
-  if (typeof sessionStorage === 'undefined') return
-  sessionStorage.setItem(HARD_RECOVERY_SHOWN_KEY, '1')
-}
-
-export function wasHardRecoveryShown() {
-  if (typeof sessionStorage === 'undefined') return false
-  return sessionStorage.getItem(HARD_RECOVERY_SHOWN_KEY) === '1'
 }
 
 export function canCheckVersionNow() {
@@ -158,13 +197,10 @@ export function markVersionChecked() {
 }
 
 /**
- * Whether to show any update / stale UI (banner or sheet).
- * Soft notice only when deployed release label is newer than the embedded client label.
  * @param {{
  *   embeddedReleaseLabel: string
  *   remoteReleaseLabel?: string | null
  *   chunkStale?: boolean
- *   swWaiting?: boolean
  *   standalone?: boolean
  * }} input
  */
@@ -173,31 +209,26 @@ export function shouldShowVersionNotice(input) {
     embeddedReleaseLabel,
     remoteReleaseLabel = null,
     chunkStale = false,
-    swWaiting = false,
     standalone = isStandaloneDisplay(),
   } = input
 
   const remoteNewer = isDeployedReleaseNewer(embeddedReleaseLabel, remoteReleaseLabel)
   const buildKey = remoteReleaseLabel || embeddedReleaseLabel || 'unknown'
 
-  if (!remoteNewer) return { show: false, mode: 'none', buildKey, remoteNewer: false }
-
-  if (isVersionNoticeDismissed(buildKey) && !chunkStale) {
-    return { show: false, mode: 'none', buildKey, remoteNewer: false }
+  if (!remoteNewer && !chunkStale) {
+    return { show: false, buildKey, remoteNewer: false, reinstallFallback: false }
   }
 
-  const refreshAttempts = getRefreshAttemptCount()
-  const hardEligible =
-    standalone &&
-    remoteNewer &&
-    refreshAttempts >= MAX_SOFT_REFRESH_ATTEMPTS &&
-    !wasHardRecoveryShown()
-
-  if (hardEligible) {
-    return { show: true, mode: 'hard', buildKey, remoteNewer: true }
+  if (isVersionNoticeDismissed(buildKey) && remoteNewer && !chunkStale) {
+    return { show: false, buildKey, remoteNewer: false, reinstallFallback: false }
   }
 
-  return { show: true, mode: 'soft', buildKey, remoteNewer: true }
+  return {
+    show: true,
+    buildKey,
+    remoteNewer,
+    reinstallFallback: false,
+  }
 }
 
 /**
