@@ -9,8 +9,15 @@ import {
  * @param {{ error: unknown, audience?: 'therapist'|'admin'|'parent', className?: string, tone?: 'warning'|'error' }} props
  */
 export function BillingCalcErrorNotice({ error, audience = 'therapist', className = '', tone = 'warning' }) {
-  const parsed = parseBillingCalcApiError(error)
-  const message = parsed ? billingCalcErrorBannerText(parsed, audience) : String(error?.message || '')
+  if (!error) return null
+  // Some callers still set plain-string errors (e.g. remove-session failures) — render them as-is.
+  const parsed = typeof error === 'string' ? null : parseBillingCalcApiError(error)
+  const message =
+    typeof error === 'string'
+      ? error
+      : parsed
+        ? billingCalcErrorBannerText(parsed, audience)
+        : String(error?.message || '') || 'Something went wrong. Try again in a moment.'
   if (!message) return null
 
   const base =
