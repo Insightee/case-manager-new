@@ -4,17 +4,41 @@ import test from 'node:test'
 import {
   appendReinstallParam,
   buildAndroidBrowserIntentUrl,
+  getInstalledMessage,
+  getManualAddLine,
   getRemoveAppOneLiner,
   isReinstallLanding,
   launchReinstallInBrowser,
+  portalFromPath,
+  stripReinstallParam,
+  supportsOneTapInstall,
 } from './pwaReinstall.js'
 import { detectReinstallPlatform } from './appVersionUpdate.js'
 
-test('appendReinstallParam and isReinstallLanding', () => {
+test('appendReinstallParam and isReinstallLanding treat the flag as a strict boolean', () => {
   const url = appendReinstallParam('https://www.insighte.org/therapist')
-  assert.match(url, /reinstall=1/)
+  assert.equal(url, 'https://www.insighte.org/therapist?reinstall=1')
   assert.equal(isReinstallLanding('reinstall=1'), true)
+  assert.equal(isReinstallLanding('?reinstall=1'), true)
   assert.equal(isReinstallLanding('reinstall=0'), false)
+  assert.equal(isReinstallLanding('reinstall=https://evil.example'), false)
+  assert.equal(isReinstallLanding(''), false)
+})
+
+test('stripReinstallParam keeps other params and the path', () => {
+  assert.equal(stripReinstallParam('https://www.insighte.org/parent?reinstall=1'), '/parent')
+  assert.equal(stripReinstallParam('https://www.insighte.org/parent?tab=a&reinstall=1#x'), '/parent?tab=a#x')
+})
+
+test('portalFromPath maps portal and login paths only', () => {
+  assert.equal(portalFromPath('/therapist'), 'therapist')
+  assert.equal(portalFromPath('/therapistlogin'), 'therapist')
+  assert.equal(portalFromPath('/parent/home'), 'parent')
+  assert.equal(portalFromPath('/clientlogin'), 'parent')
+  assert.equal(portalFromPath('/admin/people'), 'admin')
+  assert.equal(portalFromPath('/adminlogin'), 'admin')
+  assert.equal(portalFromPath('/therapistsomething'), null)
+  assert.equal(portalFromPath('/login'), null)
 })
 
 test('detectReinstallPlatform covers iPhone, iPad touch Mac, Android, desktop Chrome and Edge', () => {
@@ -46,29 +70,55 @@ test('detectReinstallPlatform covers iPhone, iPad touch Mac, Android, desktop Ch
   )
 })
 
-test('getRemoveAppOneLiner is short and platform-specific', () => {
-  assert.match(getRemoveAppOneLiner('ios', 'InsighteCase Therapist'), /Remove App/)
-  assert.match(getRemoveAppOneLiner('desktop', 'InsighteCase Therapist'), /chrome:\/\/apps|Uninstall/)
+test('one-tap install only where Chrome/Edge expose beforeinstallprompt', () => {
+  assert.equal(supportsOneTapInstall('android'), true)
+  assert.equal(supportsOneTapInstall('android-edge'), true)
+  assert.equal(supportsOneTapInstall('desktop'), true)
+  assert.equal(supportsOneTapInstall('desktop-edge'), true)
+  assert.equal(supportsOneTapInstall('ios'), false)
+  assert.equal(supportsOneTapInstall('ios-chrome'), false)
+  assert.equal(supportsOneTapInstall('mac-safari'), false)
 })
 
-test('buildAndroidBrowserIntentUrl targets Chrome package', () => {
+test('copy is platform-specific and plain', () => {
+  assert.match(getRemoveAppOneLiner('ios', 'InsighteCase Therapist'), /Press and hold the old InsighteCase Therapist icon/)
+  assert.match(getRemoveAppOneLiner('android', 'X'), /Uninstall/)
+  assert.match(getRemoveAppOneLiner('desktop', 'X'), /⋮/)
+  assert.match(getRemoveAppOneLiner('desktop-edge', 'X'), /…/)
+  assert.doesNotMatch(getRemoveAppOneLiner('mac-safari', 'X'), /chrome:\/\//)
+  assert.match(getManualAddLine('ios'), /Share button, then Add to Home Screen/)
+  assert.match(getManualAddLine('ios-chrome'), /address bar/)
+  assert.match(getManualAddLine('mac-safari'), /Add to Dock/)
+  assert.match(getInstalledMessage('android'), /^Installed\. Open InsighteCase from your home screen\.$/)
+  assert.match(getInstalledMessage('desktop-edge'), /desktop/)
+})
+
+test('buildAndroidBrowserIntentUrl targets the browser package with a canonical https fallback', () => {
   const intent = buildAndroidBrowserIntentUrl('https://www.insighte.org/parent?reinstall=1')
-  assert.match(intent, /intent:\/\/www\.insighte\.org/)
-  assert.match(intent, /com\.android\.chrome/)
+  assert.match(intent, /^intent:\/\/www\.insighte\.org\/parent\?reinstall=1#Intent;scheme=https;/)
+  assert.match(intent, /package=com\.android\.chrome;/)
+  assert.match(intent, /S\.browser_fallback_url=https%3A%2F%2Fwww\.insighte\.org%2Fparent%3Freinstall%3D1;end$/)
+  assert.match(
+    buildAndroidBrowserIntentUrl('https://www.insighte.org/parent?reinstall=1', 'com.microsoft.emmx'),
+    /package=com\.microsoft\.emmx;/,
+  )
+  assert.match(buildAndroidBrowserIntentUrl('https://www.insighte.org/x', 'evil;package=x'), /package=com\.android\.chrome;/)
+  assert.throws(() => buildAndroidBrowserIntentUrl('javascript:alert(1)'))
+  assert.throws(() => buildAndroidBrowserIntentUrl('http://www.insighte.org/parent'))
 })
 
-test('launchReinstallInBrowser uses intent on Android', () => {
-  const original = globalThis.window
-  let href = ''
-  globalThis.window = {
-    location: { href: '', assign: (v) => { href = v } },
-    open: () => null,
-  }
-  Object.defineProperty(globalThis.window.location, 'href', {
-    set(v) { href = v },
-    get() { return href },
-  })
-  launchReinstallInBrowser('android', 'https://www.insighte.org/therapist')
-  assert.match(href, /^intent:\/\//)
-  globalThis.window = original
+test('launchReinstallInBrowser opens only the canonical portal URL per platform', () => {
+  const calls = []
+  const nav = { assign: (u) => calls.push(['assign', u]), open: (...a) => calls.push(['open', ...a]) }
+  launchReinstallInBrowser('android', 'therapist', nav)
+  launchReinstallInBrowser('android-edge', 'parent', nav)
+  launchReinstallInBrowser('ios', 'admin', nav)
+  launchReinstallInBrowser('desktop', 'therapist', nav)
+  launchReinstallInBrowser('desktop-edge', 'bogus', nav)
+  assert.match(calls[0][1], /^intent:\/\/[^/]+\/therapist\?reinstall=1#Intent;.*package=com\.android\.chrome;/)
+  assert.match(calls[1][1], /package=com\.microsoft\.emmx;/)
+  assert.match(calls[2][1], /^x-safari-https:\/\/[^/]+\/admin\?reinstall=1$/)
+  assert.deepEqual(calls[3].slice(2), ['_blank', 'noopener,noreferrer'])
+  assert.match(calls[3][1], /^https?:\/\/[^/]+\/therapist\?reinstall=1$/)
+  assert.match(calls[4][1], /\/parent\?reinstall=1$/)
 })

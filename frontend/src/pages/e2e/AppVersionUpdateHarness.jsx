@@ -1,10 +1,17 @@
+import { useSearchParams } from 'react-router-dom'
 import { PortalInstallProvider } from '../../context/PortalInstallContext.jsx'
 import { AppVersionNotice } from '../../components/shared/AppVersionNotice.jsx'
 
+const PORTALS = ['parent', 'therapist', 'admin']
+
 /**
- * Dev/e2e-only page to exercise version notice without production polling.
+ * Dev/e2e-only page to exercise the version notice (as seen inside an old installed app)
+ * and the ?reinstall=1 landing without production polling. ?portal=parent|therapist|admin
  */
 export function AppVersionUpdateHarness() {
+  const [searchParams] = useSearchParams()
+  const requested = searchParams.get('portal')
+  const portal = PORTALS.includes(requested) ? requested : 'therapist'
   const notice = {
     show: true,
     buildKey: 'i1008',
@@ -13,7 +20,7 @@ export function AppVersionUpdateHarness() {
   }
 
   return (
-    <PortalInstallProvider portal="therapist">
+    <PortalInstallProvider portal={portal}>
       <div
         id="app-version-harness"
         style={{
@@ -24,7 +31,7 @@ export function AppVersionUpdateHarness() {
         }}
       >
         <AppVersionNotice
-          portalId="therapist"
+          portalId={portal}
           variant="banner"
           testOverrides={{
             embeddedReleaseLabel: 'i1006',
