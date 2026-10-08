@@ -215,7 +215,9 @@ export function AdminCaseDetailPage() {
     <div className="admin-page admin-case-detail-page">
       {caseRow.in_transition ? (
         <p className="admin-alert admin-alert--info">
-          Therapist handover in progress. Case changes are paused; transition logs, transition-date management, and incident reporting remain available.
+          Therapist handover in progress. Both therapists can keep scheduling (within each therapist’s handover dates),
+          session logs, and clinical work. Billing, reassignment, and structural case edits stay paused until the
+          handover completes.
         </p>
       ) : null}
       <p style={{ marginBottom: 8 }}>

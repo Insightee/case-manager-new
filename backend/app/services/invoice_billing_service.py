@@ -231,9 +231,14 @@ def therapist_active_on_session_date(
         return True, None
     matches = [a for a in covering if a.therapist_user_id == therapist_user_id]
     if len(covering) > 1:
-        # Multiple active windows on same day
         therapists = {a.therapist_user_id for a in covering}
         if len(therapists) > 1:
+            from app.services import therapist_transition_service as transition_svc
+
+            if transition_svc.is_transition_assignment_overlap(db, case_id, covering):
+                if matches:
+                    return True, None
+                return False, "ASSIGNMENT_GAP"
             return False, "ASSIGNMENT_OVERLAP"
     if not matches:
         return False, "ASSIGNMENT_GAP"

@@ -4,6 +4,12 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { mapParentBookedSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { formatDisplayDateLabel, todayIsoIST } from '../../lib/datetime.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
+import {
+  handoverBookingHintForTherapist,
+  handoverPolicyFromTherapists,
+  normalizeBookingErrorMessage,
+  TRANSITION_PARENT_BOOKING_HINT,
+} from '../../lib/therapistTransitionBooking.js'
 
 function todayIso() {
   return todayIsoIST()
@@ -75,6 +81,12 @@ export function ParentBookSessionForm({
     }
   }, [therapists, therapistId, rescheduleFrom])
 
+  const handoverPolicy = useMemo(() => handoverPolicyFromTherapists(therapists), [therapists])
+  const handoverHint = useMemo(
+    () => handoverBookingHintForTherapist(handoverPolicy, therapistId),
+    [handoverPolicy, therapistId],
+  )
+
   const loadSlots = useCallback(async () => {
     if (!therapistId || !selectedDate) {
       setSlots([])
@@ -83,8 +95,9 @@ export function ParentBookSessionForm({
     setSlotsLoading(true)
     setError('')
     try {
+      const caseQuery = numericCaseId ? `&case_id=${numericCaseId}` : ''
       const rows = await apiFetch(
-        `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}`,
+        `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}${caseQuery}`,
       )
       setSlots(rows || [])
       setSelectedSlotId('')
@@ -94,7 +107,7 @@ export function ParentBookSessionForm({
     } finally {
       setSlotsLoading(false)
     }
-  }, [therapistId, selectedDate, setError])
+  }, [therapistId, selectedDate, numericCaseId, setError])
 
   useEffect(() => {
     loadSlots()
@@ -134,7 +147,10 @@ export function ParentBookSessionForm({
       }
       setSelectedSlotId('')
     } catch (err) {
-      setError(err.message || (rescheduleFrom ? 'Could not reschedule' : 'Could not book'))
+      setError(
+        normalizeBookingErrorMessage(err.message) ||
+          (rescheduleFrom ? 'Could not reschedule' : 'Could not book'),
+      )
     } finally {
       setActing(false)
     }
@@ -167,6 +183,12 @@ export function ParentBookSessionForm({
         Your <strong>therapist</strong> is assigned for therapy sessions. Your <strong>case manager</strong> is assigned
         separately by the clinic — they may schedule review meetings with you directly.
       </p>
+      {handoverPolicy ? (
+        <p className="parent-book-form__help parent-book-form__help--handover" role="status">
+          {TRANSITION_PARENT_BOOKING_HINT}
+          {handoverHint ? ` ${handoverHint}` : ''}
+        </p>
+      ) : null}
 
       <div className="parent-book-form__grid">
         <label className="parent-book-form__field">

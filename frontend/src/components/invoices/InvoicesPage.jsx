@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { resolveBillingCalcErrorMessage } from '../../lib/billingCalcErrors.js'
 import { EarningsTrendChart } from './EarningsTrendChart.jsx'
 import { GenerateInvoiceModal } from './GenerateInvoiceModal.jsx'
 import { InvoiceBreakdownModal } from './InvoiceBreakdownModal.jsx'
@@ -145,7 +146,7 @@ export function InvoicesPage() {
         await apiDownload(`/api/v1/invoices/${id}/pdf`, `insighte_statement_${id}.pdf`)
         showToast(`Payslip downloaded for ${inv.month || 'statement'}.`)
       } catch (err) {
-        showToast(err.message || 'Could not download payslip PDF')
+        showToast(resolveBillingCalcErrorMessage(err, 'therapist'))
       } finally {
         setDownloadingId(null)
       }

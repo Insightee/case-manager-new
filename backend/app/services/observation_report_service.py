@@ -10,6 +10,7 @@ from app.models.clinical_report import ClinicalReport, ClinicalReportSection
 from app.models.goal_repository import GoalRepositoryItem, RepositoryItemStatus, StrategyRepositoryItem
 from app.models.user import User
 from app.services import report_engine_service, report_status_service
+from app.services.daily_log_narrative import NARRATIVE_TEXT_FIELDS, iter_narrative_text_values
 
 
 def ensure_checklist_bridge(db: Session, case: Case, user: User) -> tuple[ClinicalReport, object]:
@@ -167,9 +168,11 @@ def _session_log_suggestions(db: Session, case_id: int, limit: int = 5) -> list[
     )
     out: list[dict] = []
     seen: set[str] = set()
+    suggestion_field_order = ("goals_addressed", "observations", "session_notes", "activities_done")
+    assert set(suggestion_field_order) == set(NARRATIVE_TEXT_FIELDS)
     for log in logs:
-        for field in (log.goals_addressed, log.observations, log.session_notes, log.activities_done):
-            text = (field or "").strip()
+        for name in suggestion_field_order:
+            text = (getattr(log, name, None) or "").strip()
             if len(text) < 8:
                 continue
             snippet = text.split(".")[0].strip()[:100]
@@ -318,7 +321,7 @@ def generate_session_insights(db: Session, report: ClinicalReport, case: Case) -
     )
     evidence_snippets = []
     for log in recent_logs:
-        for field in (log.observations, log.session_notes, log.goals_addressed):
+        for field in iter_narrative_text_values(log):
             text = (field or "").strip()
             if len(text) >= 12:
                 evidence_snippets.append(

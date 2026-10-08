@@ -605,7 +605,12 @@ export async function fetchAuthenticatedBlob(path, { timeoutMs = DEFAULT_TIMEOUT
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(typeof err.detail === 'string' ? err.detail : 'Download failed')
+    const detail = err.detail
+    const message = parseApiErrorDetail(detail, res.statusText) || 'Download failed'
+    const apiError = new Error(message)
+    apiError.status = res.status
+    apiError.detail = detail
+    throw apiError
   }
   const blob = await res.blob()
   return { blob, url: URL.createObjectURL(blob) }
