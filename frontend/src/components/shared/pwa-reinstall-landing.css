@@ -1,33 +1,90 @@
 .pwa-reinstall-landing {
-  margin: 0 0 16px;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid #c5d0c8;
-  background: #f4f7f5;
-  box-shadow: 0 2px 8px rgba(15, 61, 46, 0.08);
+  z-index: 230;
 }
 
-.pwa-reinstall-landing__title {
-  margin: 0 0 10px;
-  font-size: 1.0625rem;
+@media (min-width: 901px) {
+  .pwa-reinstall-landing {
+    align-items: center;
+    padding-bottom: 16px;
+  }
+}
+
+.pwa-reinstall-landing__panel {
+  border-radius: 16px;
+}
+
+.pwa-reinstall-landing__panel:focus {
+  outline: none;
+}
+
+.pwa-reinstall-landing__steps {
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.pwa-reinstall-landing__steps > li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid #dde4de;
+}
+
+.pwa-reinstall-landing__steps > li:first-child {
+  border-top: none;
+}
+
+.pwa-reinstall-landing__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #e3ece6;
+  color: #0f3d2e;
+  font-weight: 700;
+  font-size: 0.9375rem;
+}
+
+.pwa-reinstall-landing__step-body {
+  min-width: 0;
+}
+
+.pwa-reinstall-landing__step-label {
+  margin: 2px 0 4px;
+  font-size: 1rem;
   font-weight: 700;
   color: #0f3d2e;
 }
 
-.pwa-reinstall-landing__hint {
-  margin: 8px 0 0;
+.pwa-reinstall-landing__step-text {
+  margin: 0 0 10px;
   font-size: 1rem;
   line-height: 1.45;
-  color: #526057;
+  color: #334155;
+  overflow-wrap: anywhere;
 }
 
-.pwa-reinstall-landing__install {
+.pwa-reinstall-landing__cta {
   width: 100%;
 }
 
+.pwa-reinstall-landing__cta:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.pwa-reinstall-landing__later {
+  align-self: center;
+}
+
 .pwa-reinstall-landing__success {
-  margin: 10px 0 0;
-  font-size: 0.9375rem;
+  margin: 0 0 16px;
+  font-size: 1rem;
   font-weight: 600;
+  line-height: 1.45;
   color: #166534;
 }

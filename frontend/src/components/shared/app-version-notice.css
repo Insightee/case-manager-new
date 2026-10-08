@@ -60,6 +60,20 @@
   text-underline-offset: 2px;
 }
 
+.app-version-notice__minor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.app-version-notice__hint {
+  margin: 8px 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: #526057;
+}
+
 .app-version-notice__note {
   margin: 10px 0 0;
   font-size: 0.9375rem;
@@ -162,10 +176,6 @@
   margin-bottom: 12px;
 }
 
-.app-version-sheet__steps--compact li {
-  margin-bottom: 14px;
-}
-
 .app-version-sheet__step-num {
   font-weight: 700;
   color: #0f3d2e;
@@ -201,7 +211,7 @@
     align-items: stretch;
   }
 
-  .app-version-notice__later {
-    align-self: flex-start;
+  .app-version-notice__minor {
+    justify-content: flex-start;
   }
 }

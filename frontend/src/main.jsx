@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { setPwaUpdateHandler } from './lib/pwaUpdate.js'
+import { initInstallPromptCapture } from './lib/installPromptStore.js'
+import { captureReinstallLanding } from './lib/pwaReinstall.js'
 import './index.css'
 import './styles/forest-light-theme.css'
 import './styles/parent-portal-theme.css'
@@ -22,6 +24,10 @@ if (import.meta.env.DEV && typeof navigator !== 'undefined' && 'serviceWorker' i
   })
   setPwaUpdateHandler(updateSW)
 }
+
+// Capture install prompt + ?reinstall=1 before React renders (login redirects drop the query).
+initInstallPromptCapture()
+captureReinstallLanding()
 
 // Canonical host: apex insighte.org 308-redirects and breaks credentialed /api PATCH preflights.
 if (typeof window !== 'undefined' && window.location.hostname === 'insighte.org') {
