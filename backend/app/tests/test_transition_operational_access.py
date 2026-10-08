@@ -431,3 +431,19 @@ def test_session_start_allowed_during_transition(transition_case):
     if start.status_code == 409:
         assert "transition" not in start.text.lower()
         assert "handover" not in start.text.lower()
+
+
+def test_booking_availability_parent_cannot_probe_foreign_case_id():
+    """Parents may only pass case_id for their own cases (handover filtering is case-specific)."""
+    parent_headers = _headers(_login("parent@demo.com"))
+    res = client.get(
+        "/api/v1/booking/availability",
+        headers=parent_headers,
+        params={
+            "therapist_id": 1,
+            "from_date": date.today().isoformat(),
+            "to_date": date.today().isoformat(),
+            "case_id": 987654321,
+        },
+    )
+    assert res.status_code == 404, res.text

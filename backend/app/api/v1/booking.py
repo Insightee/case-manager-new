@@ -113,6 +113,9 @@ def booking_availability(
 ):
     if RoleName.PARENT.value in user.role_names:
         _require_parent_booking(user)
+        if case_id is not None and case_id not in _parent_case_ids(db, user):
+            # Handover filtering is case-specific; don't let a parent probe other families' cases.
+            raise HTTPException(status_code=404, detail="Case not found")
     elif case_id is not None:
         case = case_service.get_case(db, case_id)
         if not case:
