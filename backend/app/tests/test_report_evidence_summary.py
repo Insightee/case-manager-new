@@ -206,8 +206,8 @@ def test_evidence_summary_log_with_narrative():
     assert "breathing strategy" in row["snippet"]
 
 
-def test_evidence_summary_therapist_admin_parent_portals_share_endpoint():
-    """Therapist builder, CM case workspace, and parent case view all use the same API."""
+def test_evidence_summary_therapist_admin_portals_share_endpoint_parent_blocked():
+    """Therapist builder and CM case workspace share the API; parents are blocked (not parent-safe)."""
     db = SessionLocal()
     try:
         case_id, report_id = _case_report_and_logs(
@@ -220,9 +220,13 @@ def test_evidence_summary_therapist_admin_parent_portals_share_endpoint():
 
     therapist_body = _get_evidence_summary(report_id, _login("therapist@demo.com"))
     cm_body = _get_evidence_summary(report_id, cm_headers_for_case(client, case_id))
-    parent_body = _get_evidence_summary(report_id, _login("parent@demo.com"))
+    parent_res = client.get(
+        f"/api/v1/reports/{report_id}/evidence-summary", headers=_login("parent@demo.com")
+    )
+    assert parent_res.status_code == 403, parent_res.text
+    assert "Shared narrative" not in parent_res.text
 
-    for body in (therapist_body, cm_body, parent_body):
+    for body in (therapist_body, cm_body):
         assert body["session_logs"] == 1
         assert body["logs_with_notes"] == 1
         assert body["recent_sessions"][0]["has_notes"] is True
