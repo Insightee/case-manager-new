@@ -5,7 +5,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { clearLogDraft } from '../../lib/logDraftStore.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { queryKeys } from '../../lib/queryClient.js'
+import { focusRefetchLive, queryKeys } from '../../lib/queryClient.js'
 import {
   patchCachesAfterLogSave,
   patchCachesAfterPendingLogDiscarded,
@@ -93,6 +93,7 @@ export function DailyLogsPage() {
       return enrichLogsWithCommentCounts(rows, apiFetch)
     },
     enabled: therapistId != null,
+    refetchOnWindowFocus: focusRefetchLive,
   })
   const upcomingRaw = workspace?.upcoming || []
   const active = workspace?.active_session || null

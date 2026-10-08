@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { formatNotificationBody, resolveNotificationLink, resolveNotificationLinkAsync } from './notificationLinks.js'
+import { NOTIFICATION_POLL_MS } from '../../lib/pollingIntervals.js'
 
 const DROPDOWN_WIDTH = 360
 const DROPDOWN_MAX_HEIGHT = 520
@@ -73,7 +74,7 @@ export function NotificationBell({ portal }) {
     const t = setInterval(() => {
       if (document.visibilityState !== 'visible') return
       load()
-    }, 120000)
+    }, NOTIFICATION_POLL_MS)
     return () => clearInterval(t)
   }, [])
 

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, apiPostKeepalive } from '../lib/apiClient.js'
+import { USAGE_FLUSH_INTERVAL_MS } from '../lib/pollingIntervals.js'
+import { bindUsageFlushOnLeave, sendUsageQueue } from '../lib/usageFlush.js'
 
 const STORAGE_KEY = 'insightcase:usage:chunks:v1'
 const MAX_QUEUE = 240
-const FLUSH_INTERVAL_MS = 15 * 60 * 1000
+const FLUSH_INTERVAL_MS = USAGE_FLUSH_INTERVAL_MS
 const IDLE_MS = 60 * 1000
 
 function nowIso() {
@@ -77,24 +79,23 @@ export function useAppUsageTracker({ enabled, userId, portal, routePath }) {
       countersRef.current = { active: 0, idle: 0, hidden: 0 }
       metaRef.current.chunkStartedAt = nowIso()
 
-      const nextQueue = [...queueRef.current, chunk].slice(-MAX_QUEUE)
-      queueRef.current = nextQueue
-      saveQueue(nextQueue)
-      setSyncState('retry_pending')
-
-      const payload = { chunks: queueRef.current }
-      try {
-        setSyncState('syncing')
-        const res = useKeepalive
-          ? await apiPostKeepalive('/api/v1/auth/activity/batch', payload)
-          : await apiFetch('/api/v1/auth/activity/batch', { method: 'POST', body: JSON.stringify(payload) })
-        if (useKeepalive && !res?.ok) throw new Error('Keepalive sync failed')
-        queueRef.current = []
-        saveQueue([])
-        setSyncState('synced')
-      } catch {
-        setSyncState('retry_pending')
-      }
+      setSyncState('syncing')
+      const ok = await sendUsageQueue({
+        getQueue: () => queueRef.current,
+        setQueue: (q) => {
+          queueRef.current = q
+        },
+        save: saveQueue,
+        chunk,
+        maxQueue: MAX_QUEUE,
+        send: async (payload) => {
+          const res = useKeepalive
+            ? await apiPostKeepalive('/api/v1/auth/activity/batch', payload)
+            : await apiFetch('/api/v1/auth/activity/batch', { method: 'POST', body: JSON.stringify(payload) })
+          if (useKeepalive && !res?.ok) throw new Error('Keepalive sync failed')
+        },
+      })
+      setSyncState(ok ? 'synced' : 'retry_pending')
     },
     [enabled, userId, portal, routePath],
   )
@@ -139,17 +140,7 @@ export function useAppUsageTracker({ enabled, userId, portal, routePath }) {
       void flush({ reason: 'interval' })
     }, FLUSH_INTERVAL_MS)
 
-    const onPageHide = () => {
-      void flush({ reason: 'pagehide', useKeepalive: true })
-    }
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        void flush({ reason: 'hidden', useKeepalive: true })
-      }
-    }
-
-    window.addEventListener('pagehide', onPageHide)
-    document.addEventListener('visibilitychange', onVisibility)
+    const unbindLeaveFlush = bindUsageFlushOnLeave({ flush, win: window, doc: document })
 
     // Boot retry for unsynced queue.
     if (queueRef.current.length > 0) {
@@ -162,8 +153,7 @@ export function useAppUsageTracker({ enabled, userId, portal, routePath }) {
       for (const evt of interactionEvents) window.removeEventListener(evt, markInteraction)
       window.removeEventListener('focus', markInteraction)
       document.removeEventListener('visibilitychange', markInteraction)
-      window.removeEventListener('pagehide', onPageHide)
-      document.removeEventListener('visibilitychange', onVisibility)
+      unbindLeaveFlush()
       void flush({ reason: 'cleanup', useKeepalive: true })
     }
   }, [enabled, userId, flush])

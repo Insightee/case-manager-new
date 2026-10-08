@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
-import { formatTimestampDateIN } from '../../lib/datetime.js'
+import { formatTimeIN12, formatTimestampDateIN } from '../../lib/datetime.js'
+import { ADMIN_STATS_REFRESH_MS } from '../../lib/pollingIntervals.js'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, PeopleListPagination } from './ui/index.js'
 import { AdminOpsKpiGrid } from './AdminOpsKpiGrid.jsx'
 import './admin-platform-stats.css'
@@ -162,6 +163,7 @@ export function AdminPlatformStatsPage() {
   const [roleFilter, setRoleFilter] = useState('')
   const [portalFilter, setPortalFilter] = useState('')
   const [activityPage, setActivityPage] = useState(1)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
   const searchDebounced = useDebouncedValue(search, 300)
 
   const loadStats = useCallback(() => {
@@ -170,6 +172,7 @@ export function AdminPlatformStatsPage() {
     return apiFetch(`/api/v1/admin/platform-stats?days=${days}`)
       .then((data) => {
         setStats(data)
+        setLastUpdatedAt(new Date().toISOString())
       })
       .catch((err) => {
         setStats(null)
@@ -192,6 +195,7 @@ export function AdminPlatformStatsPage() {
     return apiFetch(`/api/v1/admin/platform-stats/activity?${qs}`)
       .then((data) => {
         setActivity(data)
+        setLastUpdatedAt(new Date().toISOString())
       })
       .catch((err) => {
         setActivity(null)
@@ -207,14 +211,14 @@ export function AdminPlatformStatsPage() {
       return undefined
     }
     loadStats()
-    const timer = window.setInterval(loadStats, 60_000)
+    const timer = window.setInterval(loadStats, ADMIN_STATS_REFRESH_MS)
     return () => window.clearInterval(timer)
   }, [can, loadStats])
 
   useEffect(() => {
     if (!can('admin.override')) return undefined
     loadActivity()
-    const timer = window.setInterval(loadActivity, 60_000)
+    const timer = window.setInterval(loadActivity, ADMIN_STATS_REFRESH_MS)
     return () => window.clearInterval(timer)
   }, [can, loadActivity])
 
@@ -281,12 +285,17 @@ export function AdminPlatformStatsPage() {
             </div>
             <button
               type="button"
-              className="admin-btn admin-btn--secondary"
+              className="admin-btn admin-btn--secondary admin-platform-stats__refresh"
               onClick={refreshAll}
               disabled={loading || activityLoading}
+              aria-describedby="admin-platform-stats-updated"
             >
-              Refresh
+              {loading || activityLoading ? 'Refreshing…' : 'Refresh'}
             </button>
+            <p id="admin-platform-stats-updated" className="admin-platform-stats__updated" aria-live="polite">
+              {lastUpdatedAt ? `Last updated ${formatTimeIN12(lastUpdatedAt)}` : 'Loading…'}
+              <span className="admin-platform-stats__updated-hint"> · auto-refreshes every 10 min</span>
+            </p>
           </div>
         }
       />

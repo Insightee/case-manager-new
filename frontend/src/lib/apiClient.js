@@ -383,6 +383,32 @@ export function stopSessionKeepAlive() {
   }
 }
 
+/** @type {Set<(info: { path: string, method: string }) => void>} */
+const mutationListeners = new Set()
+
+/**
+ * Subscribe to successful non-GET apiFetch calls (used to invalidate small client caches such as
+ * the staff directory). Listener errors never affect the request.
+ * @param {(info: { path: string, method: string }) => void} fn
+ * @returns {() => void} unsubscribe
+ */
+export function onApiMutationSuccess(fn) {
+  mutationListeners.add(fn)
+  return () => mutationListeners.delete(fn)
+}
+
+function notifyMutationSuccess(path, method) {
+  const m = String(method || 'GET').toUpperCase()
+  if (m === 'GET' || m === 'HEAD' || mutationListeners.size === 0) return
+  for (const fn of mutationListeners) {
+    try {
+      fn({ path: String(path || ''), method: m })
+    } catch {
+      // ignore listener errors
+    }
+  }
+}
+
 export async function apiFetch(path, options = {}) {
   const { params, timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
   let url = path
@@ -484,6 +510,7 @@ export async function apiFetch(path, options = {}) {
     throw apiError
   }
 
+  notifyMutationSuccess(path, fetchOptions.method)
   if (res.status === 204) return null
   const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
   recordApiMetric(path, elapsed, true)
