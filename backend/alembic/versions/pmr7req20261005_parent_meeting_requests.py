@@ -1,7 +1,7 @@
 """parent meeting requests
 
 Revision ID: pmr7req20261005
-Revises: i2all3cases4fin
+Revises: 31fb30395ec2
 Create Date: 2026-10-05
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 from migration_util import has_table
 
 revision: str = "pmr7req20261005"
-down_revision: Union[str, None] = "i2all3cases4fin"
+down_revision: Union[str, None] = "31fb30395ec2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

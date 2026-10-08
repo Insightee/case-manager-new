@@ -1221,6 +1221,98 @@ register_head(
 )
 
 
+def _seed_tvault001(db: Session) -> dict[str, Any]:
+    from app.models.therapist_vault_document import TherapistVaultDocument, TherapistVaultDocumentStatus
+    from app.models.user import User
+
+    therapist = db.scalar(select(User).where(User.email == "therapist@demo.com"))
+    if not therapist:
+        therapist = db.scalar(select(User).limit(1))
+    if not therapist:
+        raise RuntimeError("Need a user — run demo_seed first")
+    doc = TherapistVaultDocument(
+        therapist_user_id=therapist.id,
+        slot_key="pan_card",
+        version=1,
+        status=TherapistVaultDocumentStatus.PENDING,
+        file_name="migration-proof.pdf",
+        file_path="therapist_vault/user_0/migration-proof.pdf",
+        mime_type="application/pdf",
+        size_bytes=12,
+        uploaded_by_user_id=therapist.id,
+    )
+    db.add(doc)
+    db.flush()
+    return {"document_id": doc.id, "therapist_user_id": therapist.id}
+
+
+register_head(
+    "tvault001",
+    tables_added=["therapist_vault_documents"],
+    columns_added=[],
+    seed=_seed_tvault001,
+)
+
+
+def _seed_31fb30395ec2(db: Session) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.models.ops_state_transition import OpsStateTransition
+
+    row = OpsStateTransition(
+        entity_type="support_ticket",
+        entity_id=0,
+        field_name="status",
+        old_value=None,
+        new_value="OPEN",
+        occurred_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    db.flush()
+    return {"transition_id": row.id}
+
+
+register_head(
+    "31fb30395ec2",
+    tables_added=["ops_state_transitions"],
+    columns_added=[],
+    seed=_seed_31fb30395ec2,
+)
+
+
+def _seed_pmr7req20261005(db: Session) -> dict[str, Any]:
+    from datetime import date
+
+    from app.models.case import Case
+    from app.models.parent_meeting_request import ParentMeetingRequest, ParentMeetingRequestStatus
+    from app.models.user import User
+
+    parent = db.scalar(select(User).where(User.email == "parent@demo.com"))
+    case = db.scalar(select(Case).limit(1))
+    therapist = db.scalar(select(User).where(User.email == "therapist@demo.com"))
+    if not parent or not case or not therapist:
+        raise RuntimeError("Need demo parent, case, and therapist — run demo_seed first")
+    row = ParentMeetingRequest(
+        case_id=case.id,
+        parent_user_id=parent.id,
+        therapist_user_id=therapist.id,
+        requested_date=date.today(),
+        status=ParentMeetingRequestStatus.PENDING,
+        note="migration-proof",
+    )
+    db.add(row)
+    db.flush()
+    return {"request_id": row.id, "case_id": case.id}
+
+
+register_head(
+    "pmr7req20261005",
+    tables_added=["parent_meeting_requests"],
+    columns_added=[],
+    seed=_seed_pmr7req20261005,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
