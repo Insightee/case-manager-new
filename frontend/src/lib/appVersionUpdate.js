@@ -9,8 +9,30 @@ import {
 export const VERSION_DISMISS_KEY = 'insightcase:version-notice-dismissed'
 export const VERSION_PRIOR_STALE_KEY = 'insightcase:version-prior-stale-build'
 export const VERSION_CHECK_TS_KEY = 'insightcase:version-last-check'
+export const VERSION_REMOTE_META_KEY = 'insightcase:version-remote-meta'
+/** Fired in this tab after a version.json result is stored (other tabs get the 'storage' event). */
+export const VERSION_META_EVENT = 'insightcase:version-meta'
 
-const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000
+/**
+ * The ONE knob for how often a device asks the server for /version.json: at most once per 12 hours,
+ * shared by every tab, reload and portal (parent, therapist, admin) via localStorage.
+ * Service-worker updates still happen on normal page loads (browser's own sw.js check).
+ */
+export const VERSION_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
+
+/** Fallback when localStorage is unavailable (private mode / blocked): once per page lifetime window. */
+let memoryLastCheck = 0
+/** @type {Promise<{ buildId: string, releaseLabel: string } | null> | null} */
+let inflightVersionFetch = null
+
+function safeLocalStorage() {
+  try {
+    if (typeof localStorage === 'undefined') return null
+    return localStorage
+  } catch {
+    return null
+  }
+}
 
 export function getEmbeddedBuildId() {
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BUILD_ID) {
@@ -265,18 +287,86 @@ export function isVersionNoticeDismissed(releaseKey) {
   return dismissed && releaseKey && dismissed === releaseKey
 }
 
-export function canCheckVersionNow() {
-  if (typeof sessionStorage === 'undefined') return true
-  const raw = sessionStorage.getItem(VERSION_CHECK_TS_KEY)
-  if (!raw) return true
-  const last = Number(raw)
-  if (!Number.isFinite(last)) return true
-  return Date.now() - last >= MIN_CHECK_INTERVAL_MS
+/**
+ * @param {{ now?: number, storage?: Storage | null }} [opts]
+ * @returns {number} epoch ms of the last version.json check on this device (0 if never)
+ */
+export function getLastVersionCheck(opts = {}) {
+  const storage = opts.storage !== undefined ? opts.storage : safeLocalStorage()
+  if (!storage) return memoryLastCheck
+  try {
+    const last = Number(storage.getItem(VERSION_CHECK_TS_KEY))
+    return Number.isFinite(last) && last > 0 ? last : 0
+  } catch {
+    return memoryLastCheck
+  }
 }
 
-export function markVersionChecked() {
-  if (typeof sessionStorage === 'undefined') return
-  sessionStorage.setItem(VERSION_CHECK_TS_KEY, String(Date.now()))
+/**
+ * True when no check has happened on this device in the last VERSION_CHECK_INTERVAL_MS.
+ * A timestamp in the future (clock moved back) counts as due so a device can't get stuck.
+ * @param {{ now?: number, storage?: Storage | null }} [opts]
+ */
+export function canCheckVersionNow(opts = {}) {
+  const now = opts.now ?? Date.now()
+  const last = getLastVersionCheck(opts)
+  if (!last) return true
+  const elapsed = now - last
+  if (elapsed < 0) return true
+  return elapsed >= VERSION_CHECK_INTERVAL_MS
+}
+
+/** @param {{ now?: number, storage?: Storage | null }} [opts] */
+export function msUntilNextVersionCheck(opts = {}) {
+  const now = opts.now ?? Date.now()
+  const last = getLastVersionCheck(opts)
+  if (!last || now < last) return 0
+  return Math.max(0, last + VERSION_CHECK_INTERVAL_MS - now)
+}
+
+/** @param {{ now?: number, storage?: Storage | null }} [opts] */
+export function markVersionChecked(opts = {}) {
+  const now = opts.now ?? Date.now()
+  memoryLastCheck = now
+  const storage = opts.storage !== undefined ? opts.storage : safeLocalStorage()
+  try {
+    storage?.setItem(VERSION_CHECK_TS_KEY, String(now))
+  } catch {
+    // memory fallback already set
+  }
+}
+
+const RELEASE_LABEL_RE = /^[A-Za-z0-9._-]{1,40}$/
+
+/**
+ * Last version.json result on this device (shared across tabs/portals).
+ * @param {{ storage?: Storage | null }} [opts]
+ * @returns {{ buildId: string, releaseLabel: string } | null}
+ */
+export function readCachedRemoteVersionMeta(opts = {}) {
+  const storage = opts.storage !== undefined ? opts.storage : safeLocalStorage()
+  if (!storage) return null
+  try {
+    const data = JSON.parse(storage.getItem(VERSION_REMOTE_META_KEY) || 'null')
+    if (!data || typeof data.releaseLabel !== 'string' || !RELEASE_LABEL_RE.test(data.releaseLabel)) return null
+    return {
+      buildId: typeof data.buildId === 'string' ? data.buildId.slice(0, 64) : '',
+      releaseLabel: data.releaseLabel,
+    }
+  } catch {
+    return null
+  }
+}
+
+function storeRemoteVersionMeta(meta, storage) {
+  try {
+    storage?.setItem(VERSION_REMOTE_META_KEY, JSON.stringify(meta))
+  } catch {
+    // ignore
+  }
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof Event === 'function') {
+    window.dispatchEvent(new Event(VERSION_META_EVENT))
+  }
 }
 
 /**
@@ -315,25 +405,83 @@ export function shouldShowVersionNotice(input) {
 }
 
 /**
- * Fetch /version.json (cache-busted lightly).
+ * Version metadata for the notice: the cached result, refreshed from /version.json at most once
+ * per VERSION_CHECK_INTERVAL_MS per device. Concurrent callers in a tab share one request.
+ * @param {{
+ *   now?: number
+ *   storage?: Storage | null
+ *   fetchImpl?: typeof fetch
+ *   enabled?: boolean
+ * }} [opts]
  * @returns {Promise<{ buildId: string, releaseLabel: string } | null>}
  */
-export async function fetchRemoteVersionMeta() {
-  if (!shouldPollRemoteVersion()) return null
-  if (!canCheckVersionNow()) return null
-  markVersionChecked()
-  const url = `/version.json?t=${Date.now()}`
-  try {
-    const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin' })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (!data?.releaseLabel) return null
-    return {
-      buildId: data.buildId ? String(data.buildId) : '',
-      releaseLabel: String(data.releaseLabel),
+export async function fetchRemoteVersionMeta(opts = {}) {
+  const enabled = opts.enabled ?? shouldPollRemoteVersion()
+  if (!enabled) return null
+  const storage = opts.storage !== undefined ? opts.storage : safeLocalStorage()
+  if (inflightVersionFetch) return inflightVersionFetch
+  if (!canCheckVersionNow({ now: opts.now, storage })) return readCachedRemoteVersionMeta({ storage })
+
+  // Mark first so other tabs / portals opened right now skip their own request.
+  markVersionChecked({ now: opts.now, storage })
+  const fetchImpl = opts.fetchImpl || (typeof fetch === 'function' ? fetch : null)
+  if (!fetchImpl) return readCachedRemoteVersionMeta({ storage })
+
+  inflightVersionFetch = (async () => {
+    try {
+      const url = `/version.json?t=${opts.now ?? Date.now()}`
+      const res = await fetchImpl(url, { cache: 'no-store', credentials: 'same-origin' })
+      if (!res.ok) return readCachedRemoteVersionMeta({ storage })
+      const data = await res.json()
+      const releaseLabel = data?.releaseLabel ? String(data.releaseLabel) : ''
+      if (!RELEASE_LABEL_RE.test(releaseLabel)) return readCachedRemoteVersionMeta({ storage })
+      const meta = {
+        buildId: data.buildId ? String(data.buildId).slice(0, 64) : '',
+        releaseLabel,
+      }
+      storeRemoteVersionMeta(meta, storage)
+      return meta
+    } catch (err) {
+      if (isGenericNetworkError(err)) return readCachedRemoteVersionMeta({ storage })
+      return readCachedRemoteVersionMeta({ storage })
+    } finally {
+      inflightVersionFetch = null
     }
-  } catch (err) {
-    if (isGenericNetworkError(err)) return null
-    return null
+  })()
+  return inflightVersionFetch
+}
+
+/** Test-only reset of module state. */
+export function __resetVersionCheckStateForTests() {
+  memoryLastCheck = 0
+  inflightVersionFetch = null
+}
+
+let schedulerTimer = null
+
+/**
+ * One scheduler per tab (idempotent): checks on start only if the last device-wide check is
+ * older than VERSION_CHECK_INTERVAL_MS, then wakes when the next 12h window opens. No focus,
+ * visibility or route-change checks. Other tabs' results arrive through the 'storage' event.
+ * @param {{ setTimer?: typeof setTimeout }} [opts]
+ */
+export function startVersionCheckScheduler(opts = {}) {
+  if (schedulerTimer !== null) return
+  if (!shouldPollRemoteVersion() && !opts.force) return
+  const setTimer = opts.setTimer || ((fn, ms) => setTimeout(fn, ms))
+  const tick = () => {
+    void fetchRemoteVersionMeta({ enabled: true }).finally(() => {
+      // Floor of 1 minute so a broken clock or storage can never spin this into a loop.
+      const wait = Math.max(60_000, msUntilNextVersionCheck() || VERSION_CHECK_INTERVAL_MS)
+      schedulerTimer = setTimer(tick, wait)
+    })
   }
+  schedulerTimer = 'starting'
+  tick()
+}
+
+/** Test-only. */
+export function __resetVersionSchedulerForTests() {
+  if (schedulerTimer && schedulerTimer !== 'starting') clearTimeout(schedulerTimer)
+  schedulerTimer = null
 }

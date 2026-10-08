@@ -4,6 +4,10 @@ import {
   dismissVersionNoticeForSession,
   fetchRemoteVersionMeta,
   getEmbeddedReleaseLabel,
+  readCachedRemoteVersionMeta,
+  startVersionCheckScheduler,
+  VERSION_META_EVENT,
+  VERSION_REMOTE_META_KEY,
   shouldOfferReinstallFallback,
   shouldShowVersionNotice,
 } from '../lib/appVersionUpdate.js'
@@ -13,12 +17,14 @@ import { isDeployedReleaseNewer } from '../lib/releaseLabel.js'
 
 /**
  * Tracks deploy label for optional update notice (auto-update handled by the service worker).
- * @param {{ pollMs?: number }} [opts]
+ * /version.json is fetched at most once per VERSION_CHECK_INTERVAL_MS (12h) per device; every
+ * hook instance, tab and portal reads the shared cached result.
  */
-export function useAppVersionNotice(opts = {}) {
-  const pollMs = opts.pollMs ?? 30 * 60 * 1000
+export function useAppVersionNotice() {
   const embeddedReleaseLabel = getEmbeddedReleaseLabel()
-  const [remoteReleaseLabel, setRemoteReleaseLabel] = useState(null)
+  const [remoteReleaseLabel, setRemoteReleaseLabel] = useState(
+    () => readCachedRemoteVersionMeta()?.releaseLabel ?? null,
+  )
   const [chunkStale, setChunkStale] = useState(() => hasPwaStaleHint())
   const [reinstallFallback, setReinstallFallback] = useState(false)
 
@@ -28,15 +34,22 @@ export function useAppVersionNotice(opts = {}) {
   }, [])
 
   useEffect(() => {
-    void refreshRemote()
-    const onFocus = () => void refreshRemote()
-    window.addEventListener('focus', onFocus)
-    const timer = window.setInterval(() => void refreshRemote(), pollMs)
-    return () => {
-      window.removeEventListener('focus', onFocus)
-      window.clearInterval(timer)
+    // Adopt results from this tab's scheduler or another tab; these listeners never hit the network.
+    const adoptCached = () => {
+      const meta = readCachedRemoteVersionMeta()
+      if (meta?.releaseLabel) setRemoteReleaseLabel(meta.releaseLabel)
     }
-  }, [pollMs, refreshRemote])
+    const onStorage = (event) => {
+      if (event.key === VERSION_REMOTE_META_KEY) adoptCached()
+    }
+    window.addEventListener(VERSION_META_EVENT, adoptCached)
+    window.addEventListener('storage', onStorage)
+    startVersionCheckScheduler()
+    return () => {
+      window.removeEventListener(VERSION_META_EVENT, adoptCached)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   useEffect(() => {
     function onRejection(event) {

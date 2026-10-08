@@ -8,7 +8,7 @@ import './app-release-label.css'
  */
 export function AppReleaseLabel({ variant = 'footer', className = '' }) {
   const embedded = getEmbeddedReleaseLabel()
-  const { remoteReleaseLabel, refreshRemote } = useAppVersionNotice({ pollMs: 60 * 60 * 1000 })
+  const { remoteReleaseLabel, refreshRemote } = useAppVersionNotice()
 
   const showLatest =
     remoteReleaseLabel &&
