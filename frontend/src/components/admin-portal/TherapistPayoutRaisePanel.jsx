@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { BillingCalcErrorNotice } from '../shared/BillingCalcErrorNotice.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminPanel, formatCurrency } from './ui/index.js'
 import './admin-therapist-picker.css'
@@ -94,7 +95,7 @@ export function TherapistPayoutRaisePanel() {
       setPreview(data)
     } catch (err) {
       setPreview(null)
-      setError(err.message || 'Could not load the system amount for this therapist.')
+      setError(err)
     } finally {
       setLoading(false)
     }
@@ -118,7 +119,7 @@ export function TherapistPayoutRaisePanel() {
       setPreview(null)
       setNotes('')
     } catch (err) {
-      setError(err.message || 'Could not raise this payout invoice.')
+      setError(err)
     } finally {
       setActing(false)
     }
@@ -235,7 +236,7 @@ export function TherapistPayoutRaisePanel() {
         onChange={(e) => setNotes(e.target.value)}
         style={{ width: '100%', marginBottom: 12 }}
       />
-      {error ? <p className="admin-alert admin-alert--warning">{error}</p> : null}
+      {error ? <BillingCalcErrorNotice error={error} audience="admin" className="admin-alert admin-alert--warning" /> : null}
       {message ? <p className="admin-alert admin-alert--success">{message}</p> : null}
       {canWriteBilling ? (
         <button

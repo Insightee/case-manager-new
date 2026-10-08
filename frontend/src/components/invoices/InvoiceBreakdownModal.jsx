@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { BillingCalcErrorNotice } from '../shared/BillingCalcErrorNotice.jsx'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
 import { applyLocalExcludes, formatInr, formatModalHeaderSummary, isInvoiceAmendable } from './invoiceUtils.js'
 
@@ -32,7 +33,7 @@ export function InvoiceBreakdownModal({
       setExcludeIds([])
     } catch (e) {
       setServerData(null)
-      setError(e.message || 'Failed to load breakdown')
+      setError(e)
     } finally {
       setLoading(false)
     }
@@ -90,7 +91,7 @@ export function InvoiceBreakdownModal({
       onAmended?.()
       onClose()
     } catch (e) {
-      setError(e.message || 'Could not save changes')
+      setError(e)
     } finally {
       setSaving(false)
     }
@@ -145,7 +146,9 @@ export function InvoiceBreakdownModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {loading ? <p className="text-sm text-slate-500">Loading…</p> : null}
-          {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
+          {error ? (
+            <BillingCalcErrorNotice error={error} audience="therapist" className="mb-3" tone="error" />
+          ) : null}
           {amendable && displayData ? (
             <p className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/80 px-3 py-2 text-sm text-indigo-950">
               Exclude sessions you did not conduct, add forgotten visits, or remove pending late entries. Changes are

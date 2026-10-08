@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Fixed
+- Clinical observation `GET /api/v1/reports/{id}/evidence-summary` no longer 500s when a case has session logs: shared `daily_log_narrative` helpers replace the missing `_log_has_narrative` (latent since reports engine launch).
+
 ### Added
 - Parent portal hub: cleaner home (upcoming sessions + CM meetings, attendance alerts, therapist chat tab), next-open-slot booking with meeting-request fallback, profile change-password and collapsible backup contact, email prefs aligned to session logs / leave / billing / meetings. APIs: `POST /auth/change-password`, parent therapist chat, parent meeting requests (assignment-validated). Alembic `31fb30395ec2` → `pmr7req20261005`.
 - Staff end-of-day ops snapshot: `GET /api/v1/admin/ops/daily-snapshot?date=YYYY-MM-DD` (Asia/Kolkata, end exclusive at next midnight). Ticket status, incident status, and session-log approval are reconstructed as of that instant from append-only `ops_state_transitions` (Alembic `st4ff4tt3nd2` → `31fb30395ec2`). `GET /incidents` no longer escalates or notifies on read, and `GET /sessions` no longer auto-ends stale sessions. `GET /billing-approvals` lists billing-change requests for staff without billing payloads.

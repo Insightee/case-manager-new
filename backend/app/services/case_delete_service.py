@@ -384,6 +384,18 @@ def delete_case_by_code(db: Session, case_code: str) -> dict:
     if not before:
         raise ValueError(f"Case not found: {case_code}")
 
+    from app.models.case import Case
+    from app.services import therapist_transition_service
+
+    case_row = db.get(Case, before["id"])
+    if case_row:
+        therapist_transition_service.complete_due_transition_for_case(db, case_row.id)
+        if therapist_transition_service.active_transition_for_case(db, case_row.id):
+            raise ValueError(
+                "This case is in a therapist transition. Other case changes are paused "
+                "until the handover is completed or cancelled."
+            )
+
     for stmt in DELETE_CASE_SQL.strip().split(";"):
         sql = stmt.strip()
         if not sql:

@@ -200,6 +200,11 @@ def parent_calendar_view(
 
     leave_days = cal._leave_dates(db, therapist_user_id, from_date, to_date)
     visible: list[dict[str, Any]] = []
+    # Therapist handover: hide open slots the booking guard would reject (same rule as
+    # /booking/availability?case_id=…), so the parent hub and next-open-slot stay consistent.
+    from app.services import therapist_transition_service as transition_svc
+
+    transition = transition_svc.active_transition_for_case(db, case_id)
 
     for s in slots:
         overlay = leave_days.get(s.slot_date.isoformat())
@@ -210,6 +215,14 @@ def parent_calendar_view(
 
         entry = cal._slot_to_dict(s)
         is_mine = s.status == SlotStatus.BOOKED and s.case_id == case_id
+        if (
+            not is_mine
+            and transition is not None
+            and not transition_svc.therapist_may_book_during_transition(
+                transition, therapist_user_id, s.slot_date
+            )
+        ):
+            continue
         entry["is_mine"] = is_mine
         entry["display_status"] = "mine" if is_mine else "available"
         if is_mine:

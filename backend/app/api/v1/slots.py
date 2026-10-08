@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.module_write import ensure_case_transition_allows_booking
 from app.core.permissions import user_has_permission
+from app.models.case import Case
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import appointment_booking_service as appt_booking
@@ -210,6 +212,15 @@ def book_slot(
         source = BookingSource.ADMIN
     else:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    case = db.get(Case, payload.case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_transition_allows_booking(
+        case,
+        db,
+        slot_date=slot.slot_date,
+        therapist_user_id=slot.therapist_user_id,
+    )
     try:
         slot = appt_booking.book_with_session(db, slot_id, payload.case_id, user.id, source)
     except ValueError as e:

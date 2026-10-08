@@ -4,6 +4,12 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { mapParentBookedSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { formatDisplayDateLabel, todayIsoIST } from '../../lib/datetime.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
+import {
+  handoverBookingHintForTherapist,
+  handoverPolicyFromTherapists,
+  normalizeBookingErrorMessage,
+  TRANSITION_PARENT_BOOKING_HINT,
+} from '../../lib/therapistTransitionBooking.js'
 
 function todayIso() {
   return todayIsoIST()
@@ -114,6 +120,12 @@ export function ParentBookSessionForm({
     }
   }, [numericCaseId, therapistId, rescheduleFrom])
 
+  const handoverPolicy = useMemo(() => handoverPolicyFromTherapists(therapists), [therapists])
+  const handoverHint = useMemo(
+    () => handoverBookingHintForTherapist(handoverPolicy, therapistId),
+    [handoverPolicy, therapistId],
+  )
+
   const loadSlots = useCallback(async () => {
     if (!therapistId || !selectedDate) {
       setSlots([])
@@ -130,7 +142,7 @@ export function ParentBookSessionForm({
         rows = (cal?.slots || []).filter((s) => s.display_status === 'available')
       } else {
         rows = await apiFetch(
-          `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}`,
+          `/api/v1/booking/availability?therapist_id=${therapistId}&from_date=${selectedDate}&to_date=${selectedDate}${numericCaseId ? `&case_id=${numericCaseId}` : ''}`,
         )
       }
       setSlots(rows || [])
@@ -191,7 +203,10 @@ export function ParentBookSessionForm({
       }
       setSelectedSlotId('')
     } catch (err) {
-      setError(err.message || (rescheduleFrom ? 'Could not reschedule' : 'Could not book'))
+      setError(
+        normalizeBookingErrorMessage(err.message) ||
+          (rescheduleFrom ? 'Could not reschedule' : 'Could not book'),
+      )
     } finally {
       setActing(false)
     }
@@ -249,6 +264,12 @@ export function ParentBookSessionForm({
 
       {!isReschedule && nextSlotLoading ? (
         <p className="parent-book-form__help parent-book-form__help--muted">Finding the next open time…</p>
+      ) : null}
+      {handoverPolicy ? (
+        <p className="parent-book-form__help parent-book-form__help--handover" role="status">
+          {TRANSITION_PARENT_BOOKING_HINT}
+          {handoverHint ? ` ${handoverHint}` : ''}
+        </p>
       ) : null}
 
       <div className="parent-book-form__grid">
