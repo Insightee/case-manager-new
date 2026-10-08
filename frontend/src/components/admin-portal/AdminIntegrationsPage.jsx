@@ -465,7 +465,9 @@ export function AdminIntegrationsPage() {
                   ? `Every case is granted${client.granted_case_count != null ? ` (${client.granted_case_count})` : ''}.`
                   : (client.case_ids || []).length
                     ? `Granted cases: ${client.case_ids.join(', ')}`
-                    : 'No case grants yet. Grant every case, or add case IDs, before this key can see case data.'}
+                    : (client.info_access || []).includes('ops_aggregate')
+                      ? 'No case grants. Org-wide counts still apply. Other areas stay closed until cases are granted.'
+                      : 'No case grants yet. Grant every case, or add case IDs, before this key can see case data.'}
               </p>
               {client.status === 'active' ? (
                 <div className="integrations-card__actions">
@@ -656,6 +658,9 @@ export function AdminIntegrationsPage() {
                   <label htmlFor="integration-cases-search">Granted cases</label>
                   <p className="integrations-note">
                     Blank means this key cannot see any case. Grant every case, or filter the list and tap cases.
+                    {draft.infoAccess.includes('ops_aggregate')
+                      ? ' Org-wide counts do not need a case grant.'
+                      : ''}
                   </p>
                   <IntegrationCaseGrantPicker
                     value={draft.caseIdsText}

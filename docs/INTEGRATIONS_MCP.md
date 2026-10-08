@@ -80,7 +80,8 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 | `reports:read` | Masked report list/detail |
 | `sessions:summarize` | Session aggregates for a granted case |
 | `reporting:pending` | Under-review / missing monthly items |
-| `ops:summary` | Anonymised counts only |
+| `ops:summary` | Anonymised counts for granted cases only. Zero grants return zeros |
+| `ops:aggregate:read` | Organisation-wide counts only. No case grants. Off until an admin adds it |
 | `cases:write` | Submit a structured case signal (`pending_review`) |
 | `sessions:write` | Submit a structured session signal (`pending_review`) |
 | `goals:read` | Goal and strategy identifiers for granted cases. Paged. Strategy rows use `linked_goal_card_id`, not `goals[].goal_id` |
@@ -90,7 +91,30 @@ Issue the access token via the token endpoint above; do not put the long-lived c
 | `profiles:write` | Create a Pending listing for an existing therapist. The key cannot approve, pause, or revive a deleted listing |
 | `finance:read` | Receivables and ledger totals for granted cases. No child names |
 
-`all_cases: true` grants every current and future case. An empty `case_ids` list is zero access, not “all cases”. Selecting every existing case id is stored as `all_cases`. The admin response includes `all_cases` and `granted_case_count`. `finance:read` is refused unless every case is granted or `case_ids` is non-empty.
+`all_cases: true` grants every current and future case. An empty `case_ids` list is zero access, not “all cases”. Selecting every existing case id is stored as `all_cases`. The admin response includes `all_cases` and `granted_case_count`. `finance:read` is refused unless every case is granted or `case_ids` is non-empty. `ops:aggregate:read` does not use case grants. Existing keys do not receive it until an admin adds the scope.
+
+## Org-wide operational counts
+
+```http
+GET /api/v1/integrations/v1/ops/aggregate?from=2026-10-01&to=2026-10-05
+Authorization: Bearer <access-token>
+```
+
+`from` and `to` are inclusive Asia/Kolkata dates (93 days maximum). The body is counts plus case codes on exception lists (at most 50 codes each). It does not include child names, contact fields, or clinical text.
+
+Grant it on an existing key from **Admin → Integrations** by turning on **Org-wide counts**, or:
+
+```http
+PATCH /api/v1/admin/integration-clients/{id}
+Authorization: Bearer <human-access-token>
+
+{
+  "scopes": ["ops:aggregate:read"],
+  "case_ids": []
+}
+```
+
+`case_ids` can stay empty. `ops:summary` is a different scope and still returns zeros when the key has no case grants. An access token keeps the scopes it was issued with, so the client must request a new token after the grant. There is no MCP tool for this read.
 
 Integration tokens do not call admin receivables or ledger. They read:
 

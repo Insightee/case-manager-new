@@ -15,12 +15,12 @@ import {
 } from './integrationDesk.js'
 
 describe('integrationDesk', () => {
-  it('exposes nine information areas and seven webhook events', () => {
-    assert.equal(INFO_ACCESS.length, 9)
+  it('exposes ten information areas and seven webhook events', () => {
+    assert.equal(INFO_ACCESS.length, 10)
     assert.equal(WEBHOOK_EVENTS.length, 7)
     assert.deepEqual(
       INFO_ACCESS.map((item) => item.id),
-      ['cases', 'sessions', 'reports', 'goals', 'iep', 'reporting', 'ops', 'profiles', 'finance'],
+      ['cases', 'sessions', 'reports', 'goals', 'iep', 'reporting', 'ops', 'ops_aggregate', 'profiles', 'finance'],
     )
   })
 
@@ -44,6 +44,16 @@ describe('integrationDesk', () => {
     assert.ok(scopes.includes('reports:read'))
     assert.ok(scopes.includes('finance:read'))
     assert.equal(scopes.includes('finance:write'), false)
+    assert.ok(scopes.includes('ops:aggregate:read'))
+    assert.equal(scopes.includes('ops:aggregate:write'), false)
+  })
+
+  it('leaves org-wide counts off unless an admin turns that area on', () => {
+    const draft = emptyKeyDraft()
+    assert.equal(draft.infoAccess.includes('ops_aggregate'), false)
+    assert.equal(scopesFromDraft(draft).includes('ops:aggregate:read'), false)
+    const granted = scopesFromDraft({ ...draft, infoAccess: ['ops_aggregate'] })
+    assert.deepEqual(granted, ['ops:aggregate:read'])
   })
 
   it('asks for read or write and at least one information area', () => {

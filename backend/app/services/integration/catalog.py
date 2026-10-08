@@ -49,6 +49,7 @@ INFO_DOMAINS: tuple[InfoDomain, ...] = (
     InfoDomain("iep", "iep:read", None),
     InfoDomain("reporting", "reporting:pending", None),
     InfoDomain("ops", "ops:summary", None),
+    InfoDomain("ops_aggregate", "ops:aggregate:read", None),
     InfoDomain("profiles", "profiles:read", "profiles:write"),
     InfoDomain("finance", "finance:read", None),
 )

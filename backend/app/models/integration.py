@@ -36,6 +36,7 @@ INTEGRATION_SCOPES: frozenset[str] = frozenset(
         "sessions:write",
         "reporting:pending",
         "ops:summary",
+        "ops:aggregate:read",
         "goals:read",
         "goals:write",
         "iep:read",
