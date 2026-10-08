@@ -114,7 +114,7 @@ def test_alembic_single_head_is_goal_repository_repair():
     cfg = Config(str(_BACKEND / "alembic.ini"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
     # Current tip: parent meeting requests (Forest parent portal hub).
-    assert heads == ["pmr7req20261005"]
+    assert heads == ["inc8share20261008"]
 
 
 def test_structured_evidence_revision_upgrade_and_downgrade(tmp_path):

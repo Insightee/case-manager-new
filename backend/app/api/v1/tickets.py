@@ -358,6 +358,7 @@ def escalate_ticket_endpoint(
             actor=user,
             background_tasks=background_tasks,
         )
+    ticket_notify.notify_parent_ticket_escalated(db, ticket, background_tasks=background_tasks)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="escalate", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()

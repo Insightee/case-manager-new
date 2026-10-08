@@ -1,0 +1,78 @@
+"""Notify parents when staff explicitly share an incident with the family."""
+
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from app.core.config import settings
+from app.core.permissions import RoleName
+from app.models.case import Case
+from app.models.incident import Incident
+from app.models.parent import ParentGuardian
+from app.models.child import Child
+from app.models.user import User
+from app.services import notification_service
+from app.services.email.parent_mail import send_parent_email
+
+
+def _parent_users_for_case(db: Session, case_id: int) -> list[User]:
+    case = db.get(Case, case_id)
+    if not case or not case.child_id:
+        return []
+    rows = db.scalars(
+        select(User)
+        .join(ParentGuardian, ParentGuardian.user_id == User.id)
+        .join(ParentGuardian.children)
+        .where(Child.id == case.child_id)
+    ).all()
+    return list({u.id: u for u in rows}.values())
+
+
+def notify_parents_incident_shared(db: Session, incident: Incident, *, background_tasks=None) -> int:
+    if not incident.shared_with_family or not incident.case_id:
+        return 0
+    case = db.scalars(
+        select(Case).where(Case.id == incident.case_id).options(selectinload(Case.child))
+    ).first()
+    if not case:
+        return 0
+    child_name = case.child.full_name if case.child else "your child"
+    incident_date = ""
+    if incident.incident_at:
+        incident_date = incident.incident_at.astimezone().date().isoformat()
+    portal_url = f"{settings.frontend_url.rstrip('/')}/parent/support"
+    title = "Important update from your care team"
+    body = (
+        f"We shared an update regarding {child_name}. "
+        "Your case manager will contact you with next steps. Open Support in your portal for details."
+    )
+    count = 0
+    for parent in _parent_users_for_case(db, case.id):
+        if RoleName.PARENT.value not in parent.role_names:
+            continue
+        notification_service.create_notification(
+            db,
+            user_id=parent.id,
+            title=title,
+            body=body,
+            entity_type="incident_notice",
+            entity_id=incident.id,
+        )
+        send_parent_email(
+            db,
+            parent,
+            category="incidents",
+            template_key="incident_family_notice",
+            payload={
+                "parent_name": parent.full_name or parent.email,
+                "child_name": child_name,
+                "incident_date": incident_date,
+                "portal_url": portal_url,
+            },
+            entity_type="incident",
+            entity_id=incident.id,
+            background_tasks=background_tasks,
+        )
+        count += 1
+    return count

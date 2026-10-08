@@ -429,6 +429,7 @@ def cm_meeting_invite_email(
     case_code: str | None = None,
     is_update: bool = False,
     attachments: list[dict[str, Any]] | None = None,
+    db: Session | None = None,
 ) -> None:
     payload = {
         "full_name": full_name,
@@ -444,6 +445,10 @@ def cm_meeting_invite_email(
         "case_code": case_code,
         "is_update": is_update,
     }
+    if "/parent" in (portal_url or ""):
+        from app.services.email.parent_mail import parent_manage_prefs_url
+
+        payload["manage_prefs_url"] = parent_manage_prefs_url()
     subject, body_text, body_html = render_template("cm_meeting_invite", payload)
     send_email(
         to=to,
@@ -452,6 +457,7 @@ def cm_meeting_invite_email(
         body_html=body_html,
         event=EmailEvent.CM_MEETING_INVITE,
         attachments=attachments,
+        db=db,
     )
 
 
@@ -893,6 +899,8 @@ def parent_invoice_ready_email(
     is_overdue: bool,
     payments_url: str,
 ) -> None:
+    from app.services.email.parent_mail import parent_manage_prefs_url
+
     payload = {
         "parent_name": parent_name,
         "invoice_number": invoice_number,
@@ -902,6 +910,7 @@ def parent_invoice_ready_email(
         "due_date_str": due_date_str,
         "is_overdue": is_overdue,
         "payments_url": payments_url,
+        "manage_prefs_url": parent_manage_prefs_url(),
     }
     subject, body_text, body_html = render_template("invoice_generated", payload)
     send_email(
@@ -910,6 +919,7 @@ def parent_invoice_ready_email(
         body_text=body_text,
         body_html=body_html,
         event=EmailEvent.INVOICE_GENERATED,
+        db=db,
     )
 
 
@@ -927,6 +937,8 @@ def enqueue_parent_invoice_email(
     is_overdue: bool,
     payments_url: str,
 ) -> int | None:
+    from app.services.email.parent_mail import parent_manage_prefs_url
+
     return enqueue_email_event(
         background_tasks,
         db,
@@ -937,6 +949,7 @@ def enqueue_parent_invoice_email(
             "parent_name": parent_name,
             "invoice_number": invoice_number,
             "child_name": child_name,
+            "manage_prefs_url": parent_manage_prefs_url(),
             "total_inr": total_inr,
             "balance_inr": balance_inr,
             "due_date_str": due_date_str,
@@ -957,6 +970,8 @@ def enqueue_report_published_email(
     report_label: str,
     portal_url: str,
 ) -> int | None:
+    from app.services.email.parent_mail import parent_manage_prefs_url
+
     return enqueue_email_event(
         background_tasks,
         db,
@@ -968,6 +983,7 @@ def enqueue_report_published_email(
             "child_name": child_name,
             "report_label": report_label,
             "portal_url": portal_url,
+            "manage_prefs_url": parent_manage_prefs_url(),
         },
         recipient_role="parent",
     )
@@ -984,6 +1000,8 @@ def send_payment_reminder_email(
     payments_url: str,
 ) -> int | None:
     """Stub for future billing reminders; queues PAYMENT_REMINDER event."""
+    from app.services.email.parent_mail import parent_manage_prefs_url
+
     return enqueue_email_event(
         background_tasks,
         db,
@@ -995,6 +1013,7 @@ def send_payment_reminder_email(
             "invoice_number": invoice_number,
             "balance_inr": balance_inr,
             "payments_url": payments_url,
+            "manage_prefs_url": parent_manage_prefs_url(),
         },
         recipient_role="parent",
     )

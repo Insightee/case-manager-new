@@ -46,10 +46,11 @@ class ParentHomecareCaseRead(BaseModel):
 class ParentEmailPreferencesRead(BaseModel):
     session_logs: bool = True
     therapist_leave: bool = True
-    appointments: bool = False
+    appointments: bool = True
     billing: bool = True
-    reports: bool = False
+    reports: bool = True
     meetings: bool = True
+    incidents: bool = True
 
 
 class ParentEmailPreferencesUpdate(BaseModel):
@@ -59,6 +60,7 @@ class ParentEmailPreferencesUpdate(BaseModel):
     billing: Optional[bool] = None
     reports: Optional[bool] = None
     meetings: Optional[bool] = None
+    incidents: Optional[bool] = None
 
 
 class ParentProfileRead(BaseModel):

@@ -138,6 +138,18 @@ function formatLoginError(err) {
   return formatLoginErrorMessage(msg)
 }
 
+function safeParentNextPath(raw) {
+  if (!raw || typeof raw !== 'string') return null
+  try {
+    const decoded = decodeURIComponent(raw.trim())
+    if (!decoded.startsWith('/parent/')) return null
+    if (decoded.includes('://') || decoded.startsWith('//')) return null
+    return decoded
+  } catch {
+    return null
+  }
+}
+
 export function LoginPage({ portalType }) {
   const { login, logout, updateLoginPortal, user, loading, selectedPortal, reload } = useAuth()
   const navigate = useNavigate()
@@ -223,7 +235,8 @@ export function LoginPage({ portalType }) {
       sessionRestoreAttemptsRef.current = 0
 
       if (user && sessionMatchesLoginPage(user, selectedPortal, portalType)) {
-        navigate(portalHomePath(user), { replace: true })
+        const next = safeParentNextPath(new URLSearchParams(location.search).get('next'))
+        navigate(next || portalHomePath(user), { replace: true })
         return
       }
 
@@ -311,7 +324,8 @@ export function LoginPage({ portalType }) {
         loginPortal,
         rememberMe,
       )
-      navigate(portalHomePath(data.user))
+      const next = safeParentNextPath(new URLSearchParams(location.search).get('next'))
+      navigate(next || portalHomePath(data.user), { replace: true })
     } catch (err) {
       setError(formatLoginError(err))
       if (isLikelyStaleLoginFailure(err, { standalone: isStandaloneDisplay() })) {
@@ -340,7 +354,8 @@ export function LoginPage({ portalType }) {
         loginPortal,
         rememberMe,
       )
-      navigate(portalHomePath(data.user))
+      const next = safeParentNextPath(new URLSearchParams(location.search).get('next'))
+      navigate(next || portalHomePath(data.user), { replace: true })
     } catch (err) {
       setError(formatLoginError(err))
       if (isLikelyStaleLoginFailure(err, { standalone: isStandaloneDisplay() })) {

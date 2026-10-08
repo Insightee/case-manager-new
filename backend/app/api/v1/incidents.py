@@ -52,6 +52,7 @@ class IncidentUpdate(BaseModel):
     tagged_roles: Optional[list[str]] = None
     tagged_user_ids: Optional[list[int]] = None
     action_taken_note: Optional[str] = None
+    shared_with_family: Optional[bool] = None
 
 
 class IncidentMessageCreate(BaseModel):
@@ -470,10 +471,13 @@ def update_incident(
         _guard_incident_write(user, incident, db)
     if payload.assigned_to_user_id is not None and not is_staff:
         raise HTTPException(status_code=403, detail="Not authorized to assign incident owners")
+    if payload.shared_with_family is not None and not is_staff:
+        raise HTTPException(status_code=403, detail="Only staff can share incidents with families")
     is_owner = incident.assigned_to_user_id == user.id or user_has_permission(user, "admin.override") or is_therapist
     from app.services import incident_notify_service as inc_notify
 
     before_tagged = inc_notify.collect_tagged_user_ids(db, incident)
+    was_shared = bool(incident.shared_with_family)
     try:
         inc_svc.update_incident(
             db,
@@ -486,6 +490,7 @@ def update_incident(
             tagged_roles=payload.tagged_roles,
             tagged_user_ids=payload.tagged_user_ids,
             action_taken_note=payload.action_taken_note,
+            shared_with_family=payload.shared_with_family,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -494,6 +499,11 @@ def update_incident(
         after_tagged = inc_notify.collect_tagged_user_ids(db, incident)
         new_ids = after_tagged - before_tagged
         inc_notify.notify_incident_tagged(db, incident, user.id, notify_user_ids=new_ids)
+
+    if payload.shared_with_family and not was_shared:
+        from app.services import incident_parent_notify_service as inc_parent_notify
+
+        inc_parent_notify.notify_parents_incident_shared(db, incident)
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="incident", entity_id=incident.id, **meta)

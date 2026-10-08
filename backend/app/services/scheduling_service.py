@@ -224,8 +224,14 @@ def reschedule_appointment(
             new_slot=booked,
             parent_name=parent_u.full_name if parent_u else "Parent",
         )
-        appt_notify.notify_parents_reschedule_pending(db, old_slot=old_slot, new_slot=booked)
+        appt_notify.notify_parents_reschedule_pending(
+            db, old_slot=old_slot, new_slot=booked, case_id=case_id
+        )
         db.flush()
+    elif requested_by_role != "PARENT":
+        appt_notify.notify_parents_session_rescheduled(
+            db, old_slot, booked, case_id=case_id, email_allowed=True
+        )
     return booked
 
 
@@ -500,7 +506,13 @@ def confirm_pending_reschedule(db: Session, new_slot_id: int, therapist_user_id:
     new_slot.approval_status = "CONFIRMED"
     db.flush()
     if old_slot:
-        appt_notify.notify_parents_session_rescheduled(db, old_slot, new_slot)
+        appt_notify.notify_parents_session_rescheduled(
+            db,
+            old_slot,
+            new_slot,
+            case_id=record.case_id,
+            email_allowed=False,
+        )
     return new_slot
 
 

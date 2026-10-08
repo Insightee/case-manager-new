@@ -382,6 +382,33 @@ export function IncidentDetailPanel({
         {incident.location ? <span>Location: {incident.location}</span> : null}
         {incident.child_safe ? <span>Child safe: {incident.child_safe}</span> : null}
         {incident.parent_informed ? <span>Parent informed: {incident.parent_informed}</span> : null}
+        {canManage && isStaff && incident.case_id ? (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={Boolean(incident.shared_with_family)}
+              disabled={busy}
+              onChange={async (e) => {
+                setBusy(true)
+                setError('')
+                try {
+                  const updated = await apiFetch(`${patchBase}/${incident.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ shared_with_family: e.target.checked }),
+                  })
+                  onUpdated?.(updated)
+                } catch (err) {
+                  setError(err.message || 'Could not update family sharing')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            />
+            <span>
+              Share with family (sends a generic email and portal notice — never the incident description)
+            </span>
+          </label>
+        ) : null}
         {incident.immediate_action ? <span>Immediate action: {incident.immediate_action}</span> : null}
         {incident.primary_owner_role ? <span>Owner role: {incident.primary_owner_role}</span> : null}
         {incident.assigned_to_name ? <span>Assigned owner: {incident.assigned_to_name}</span> : null}

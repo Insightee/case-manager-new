@@ -23,10 +23,11 @@ def test_parent_email_prefs_default_care_and_billing_on():
     assert prefs == {
         "session_logs": True,
         "therapist_leave": True,
-        "appointments": False,
+        "appointments": True,
         "billing": True,
-        "reports": False,
+        "reports": True,
         "meetings": True,
+        "incidents": True,
     }
     assert read_parent_log_leave_emails(user) is True
 
@@ -35,7 +36,7 @@ def test_legacy_log_leave_off_disables_logs_and_leave_only():
     user = _user(**{PARENT_LOG_LEAVE_EMAILS_KEY: False})
     assert parent_wants_email(user, "session_logs") is False
     assert parent_wants_email(user, "therapist_leave") is False
-    assert parent_wants_email(user, "appointments") is False
+    assert parent_wants_email(user, "appointments") is True
 
 
 def test_granular_email_preferences_can_be_updated():

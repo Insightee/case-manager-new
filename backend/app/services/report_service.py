@@ -187,39 +187,38 @@ def notify_parents_monthly_report_published(
     report_label = report.month or f"Report #{report.id}"
     portal_url = f"{settings.frontend_url.rstrip('/')}/parent/reports"
     log_ids: list[int] = []
-    from app.services.parent_notification_preferences import parent_wants_email
+    from app.services import notification_service
+    from app.services.email.parent_mail import send_parent_email
 
+    title = "Monthly report ready"
+    body = f"The {report_label} for {child_name} is now available in your portal."
     for parent_user in rows:
-        if not parent_user.email:
-            continue
-        if not parent_wants_email(parent_user, "reports"):
-            continue
-        email = parent_user.email
-        full_name = parent_user.full_name
+        notification_service.create_notification(
+            db,
+            user_id=parent_user.id,
+            title=title,
+            body=body,
+            entity_type="monthly_report",
+            entity_id=report.id,
+        )
         payload = {
-            "parent_name": full_name or "there",
+            "parent_name": parent_user.full_name or "there",
             "child_name": child_name,
             "report_label": report_label,
             "portal_url": portal_url,
         }
-        if background_tasks is not None:
-            lid = enqueue_report_published_email(
-                background_tasks,
-                db,
-                to=email,
-                parent_name=payload["parent_name"],
-                child_name=child_name,
-                report_label=report_label,
-                portal_url=portal_url,
-            )
-            if lid is not None:
-                log_ids.append(lid)
-        else:
-            from app.services.email.service import send_email
-            from app.services.email.templates import render_template as rt
-
-            subject, body_text, body_html = rt("report_published", payload)
-            send_email(to=email, subject=subject, body_text=body_text, body_html=body_html)
+        lid = send_parent_email(
+            db,
+            parent_user,
+            category="reports",
+            template_key="report_published",
+            payload=payload,
+            entity_type="monthly_report",
+            entity_id=report.id,
+            background_tasks=background_tasks,
+        )
+        if lid is not None:
+            log_ids.append(lid)
     return log_ids
 
 

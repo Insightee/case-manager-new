@@ -79,6 +79,7 @@ class Incident(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
+    shared_with_family: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[IncidentStatus] = mapped_column(
         Enum(IncidentStatus, values_callable=lambda x: [e.value for e in x]),
         default=IncidentStatus.REPORTED,

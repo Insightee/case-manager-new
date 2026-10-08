@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.permissions import user_has_permission
+from app.core.timezone import today_ist
 from app.models.case import Case
 from app.models.child import Child
 from app.models.parent import ParentGuardian
@@ -12,11 +15,12 @@ from app.models.slot import TherapistSlot
 from app.models.user import User
 from app.services import email_service
 from app.services import notification_service
-from app.services.parent_notification_preferences import parent_wants_email
+from app.services.email.parent_mail import send_parent_email
 
 
-def _parent_wants_appointment_email(parent: User) -> bool:
-    return parent_wants_email(parent, "appointments")
+def _is_same_day_ist(*dates: date | None) -> bool:
+    today = today_ist()
+    return any(d == today for d in dates if d is not None)
 
 
 def _parents_for_case(db: Session, case_id: int) -> list[int]:
@@ -53,13 +57,16 @@ def notify_parents_session_cancelled(
     db: Session,
     slot: TherapistSlot,
     *,
+    case_id: int,
     cancelled_by_name: str,
     reason: str = "Session cancelled",
+    email_allowed: bool = True,
+    background_tasks=None,
 ) -> int:
-    if not slot.case_id:
+    if not case_id:
         return 0
     case = db.scalars(
-        select(Case).where(Case.id == slot.case_id).options(selectinload(Case.child))
+        select(Case).where(Case.id == case_id).options(selectinload(Case.child))
     ).first()
     child = case.child.full_name if case and case.child else "your child"
     when = _slot_when(slot)
@@ -68,8 +75,9 @@ def notify_parents_session_cancelled(
         "Open Book appointment to pick a new time."
     )
     count = 0
-    portal = f"{settings.frontend_url}/parent/book"
-    for parent in _parent_users_for_case(db, slot.case_id):
+    portal = f"{settings.frontend_url.rstrip('/')}/parent/book"
+    same_day = email_allowed and _is_same_day_ist(slot.slot_date)
+    for parent in _parent_users_for_case(db, case_id):
         notification_service.create_notification(
             db,
             user_id=parent.id,
@@ -78,13 +86,22 @@ def notify_parents_session_cancelled(
             entity_type="appointment",
             entity_id=slot.id,
         )
-        if _parent_wants_appointment_email(parent):
-            email_service.booking_cancelled_email(
-                to=parent.email,
-                child_name=child,
-                when=when,
-                reason=reason,
-                portal_url=portal,
+        if same_day:
+            send_parent_email(
+                db,
+                parent,
+                category="appointments",
+                template_key="session_cancelled_today",
+                payload={
+                    "parent_name": parent.full_name or parent.email,
+                    "child_name": child,
+                    "when": when,
+                    "reason": reason,
+                    "portal_url": portal,
+                },
+                entity_type="therapist_slot",
+                entity_id=slot.id,
+                background_tasks=background_tasks,
             )
         count += 1
     return count
@@ -158,10 +175,11 @@ def notify_parents_therapist_booked(
 ) -> int:
     if not slot.case_id:
         return 0
+    if getattr(slot, "approval_status", "CONFIRMED") == "PENDING_THERAPIST":
+        return 0
     case = db.get(Case, slot.case_id)
     child = case.child.full_name if case and case.child else "your child"
     when = _slot_when(slot)
-    portal = f"{settings.frontend_url}/parent/book"
     count = 0
     for parent in _parent_users_for_case(db, slot.case_id):
         notification_service.create_notification(
@@ -172,14 +190,6 @@ def notify_parents_therapist_booked(
             entity_type="appointment",
             entity_id=slot.id,
         )
-        if _parent_wants_appointment_email(parent):
-            email_service.booking_confirmed_email(
-                to=parent.email,
-                child_name=child,
-                therapist_name=therapist_name,
-                when=when,
-                portal_url=portal,
-            )
         count += 1
     return count
 
@@ -247,12 +257,6 @@ def notify_recurring_assigned(
         )
         if created is None:
             continue
-        if _parent_wants_appointment_email(parent):
-            email_service.send_email(
-                to=parent.email,
-                subject=f"Recurring sessions — {case.child.full_name if case.child else case.case_code}",
-                body_text=body + f"\n{portal}\n",
-            )
         count += 1
     if therapist and therapist.id not in parent_ids:
         created = notification_service.create_notification(
@@ -291,17 +295,22 @@ def notify_parents_session_rescheduled(
     db: Session,
     old_slot: TherapistSlot,
     new_slot: TherapistSlot,
+    *,
+    case_id: int,
+    email_allowed: bool = True,
+    background_tasks=None,
 ) -> int:
-    if not old_slot.case_id:
+    if not case_id:
         return 0
-    case = db.get(Case, old_slot.case_id)
+    case = db.get(Case, case_id)
     child = case.child.full_name if case and case.child else "your child"
     old_when = _slot_when(old_slot)
     new_when = _slot_when(new_slot)
     body = f"{child}'s session was moved from {old_when} to {new_when}."
     count = 0
-    portal = f"{settings.frontend_url}/parent/book"
-    for parent in _parent_users_for_case(db, old_slot.case_id):
+    portal = f"{settings.frontend_url.rstrip('/')}/parent/book"
+    same_day = email_allowed and _is_same_day_ist(old_slot.slot_date, new_slot.slot_date)
+    for parent in _parent_users_for_case(db, case_id):
         notification_service.create_notification(
             db,
             user_id=parent.id,
@@ -310,13 +319,22 @@ def notify_parents_session_rescheduled(
             entity_type="appointment",
             entity_id=new_slot.id,
         )
-        if _parent_wants_appointment_email(parent):
-            email_service.booking_rescheduled_email(
-                to=parent.email,
-                child_name=child,
-                old_when=old_when,
-                new_when=new_when,
-                portal_url=portal,
+        if same_day:
+            send_parent_email(
+                db,
+                parent,
+                category="appointments",
+                template_key="session_rescheduled_today",
+                payload={
+                    "parent_name": parent.full_name or parent.email,
+                    "child_name": child,
+                    "old_when": old_when,
+                    "new_when": new_when,
+                    "portal_url": portal,
+                },
+                entity_type="therapist_slot",
+                entity_id=new_slot.id,
+                background_tasks=background_tasks,
             )
         count += 1
     return count
@@ -388,17 +406,18 @@ def notify_parents_reschedule_pending(
     *,
     old_slot: TherapistSlot,
     new_slot: TherapistSlot,
+    case_id: int,
 ) -> int:
-    if not old_slot.case_id:
+    if not case_id:
         return 0
-    case = db.get(Case, old_slot.case_id)
+    case = db.get(Case, case_id)
     child = case.child.full_name if case and case.child else "your child"
     body = (
         f"Your reschedule request for {child} from {_slot_when(old_slot)} to {_slot_when(new_slot)} "
         "is waiting for your therapist to confirm."
     )
     count = 0
-    for parent in _parent_users_for_case(db, old_slot.case_id):
+    for parent in _parent_users_for_case(db, case_id):
         notification_service.create_notification(
             db,
             user_id=parent.id,
@@ -407,8 +426,6 @@ def notify_parents_reschedule_pending(
             entity_type="appointment",
             entity_id=new_slot.id,
         )
-        if _parent_wants_appointment_email(parent):
-            email_service.send_email(to=parent.email, subject="Reschedule pending", body_text=body)
         count += 1
     return count
 
@@ -465,6 +482,4 @@ def notify_parents_reschedule_declined(
         notification_service.create_notification(
             db, user_id=uid, title="Reschedule declined", body=body, entity_type="appointment", entity_id=old_slot.id
         )
-        u = db.get(User, uid)
-        if u and _parent_wants_appointment_email(u):
-            email_service.send_email(to=u.email, subject="Reschedule declined", body_text=body)
+        _ = db.get(User, uid)

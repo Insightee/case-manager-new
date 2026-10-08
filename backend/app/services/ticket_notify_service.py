@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.departments import staff_department_label
+from app.core.permissions import RoleName
 from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.services import notification_service
+from app.services.email.parent_mail import send_parent_email
 
 
 def _ticket_url(ticket_id: int) -> str:
@@ -120,6 +122,41 @@ def notify_ticket_escalated_to_department(
                 entity_id=ticket.id,
                 event=EmailEvent.TICKET_ESCALATED,
             )
+
+
+def notify_parent_ticket_escalated(
+    db: Session,
+    ticket: SupportTicket,
+    *,
+    background_tasks=None,
+) -> None:
+    parent = db.get(User, ticket.raised_by_user_id)
+    if not parent or RoleName.PARENT.value not in parent.role_names:
+        return
+    subject = (ticket.subject or "Support request")[:80]
+    portal_url = f"{settings.frontend_url.rstrip('/')}/parent/support"
+    notification_service.create_notification(
+        db,
+        user_id=parent.id,
+        title="Your support request was escalated",
+        body="Your request was escalated for priority follow-up. A team member will reach out soon.",
+        entity_type="support_ticket",
+        entity_id=ticket.id,
+    )
+    send_parent_email(
+        db,
+        parent,
+        category="incidents",
+        template_key="parent_support_escalated",
+        payload={
+            "parent_name": parent.full_name or parent.email,
+            "ticket_subject": subject,
+            "portal_url": portal_url,
+        },
+        entity_type="support_ticket",
+        entity_id=ticket.id,
+        background_tasks=background_tasks,
+    )
 
 
 def notify_ticket_reopened(

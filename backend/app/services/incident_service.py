@@ -160,6 +160,7 @@ def update_incident(
     tagged_roles: list[str] | None = None,
     tagged_user_ids: list[int] | None = None,
     action_taken_note: str | None = None,
+    shared_with_family: bool | None = None,
 ) -> Incident:
     if status is not None:
         new_status = normalize_incident_status(status)
@@ -197,6 +198,9 @@ def update_incident(
         incident.action_taken_note = action_taken_note.strip()
         if is_owner:
             incident.last_owner_activity_at = datetime.now(timezone.utc)
+
+    if shared_with_family is not None:
+        incident.shared_with_family = bool(shared_with_family)
 
     db.flush()
     return incident
@@ -237,6 +241,7 @@ def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
         "primary_category": incident.primary_category,
         "subcategory": incident.subcategory,
         "is_sensitive": incident.is_sensitive,
+        "shared_with_family": bool(incident.shared_with_family),
         "product_module": case.product_module if case else None,
         "reporter_name": incident.reporter.full_name if incident.reporter else None,
         "assigned_to_user_id": incident.assigned_to_user_id,
