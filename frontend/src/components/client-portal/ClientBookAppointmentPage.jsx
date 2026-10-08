@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useParentPortal } from '../../hooks/useParentPortal.js'
 import { fetchParentAppointments } from '../../lib/parentCases.js'
-import { queryKeys } from '../../lib/queryClient.js'
+import { focusRefetchLive, queryKeys } from '../../lib/queryClient.js'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ErrorBanner } from '../shared/ErrorBanner.jsx'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
@@ -156,6 +156,7 @@ export function ClientBookAppointmentPage() {
     queryKey: queryKeys.parentAppointments,
     queryFn: fetchParentAppointments,
     staleTime: 30_000,
+    refetchOnWindowFocus: focusRefetchLive,
   })
 
   const cancelMutation = useMutation({

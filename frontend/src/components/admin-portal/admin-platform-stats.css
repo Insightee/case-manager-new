@@ -7,6 +7,23 @@
   justify-content: flex-end;
 }
 
+.admin-platform-stats__refresh {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.admin-platform-stats__updated {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
+  font-size: 0.8125rem;
+  color: #526057;
+}
+
+.admin-platform-stats__updated-hint {
+  color: #6b7a70;
+}
+
 .admin-platform-stats__period {
   display: inline-flex;
   flex-wrap: wrap;
