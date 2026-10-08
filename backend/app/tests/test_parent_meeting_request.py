@@ -90,3 +90,34 @@ def test_parent_meeting_request_rejects_unassigned_therapist():
     )
     assert r.status_code == 400, r.text
     assert "not assigned" in r.json().get("detail", "").lower()
+
+
+def test_therapist_can_dismiss_parent_meeting_request():
+    parent_headers = _login("parent@demo.com")
+    therapist_headers = _login("therapist@demo.com")
+    cases = client.get("/api/v1/parent/cases", headers=parent_headers).json()
+    if not cases:
+        return
+    case_id = cases[0]["id"]
+    therapists = client.get(f"/api/v1/booking/therapists?case_id={case_id}", headers=parent_headers).json()
+    if not therapists:
+        return
+    tid = therapists[0]["therapist_user_id"]
+    preferred = date.today() + timedelta(days=10)
+    created = client.post(
+        "/api/v1/parent/booking/meeting-requests",
+        headers=parent_headers,
+        json={
+            "case_id": case_id,
+            "therapist_user_id": tid,
+            "requested_date": preferred.isoformat(),
+        },
+    ).json()
+    dismissed = client.post(
+        f"/api/v1/scheduling/parent-meeting-requests/{created['id']}/dismiss",
+        headers=therapist_headers,
+    )
+    assert dismissed.status_code == 200, dismissed.text
+    assert dismissed.json()["status"] == "DISMISSED"
+    listed = client.get("/api/v1/scheduling/parent-meeting-requests", headers=therapist_headers).json()
+    assert not any(row["id"] == created["id"] for row in listed)

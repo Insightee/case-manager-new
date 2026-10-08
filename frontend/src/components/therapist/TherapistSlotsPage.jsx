@@ -38,6 +38,17 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
     setRefreshKey((k) => k + 1)
   }
 
+  async function dismissMeetingRequest(requestId) {
+    try {
+      await apiFetch(`/api/v1/scheduling/parent-meeting-requests/${requestId}/dismiss`, {
+        method: 'POST',
+      })
+      setMeetingRequests((rows) => rows.filter((r) => r.id !== requestId))
+    } catch {
+      bumpRefresh()
+    }
+  }
+
   return (
     <div className="therapist-slots-page">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
@@ -87,12 +98,21 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
                   {req.parent_name ? ` · ${req.parent_name}` : ''}
                   {req.note ? ` — “${req.note}”` : ''}
                 </span>
-                <Link
-                  to={`/therapist/slots?date=${req.requested_date}`}
-                  className="font-semibold text-indigo-700 hover:text-indigo-900"
-                >
-                  Open {formatDisplayDateLabel(req.requested_date)} →
-                </Link>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link
+                    to={`/therapist/slots?date=${req.requested_date}`}
+                    className="font-semibold text-indigo-700 hover:text-indigo-900"
+                  >
+                    Open {formatDisplayDateLabel(req.requested_date)} →
+                  </Link>
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-slate-600 underline-offset-2 hover:underline"
+                    onClick={() => dismissMeetingRequest(req.id)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

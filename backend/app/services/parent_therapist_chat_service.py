@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -43,16 +43,37 @@ def _find_open_chat(db: Session, parent_user_id: int, case_id: int) -> SupportTi
     ).first()
 
 
-def ensure_therapist_chat(db: Session, user: User, case_id: int) -> dict:
+def _validate_parent_chat_case(db: Session, user: User, case_id: int) -> tuple[Case, int]:
     case = case_service.get_case(db, case_id)
     if not case:
         raise ValueError("Case not found")
     therapist_id = _active_therapist_user_id(db, case)
     if not therapist_id:
         raise ValueError("Your care team has not assigned a therapist yet — try again soon or use Support for help.")
+    return case, therapist_id
 
+
+def get_therapist_chat(db: Session, user: User, case_id: int) -> dict | None:
+    _validate_parent_chat_case(db, user, case_id)
+    existing = _find_open_chat(db, user.id, case_id)
+    if not existing:
+        return None
+    return parent_ticket_service.get_parent_ticket(db, user, existing.id)
+
+
+def start_therapist_chat_with_message(db: Session, user: User, case_id: int, message: str) -> dict:
+    body = (message or "").strip()
+    if not body:
+        raise ValueError("Message required")
+    case, therapist_id = _validate_parent_chat_case(db, user, case_id)
     existing = _find_open_chat(db, user.id, case_id)
     if existing:
+        msg = TicketMessage(ticket_id=existing.id, author_user_id=user.id, body=body)
+        db.add(msg)
+        db.flush()
+        from app.services import ticket_flow_service as ticket_flow
+
+        ticket_flow.on_ticket_message(db, user, existing)
         return parent_ticket_service.get_parent_ticket(db, user, existing.id)
 
     ticket = SupportTicket(
@@ -62,13 +83,30 @@ def ensure_therapist_chat(db: Session, user: User, case_id: int) -> dict:
         topic=TicketTopic.OTHER,
         category=TicketCategory.SERVICE,
         subject=THERAPIST_CHAT_SUBJECT,
-        body="Therapist chat started.",
+        body=body,
         status=TicketStatus.OPEN,
         product_module=case.product_module,
     )
     db.add(ticket)
     db.flush()
+    db.add(TicketMessage(ticket_id=ticket.id, author_user_id=user.id, body=body))
+    db.flush()
     return parent_ticket_service.get_parent_ticket(db, user, ticket.id)
+
+
+def count_therapist_chat_tickets_for_parent(db: Session, parent_user_id: int, case_id: int) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(SupportTicket)
+            .where(
+                SupportTicket.raised_by_user_id == parent_user_id,
+                SupportTicket.case_id == case_id,
+                SupportTicket.subject == THERAPIST_CHAT_SUBJECT,
+            )
+        )
+        or 0
+    )
 
 
 def loop_in_case_manager(

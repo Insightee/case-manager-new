@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import SessionLocal, engine
+from app.core.timezone import today_ist
 from app.main import app
 from app.models.appointment_reschedule import AppointmentReschedule
 from app.models.slot import SlotStatus, TherapistSlot
@@ -50,7 +51,8 @@ def test_parent_reschedule_creates_history():
     parent = _login("parent@demo.com")
     th, ph = _headers(therapist), _headers(parent)
 
-    start = date(2026, 10, 6)
+    # Far enough ahead that the 6-hour parent cancel/reschedule rule cannot apply in CI.
+    start = today_ist() + timedelta(days=21)
     end = start + timedelta(days=6)
     client.post(
         "/api/v1/scheduling/template/materialize",

@@ -145,8 +145,6 @@ def list_sessions(
     for s in sessions:
         case = s.case or db.get(Case, s.case_id)
         if case and case_scope_check(db, user, case):
-            if s.status == SessionStatus.IN_PROGRESS:
-                s = session_service.auto_end_if_stale(db, s)
             result.append(
                 _session_read(
                     s,
@@ -154,7 +152,6 @@ def list_sessions(
                     therapist_name=therapist_names.get(s.therapist_user_id),
                 )
             )
-    db.commit()
     return paginated_response([r.model_dump() for r in result], total, page, page_size)
 
 

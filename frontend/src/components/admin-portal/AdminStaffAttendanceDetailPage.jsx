@@ -31,6 +31,17 @@ const FILTERS = [
 
 const PAGE_SIZE = 25
 
+function staffClockInMapsUrl(row) {
+  if (row?.clock_in_latitude == null || row?.clock_in_longitude == null) return null
+  return `https://www.google.com/maps?q=${row.clock_in_latitude},${row.clock_in_longitude}`
+}
+
+function workModeLabel(mode) {
+  if (mode === 'WFH') return 'WFH'
+  if (mode === 'OFFICE') return 'Office'
+  return '—'
+}
+
 function entryTone(row) {
   if (row.record_kind === 'leave') return 'amber'
   if (row.entry_type === 'FORGOT') return 'rose'
@@ -205,6 +216,8 @@ export function AdminStaffAttendanceDetailPage() {
                   <tr>
                     <th>Date</th>
                     <th>Day</th>
+                    <th>Mode</th>
+                    <th>Start location</th>
                     <th>Type</th>
                     <th>Start</th>
                     <th>End</th>
@@ -218,6 +231,23 @@ export function AdminStaffAttendanceDetailPage() {
                     <tr key={`${row.record_kind}-${row.id}`}>
                       <td>{formatDateIN(`${row.work_date}T12:00:00Z`) || row.work_date}</td>
                       <td>{row.day_name}</td>
+                      <td>{row.record_kind === 'leave' ? '—' : workModeLabel(row.work_mode)}</td>
+                      <td>
+                        {row.record_kind === 'leave' ? (
+                          '—'
+                        ) : staffClockInMapsUrl(row) ? (
+                          <a href={staffClockInMapsUrl(row)} target="_blank" rel="noopener noreferrer">
+                            {row.clock_in_place_label || 'View on map'}
+                          </a>
+                        ) : (
+                          '—'
+                        )}
+                        {row.distance_from_office_meters != null ? (
+                          <p className="admin-muted" style={{ margin: '4px 0 0', fontSize: '0.8rem' }}>
+                            {Math.round(row.distance_from_office_meters)} m from office
+                          </p>
+                        ) : null}
+                      </td>
                       <td>
                         <StatusBadge tone={entryTone(row)}>
                           {row.record_kind === 'leave' ? 'LEAVE' : row.entry_type}
@@ -273,6 +303,19 @@ export function AdminStaffAttendanceDetailPage() {
                     {formatDurationSeconds(row.total_work_seconds)}
                   </p>
                   <p style={{ margin: 0 }}>{row.work_summary || '—'}</p>
+                  {row.record_kind === 'attendance' && row.work_mode ? (
+                    <p className="admin-muted" style={{ margin: '6px 0 0', fontSize: '0.85rem' }}>
+                      {workModeLabel(row.work_mode)}
+                      {staffClockInMapsUrl(row) ? (
+                        <>
+                          {' · '}
+                          <a href={staffClockInMapsUrl(row)} target="_blank" rel="noopener noreferrer">
+                            Start location
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {row.record_kind === 'attendance' ? (
                     <button
                       type="button"

@@ -13,7 +13,7 @@ function initials(name) {
 }
 
 const AVATAR_COLORS = [
-  'bg-indigo-100 text-indigo-700',
+  'bg-emerald-100 text-emerald-800',
   'bg-violet-100 text-violet-700',
   'bg-teal-100 text-teal-700',
   'bg-rose-100 text-rose-700',

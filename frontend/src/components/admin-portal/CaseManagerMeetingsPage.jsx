@@ -516,7 +516,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
               type="button"
               role="tab"
               aria-selected={pageView === tab.id}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-emerald-800 shadow-sm' : 'text-slate-600'}`}
               onClick={() => setPageView(tab.id)}
             >
               {tab.label}

@@ -22,7 +22,6 @@ from app.models.case import Case
 from app.services import case_service, incident_attachment_service as att_svc
 from app.services import incident_flow_service as inc_flow
 from app.services import incident_service as inc_svc
-from app.services import incident_sla_service as sla_svc
 from app.services import notification_service
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -138,7 +137,6 @@ def list_incidents(
         team_support_incident_clause,
     )
 
-    has_manage = _has_manage(user, db)
     support_view = can_view_support_incidents(user, db)
 
     if support_view:
@@ -174,9 +172,6 @@ def list_incidents(
 
     incidents, total = paginate_query(db, stmt, page=page, page_size=page_size)
 
-    if has_manage:
-        sla_svc.process_open_incidents(db, incidents)
-
     case_ids = {i.case_id for i in incidents if i.case_id}
     cases_by_id = {}
     if case_ids:
@@ -193,9 +188,6 @@ def list_incidents(
         if product_module and (not case or case.product_module != product_module):
             continue
         result.append(inc_svc.incident_to_list_dict(i, case))
-
-    if has_manage:
-        db.commit()
 
     return paginated_response(result, total, page, page_size)
 

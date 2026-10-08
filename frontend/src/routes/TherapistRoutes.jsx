@@ -7,7 +7,9 @@ import { TherapistClinicalReportPage } from '../components/monthly-reports/Thera
 import { ReportEditPage } from '../components/reports/ReportEditPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
+import { Navigate } from 'react-router-dom'
 import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
+import { TherapistVaultPage } from '../components/therapist/TherapistVaultPage.jsx'
 import { TherapistTicketsPage } from '../components/therapist/TherapistTicketsPage.jsx'
 import { TherapistIncidentsPage } from '../components/therapist/TherapistIncidentsPage.jsx'
 import { TherapistLeavePage } from '../components/therapist/TherapistLeavePage.jsx'
@@ -29,7 +31,9 @@ export function TherapistRoutes() {
       <Route path="incidents" element={<TherapistIncidentsPage />} />
       <Route path="leave" element={<TherapistLeavePage />} />
       <Route path="slots" element={<TherapistSlotsPage />} />
+      <Route path="vault" element={<TherapistVaultPage />} />
       <Route path="profile" element={<TherapistProfilePage />} />
+      <Route path="profile/vault" element={<Navigate to="/therapist/vault" replace />} />
     </Routes>
   )
 }

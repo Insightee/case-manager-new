@@ -73,7 +73,7 @@ export function ParentChangePasswordSection() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             autoComplete="new-password"
-            minLength={6}
+            minLength={8}
             required
           />
         </label>
@@ -84,7 +84,7 @@ export function ParentChangePasswordSection() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
-            minLength={6}
+            minLength={8}
             required
           />
         </label>

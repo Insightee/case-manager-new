@@ -7,7 +7,6 @@ const STALE_MESSAGE_FRAGMENTS = [
   'error loading dynamically imported module',
   'importing a module script failed',
   'failed to load module script',
-  'load failed',
   'dynamically imported module',
   'chunkloaderror',
 ]
@@ -31,7 +30,16 @@ export function clearPwaStaleHint() {
 export function isLikelyStaleAppError(err) {
   const msg = String(err?.message || err || '').toLowerCase()
   if (err?.name === 'ChunkLoadError') return true
-  return STALE_MESSAGE_FRAGMENTS.some((fragment) => msg.includes(fragment))
+  if (STALE_MESSAGE_FRAGMENTS.some((fragment) => msg.includes(fragment))) return true
+  // Safari standalone often reports a generic "Load failed" for network errors — ignore unless
+  // the rejection looks like a failed module/chunk load.
+  if (msg === 'load failed' || msg === 'error: load failed') {
+    const stack = String(err?.stack || '').toLowerCase()
+    const cause = String(err?.cause?.message || err?.cause || '').toLowerCase()
+    const context = `${stack} ${cause}`
+    return /import|chunk|module script|preload|vite/.test(context)
+  }
+  return false
 }
 
 /**
@@ -46,7 +54,16 @@ export function isLikelyStaleLoginFailure(err, opts = {}) {
   if (msg.includes('invalid login')) return false
   if (msg.includes('use the correct portal')) return false
   if (isLikelyStaleAppError(err)) return true
-  if (/failed to fetch|network|load failed|timed out|unexpected token|<!doctype/i.test(msg)) return true
+  if (isGenericNetworkFailureMessage(msg)) return false
+  if (/unexpected token|<!doctype/i.test(msg)) return true
+  return false
+}
+
+function isGenericNetworkFailureMessage(msg) {
+  if (msg === 'load failed' || msg === 'error: load failed') return true
+  if (msg === 'failed to fetch') return true
+  if (msg.includes('network request failed')) return true
+  if (msg.includes('network') && !msg.includes('module')) return true
   return false
 }
 

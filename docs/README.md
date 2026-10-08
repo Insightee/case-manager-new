@@ -92,6 +92,7 @@ Executed as bounded work packages — see [LOOP_SYSTEM.md](./LOOP_SYSTEM.md).
 
 | Doc | Purpose |
 |-----|---------|
+| [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) | **Security audit** — findings, severity, and remediation roadmap (code review; not a pentest) |
 | [SCALING_P1_IMPLEMENTATION.md](./SCALING_P1_IMPLEMENTATION.md) | P1 scaling work |
 | [SCALABILITY_REVIEW.md](./SCALABILITY_REVIEW.md) | Scalability review notes |
 | [TEST_GAP_BACKLOG.md](./TEST_GAP_BACKLOG.md) | Test coverage gaps |

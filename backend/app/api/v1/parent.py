@@ -1887,6 +1887,11 @@ class ParentTherapistChatLoopIn(BaseModel):
     note: Optional[str] = None
 
 
+class ParentTherapistChatStart(BaseModel):
+    case_id: int
+    message: str
+
+
 @router.get("/therapist-chat")
 def parent_therapist_chat_get(
     case_id: int,
@@ -1898,7 +1903,24 @@ def parent_therapist_chat_get(
     from app.services import parent_therapist_chat_service as pt_chat
 
     try:
-        row = pt_chat.ensure_therapist_chat(db, user, case_id)
+        row = pt_chat.get_therapist_chat(db, user, case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return row
+
+
+@router.post("/therapist-chat", status_code=201)
+def parent_therapist_chat_start(
+    payload: ParentTherapistChatStart,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    _parent_case_or_404(db, user, payload.case_id)
+    from app.services import parent_therapist_chat_service as pt_chat
+
+    try:
+        row = pt_chat.start_therapist_chat_with_message(db, user, payload.case_id, payload.message)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     db.commit()

@@ -281,7 +281,7 @@ def test_parent_change_password():
     bad = client.post(
         "/api/v1/auth/change-password",
         headers=headers,
-        json={"current_password": "wrong", "new_password": "newpass789"},
+        json={"current_password": "wrong", "new_password": "newpass7890"},
     )
     assert bad.status_code == 400
 
@@ -298,10 +298,11 @@ def test_parent_change_password():
     )
     assert login_new.status_code == 200, login_new.text
 
+    admin_headers = _login("superadmin@demo.com")
     restore = client.post(
-        "/api/v1/auth/change-password",
-        headers={"Authorization": f"Bearer {login_new.json()['access_token']}"},
-        json={"current_password": "newpass789", "new_password": "demo123"},
+        f"/api/v1/admin/users/{client.get('/api/v1/auth/me', headers=headers).json()['id']}/set-password",
+        headers=admin_headers,
+        json={"password": "demo123"},
     )
     assert restore.status_code == 200, restore.text
 

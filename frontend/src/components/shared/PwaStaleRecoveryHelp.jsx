@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { PORTAL_PWA, isIosSafari, isStandaloneDisplay } from '../../lib/portalPwa.js'
 import { refreshApp } from '../../lib/pwaUpdate.js'
 import { clearPwaStaleHint, copyPortalUrlForBrowser } from '../../lib/pwaStaleRecovery.js'
@@ -11,6 +11,10 @@ import './pwa-stale-recovery.css'
  *   variant?: 'banner' | 'panel'
  *   forceVisible?: boolean
  *   onDismiss?: () => void
+ *   onRefresh?: () => void | Promise<void>
+ *   title?: string
+ *   lead?: string
+ *   refreshLabel?: string
  * }} props
  */
 export function PwaStaleRecoveryHelp({
@@ -18,16 +22,17 @@ export function PwaStaleRecoveryHelp({
   variant = 'panel',
   forceVisible = false,
   onDismiss,
+  onRefresh,
+  title,
+  lead,
+  refreshLabel = 'Refresh now',
 }) {
   const config = PORTAL_PWA[portalId] || PORTAL_PWA.parent
   const standalone = isStandaloneDisplay()
-  const [expanded, setExpanded] = useState(forceVisible || variant === 'banner')
+  const [expandedManual, setExpandedManual] = useState(variant === 'banner')
+  const expanded = forceVisible || variant === 'banner' || expandedManual
   const [sheet, setSheet] = useState(null)
   const [copyNote, setCopyNote] = useState('')
-
-  useEffect(() => {
-    if (forceVisible) setExpanded(true)
-  }, [forceVisible])
 
   const shouldShow = forceVisible || standalone || variant === 'banner'
 
@@ -43,8 +48,12 @@ export function PwaStaleRecoveryHelp({
 
   const handleRefresh = useCallback(() => {
     clearPwaStaleHint()
+    if (onRefresh) {
+      void onRefresh()
+      return
+    }
     void refreshApp()
-  }, [])
+  }, [onRefresh])
 
   const handleOpenInBrowser = useCallback(async () => {
     const { ok, url } = await copyPortalUrlForBrowser()
@@ -54,7 +63,7 @@ export function PwaStaleRecoveryHelp({
   const handleDismiss = useCallback(() => {
     clearPwaStaleHint()
     onDismiss?.()
-    if (variant === 'panel') setExpanded(false)
+    if (variant === 'panel') setExpandedManual(false)
   }, [onDismiss, variant])
 
   if (!shouldShow && !forceVisible) return null
@@ -63,12 +72,14 @@ export function PwaStaleRecoveryHelp({
     return (
       <div className="pwa-stale-banner" role="region" aria-label="App update help">
         <div className="pwa-stale-banner__copy">
-          <strong>We shipped an update.</strong>
-          <span> If anything looks stuck, refresh the app or open in your browser.</span>
+          <strong>{title || 'We shipped an update.'}</strong>
+          <span>
+            {lead ? ` ${lead}` : ' If anything looks stuck, refresh the app or open in your browser.'}
+          </span>
         </div>
         <div className="pwa-stale-banner__actions">
           <button type="button" className="pwa-stale-btn pwa-stale-btn--primary" onClick={handleRefresh}>
-            Get latest
+            {refreshLabel}
           </button>
           <button type="button" className="pwa-stale-btn pwa-stale-btn--ghost" onClick={handleOpenInBrowser}>
             Open in browser
@@ -92,7 +103,7 @@ export function PwaStaleRecoveryHelp({
         <button
           type="button"
           className="pwa-stale-panel__toggle"
-          onClick={() => setExpanded(true)}
+          onClick={() => setExpandedManual(true)}
         >
           Updated recently? Refresh your home screen app
         </button>

@@ -833,6 +833,7 @@ def _child_absence_admin_status_counts(db: Session) -> dict[str, int]:
 
 def _apply_child_absence_search(stmt, search: str):
     term = f"%{search.strip()}%"
+    child_full = func.trim(Child.first_name + " " + Child.last_name)
     therapist = User.__table__.alias("absence_therapist")
     return (
         stmt.join(therapist, therapist.c.id == SessionAbsenceRequest.therapist_user_id)
@@ -843,7 +844,9 @@ def _apply_child_absence_search(stmt, search: str):
                 therapist.c.full_name.ilike(term),
                 therapist.c.email.ilike(term),
                 Case.case_code.ilike(term),
-                Child.full_name.ilike(term),
+                Child.first_name.ilike(term),
+                Child.last_name.ilike(term),
+                child_full.ilike(term),
                 SessionAbsenceRequest.reason.ilike(term),
             )
         )

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
+import { markServiceWorkerUpdateWaiting } from './lib/appVersionUpdate.js'
 import { setPwaUpdateHandler } from './lib/pwaUpdate.js'
 import './index.css'
 import './styles/forest-light-theme.css'
@@ -17,7 +18,8 @@ if (import.meta.env.DEV && typeof navigator !== 'undefined' && 'serviceWorker' i
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
-      void updateSW(true)
+      markServiceWorkerUpdateWaiting()
+      window.dispatchEvent(new CustomEvent('insightcase:sw-waiting'))
     },
   })
   setPwaUpdateHandler(updateSW)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.billing_month import today_ist, try_parse_billing_month
 from app.core.permissions import user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import Case, CaseStatus
+from app.models.case import BillingType, Case, CaseStatus
 from app.models.client_billing import ClientInvoice
 from app.models.daily_log import DailyLog
 from app.models.invoice import Invoice
@@ -192,6 +192,32 @@ def exception_rows(db: Session, user: User) -> list[dict]:
                 dates=str(month or ""),
                 owner="Finance",
                 href="/admin/invoices",
+            )
+        )
+
+    missing_pkg_stmt = apply_case_scope(
+        select(Case).where(
+            Case.status == CaseStatus.ACTIVE,
+            Case.billing_type == BillingType.PACKAGE,
+            or_(
+                Case.package_session_count.is_(None),
+                Case.package_session_count <= 0,
+            ),
+        ),
+        user,
+    )
+    for case in db.scalars(missing_pkg_stmt.limit(500)).all():
+        rows.append(
+            _row(
+                rule="missing_package_session_count",
+                severity="high",
+                confirmation="confirmed",
+                record_type="case",
+                record_id=case.id,
+                label=case.case_code,
+                dates="",
+                owner="Case manager / billing setup",
+                href=f"/admin/cases/{case.id}",
             )
         )
 

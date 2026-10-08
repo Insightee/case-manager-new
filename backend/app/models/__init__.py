@@ -58,6 +58,7 @@ from app.models.finance_writable import (
 )
 from app.models.billing_step6 import BillingCalcException, CaseClientRatePeriod
 from app.models.billing_approval_request import BillingApprovalRequest, BillingApprovalStatus
+from app.models.ops_state_transition import OpsStateTransition
 from app.models.child import Child
 from app.models.daily_log import DailyLog
 from app.models.case_document import (
@@ -97,6 +98,7 @@ from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage
 from app.models.ticket_attachment import TicketAttachment
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+from app.models.therapist_vault_document import TherapistVaultDocument, TherapistVaultDocumentStatus
 from app.models.therapist_payout_settlement import (
     TherapistPayoutBatch,
     TherapistPayoutBatchStatus,
@@ -148,6 +150,7 @@ __all__ = [
     "CaseClientRatePeriod",
     "BillingApprovalRequest",
     "BillingApprovalStatus",
+    "OpsStateTransition",
     "Organisation",
     "Case",
     "CaseBillingRateChange",
@@ -249,3 +252,5 @@ __all__ = [
     "IntegrationSignal",
     "INTEGRATION_SCOPES",
 ]
+
+from app.services import ops_state_listener as _ops_state_listener  # noqa: E402,F401

@@ -182,6 +182,27 @@ def revoke_refresh_token(jti: str) -> None:
         _memory_refresh.pop(jti, None)
 
 
+def revoke_all_refresh_tokens_for_user(user_id: int | str) -> int:
+    """Invalidate every outstanding refresh token for a user (e.g. after password change)."""
+    subject = str(user_id)
+    revoked = 0
+    r = get_redis()
+    if r:
+        for key in r.scan_iter(f"{REFRESH_PREFIX}*"):
+            try:
+                if r.get(key) == subject:
+                    r.delete(key)
+                    revoked += 1
+            except Exception:
+                continue
+        return revoked
+    for jti, sub in list(_memory_refresh.items()):
+        if sub == subject:
+            _memory_refresh.pop(jti, None)
+            revoked += 1
+    return revoked
+
+
 def is_refresh_token_valid(jti: str) -> bool:
     r = get_redis()
     if r:

@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     support_contact_email: str = "support@insighte.com"
     support_office_address: str = "Insighte Childcare, Koramangala, Bangalore 560034"
+    # Staff attendance — office geofence (AECS Layout, Bengaluru; override via Railway).
+    staff_office_latitude: float = 12.964118
+    staff_office_longitude: float = 77.713036
+    staff_office_radius_meters: float = 500.0
+    staff_office_label: str = "Insighte office (AECS Layout, Bengaluru)"
+    staff_wfh_days_per_month: int = 15
+    # IST calendar dates on/after this count toward the monthly WFH quota (YYYY-MM-DD).
+    staff_attendance_wfh_count_from: str = "2026-10-06"
     grievance_policy_url: str = "https://insighte.com/grievance-policy"
     policies_bot_url: str = ""
     support_phone: str = "+91 80 0000 0000"

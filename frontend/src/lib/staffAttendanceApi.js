@@ -4,8 +4,11 @@ export function fetchTodayAttendance() {
   return apiFetch('/api/v1/staff-attendance/me/today')
 }
 
-export function clockInStaff() {
-  return apiFetch('/api/v1/staff-attendance/clock-in', { method: 'POST' })
+export function clockInStaff(payload) {
+  return apiFetch('/api/v1/staff-attendance/clock-in', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
 
 export function pauseStaffAttendance() {

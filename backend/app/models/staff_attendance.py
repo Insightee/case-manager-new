@@ -4,7 +4,7 @@ import enum
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -24,6 +24,11 @@ class StaffAttendanceStatus(str, enum.Enum):
 class StaffAttendanceSegmentType(str, enum.Enum):
     WORK = "WORK"
     BREAK = "BREAK"
+
+
+class StaffWorkMode(str, enum.Enum):
+    OFFICE = "OFFICE"
+    WFH = "WFH"
 
 
 class StaffAttendance(Base):
@@ -47,6 +52,12 @@ class StaffAttendance(Base):
     total_break_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     auto_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    work_mode: Mapped[Optional["StaffWorkMode"]] = mapped_column(Enum(StaffWorkMode), nullable=True)
+    clock_in_latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    clock_in_longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    clock_in_accuracy_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    distance_from_office_meters: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    clock_in_place_label: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

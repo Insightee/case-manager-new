@@ -22,6 +22,7 @@ import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReports
 import { TherapistClinicalReportPage } from '../components/monthly-reports/TherapistClinicalReportPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
+import { TherapistVaultPage } from '../components/therapist/TherapistVaultPage.jsx'
 import { TherapistSupportHubPage } from '../components/therapist/TherapistSupportHubPage.jsx'
 import { TherapistLeavePage } from '../components/therapist/TherapistLeavePage.jsx'
 import { TherapistSlotsPage } from '../components/therapist/TherapistSlotsPage.jsx'
@@ -311,7 +312,9 @@ export function AppRoutes() {
             </Lazy>
           }
         />
+        <Route path="vault" element={<TherapistVaultPage />} />
         <Route path="profile" element={<TherapistProfilePage />} />
+        <Route path="profile/vault" element={<Navigate to="/therapist/vault" replace />} />
         <Route path="notifications" element={<NotificationCenterPage portal="therapist" />} />
       </Route>
 

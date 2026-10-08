@@ -62,11 +62,29 @@ def test_therapist_cannot_use_staff_attendance():
     assert r.status_code == 403
 
 
+def _clock_in_payload(*, work_mode: str = "OFFICE", lat: float | None = None, lon: float | None = None) -> dict:
+    lat = settings.staff_office_latitude if lat is None else lat
+    lon = settings.staff_office_longitude if lon is None else lon
+    return {
+        "work_mode": work_mode,
+        "latitude": lat,
+        "longitude": lon,
+        "place_label": "Test location",
+    }
+
+
 def test_hr_clock_in_save_and_clock_out():
     token = _login("hr@demo.com")
-    r = client.post("/api/v1/staff-attendance/clock-in", headers=_headers(token))
+    r = client.post(
+        "/api/v1/staff-attendance/clock-in",
+        headers=_headers(token),
+        json=_clock_in_payload(),
+    )
     assert r.status_code == 200
-    assert r.json()["status"] == "IN_PROGRESS"
+    body = r.json()
+    assert body["status"] == "IN_PROGRESS"
+    assert body["work_mode"] == "OFFICE"
+    assert body["clock_in_latitude"] == settings.staff_office_latitude
 
     r = client.put(
         "/api/v1/staff-attendance/work-summary",
@@ -89,9 +107,24 @@ def test_hr_clock_in_save_and_clock_out():
     assert r.status_code == 200
     assert r.json()["status"] == "COMPLETED"
 
-    r = client.post("/api/v1/staff-attendance/clock-in", headers=_headers(token))
-    assert r.status_code == 200
-    assert r.json()["status"] == "IN_PROGRESS"
+    r = client.post(
+        "/api/v1/staff-attendance/clock-in",
+        headers=_headers(token),
+        json=_clock_in_payload(),
+    )
+    assert r.status_code == 400
+    assert "finished" in r.json()["detail"].lower()
+
+
+def test_office_clock_in_outside_geofence():
+    token = _login("superadmin@demo.com")
+    r = client.post(
+        "/api/v1/staff-attendance/clock-in",
+        headers=_headers(token),
+        json=_clock_in_payload(lat=12.0, lon=77.0),
+    )
+    assert r.status_code == 400
+    assert "office" in r.json()["detail"].lower()
 
 
 def test_forgot_log_disabled_for_staff():

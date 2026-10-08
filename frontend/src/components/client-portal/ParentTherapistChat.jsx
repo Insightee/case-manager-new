@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatTimeIN12 } from '../../lib/datetime.js'
 import { replyParentTicket } from '../../lib/ticketFormUtils.js'
 import { TicketAttachmentList } from '../support/TicketAttachmentList.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
@@ -11,21 +12,14 @@ const STARTER_SNIPPET = 'Therapist chat started.'
 
 function formatMessageTime(iso) {
   if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return ''
-  }
+  const time = formatTimeIN12(iso, { suffix: '' })
+  return time || ''
 }
 
 export function ParentTherapistChat({ cases = [] }) {
   const caseOptions = useMemo(() => cases.filter((c) => c?.id), [cases])
-  const [caseId, setCaseId] = useState('')
+  const [caseIdOverride, setCaseIdOverride] = useState('')
+  const caseId = caseIdOverride || (caseOptions[0] ? String(caseOptions[0].id) : '')
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,45 +28,57 @@ export function ParentTherapistChat({ cases = [] }) {
   const [busy, setBusy] = useState(false)
   const [loopNote, setLoopNote] = useState('')
   const [showLoopIn, setShowLoopIn] = useState(false)
-  const threadEndRef = useRef(null)
-
-  useEffect(() => {
-    if (!caseId && caseOptions.length) {
-      setCaseId(String(caseOptions[0].id))
-    }
-  }, [caseId, caseOptions])
+  const threadRef = useRef(null)
+  const scrollAfterSendRef = useRef(false)
 
   const selectedCase = useMemo(
     () => caseOptions.find((c) => String(c.id) === String(caseId)),
     [caseOptions, caseId],
   )
 
-  const loadChat = useCallback(async () => {
-    if (!caseId) {
-      setTicket(null)
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const row = await apiFetch(`/api/v1/parent/therapist-chat?case_id=${caseId}`)
-      const detail = await apiFetch(`/api/v1/parent/support/tickets/${row.id}`)
-      setTicket(detail)
-    } catch (err) {
-      setTicket(null)
-      setError(err.message || 'Could not open therapist chat')
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      if (!caseId) {
+        if (active) {
+          setTicket(null)
+          setLoading(false)
+        }
+        return
+      }
+      if (active) {
+        setLoading(true)
+        setError('')
+      }
+      try {
+        const row = await apiFetch(`/api/v1/parent/therapist-chat?case_id=${caseId}`)
+        if (!active) return
+        if (!row?.id) {
+          setTicket(null)
+          return
+        }
+        const detail = await apiFetch(`/api/v1/parent/support/tickets/${row.id}`)
+        if (active) setTicket(detail)
+      } catch (err) {
+        if (active) {
+          setTicket(null)
+          setError(err.message || 'Could not open therapist chat')
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
+    return () => {
+      active = false
     }
   }, [caseId])
 
   useEffect(() => {
-    loadChat()
-  }, [loadChat])
-
-  useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!scrollAfterSendRef.current) return
+    scrollAfterSendRef.current = false
+    const el = threadRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
   }, [ticket?.messages?.length])
 
   const visibleMessages = useMemo(() => {
@@ -82,17 +88,28 @@ export function ParentTherapistChat({ cases = [] }) {
   }, [ticket?.messages])
 
   const therapistLabel = ticket?.assigned_to_name || selectedCase?.therapist || 'Your therapist'
+  const chatReady = Boolean(ticket?.id) || Boolean(caseId)
 
   async function postMessage(text, files = []) {
-    if (text.length < MIN_MESSAGE_CHARS || !ticket?.id) return
+    const body = text.trim()
+    if (body.length < MIN_MESSAGE_CHARS || !caseId) return
     setBusy(true)
     setError('')
+    scrollAfterSendRef.current = true
     try {
-      await replyParentTicket(ticket.id, text, files)
+      if (ticket?.id) {
+        await replyParentTicket(ticket.id, body, files)
+        const detail = await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}`)
+        setTicket(detail)
+      } else {
+        const detail = await apiFetch('/api/v1/parent/therapist-chat', {
+          method: 'POST',
+          body: JSON.stringify({ case_id: Number(caseId), message: body }),
+        })
+        setTicket(detail)
+      }
       setReply('')
       setReplyFiles([])
-      const detail = await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}`)
-      setTicket(detail)
     } catch (err) {
       setError(err.message || 'Could not send message')
     } finally {
@@ -149,7 +166,11 @@ export function ParentTherapistChat({ cases = [] }) {
         {caseOptions.length > 1 ? (
           <label className="parent-therapist-chat__case-pick">
             <span className="sr-only">Child</span>
-            <select value={caseId} onChange={(e) => setCaseId(e.target.value)} aria-label="Select child">
+            <select
+              value={caseId}
+              onChange={(e) => setCaseIdOverride(e.target.value)}
+              aria-label="Select child"
+            >
               {caseOptions.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.childName}
@@ -164,11 +185,12 @@ export function ParentTherapistChat({ cases = [] }) {
 
       {loading ? (
         <p className="parent-therapist-chat__loading">Opening chat…</p>
-      ) : error && !ticket ? (
+      ) : error && !ticket && !chatReady ? (
         <p className="parent-therapist-chat__error">{error}</p>
       ) : (
         <>
           <div
+            ref={threadRef}
             className={`parent-therapist-chat__thread${visibleMessages.length === 0 ? ' parent-therapist-chat__thread--empty' : ''}`}
             role="log"
             aria-live="polite"
@@ -177,7 +199,7 @@ export function ParentTherapistChat({ cases = [] }) {
               <button
                 type="button"
                 className="parent-therapist-chat__hello"
-                disabled={busy || !ticket?.id}
+                disabled={busy || !chatReady}
                 onClick={sayHello}
               >
                 {busy ? 'Sending…' : 'Say hello'}
@@ -200,7 +222,6 @@ export function ParentTherapistChat({ cases = [] }) {
                 </div>
               ))
             )}
-            <div ref={threadEndRef} />
           </div>
 
           {error ? <p className="parent-therapist-chat__error">{error}</p> : null}
@@ -234,7 +255,7 @@ export function ParentTherapistChat({ cases = [] }) {
               <button
                 type="button"
                 className="parent-therapist-chat__secondary"
-                disabled={busy}
+                disabled={busy || !ticket?.id}
                 onClick={() => setShowLoopIn((v) => !v)}
               >
                 Add case manager

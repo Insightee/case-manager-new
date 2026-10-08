@@ -6,7 +6,9 @@ from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.models.staff_attendance import StaffWorkMode
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -21,6 +23,22 @@ from app.services import staff_attendance_service as attendance_svc
 from app.services import staff_leave_service as leave_svc
 
 router = APIRouter(prefix="/staff-attendance", tags=["staff-attendance"])
+
+
+class ClockInBody(BaseModel):
+    work_mode: StaffWorkMode
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    accuracy_meters: Optional[float] = Field(None, ge=0, le=50_000)
+    place_label: Optional[str] = Field(None, max_length=512)
+
+    @field_validator("place_label")
+    @classmethod
+    def strip_place_label(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class WorkSummaryUpdate(BaseModel):
@@ -74,11 +92,21 @@ def get_my_today(
 
 @router.post("/clock-in")
 def clock_in(
+    body: ClockInBody,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     meta: dict = Depends(get_request_meta),
 ):
-    row = attendance_svc.clock_in(db, user, meta)
+    row = attendance_svc.clock_in(
+        db,
+        user,
+        work_mode=body.work_mode,
+        latitude=body.latitude,
+        longitude=body.longitude,
+        accuracy_meters=body.accuracy_meters,
+        place_label=body.place_label,
+        meta=meta,
+    )
     db.commit()
     return attendance_svc.serialize_attendance(row, db)
 
@@ -192,11 +220,16 @@ def export_user_attendance_csv(
         [
             "Date",
             "Day",
+            "Work mode",
             "Type",
             "Status",
             "Clock in",
             "Clock out",
             "Total time",
+            "Start latitude",
+            "Start longitude",
+            "Start location label",
+            "Office distance (m)",
             "Summary",
         ]
     )
@@ -205,11 +238,18 @@ def export_user_attendance_csv(
             [
                 row.get("work_date"),
                 row.get("day_name"),
+                row.get("work_mode") or "",
                 row.get("entry_type"),
                 row.get("status"),
                 row.get("clock_in_at"),
                 row.get("clock_out_at"),
                 _format_duration(row.get("total_work_seconds")),
+                row.get("clock_in_latitude") if row.get("clock_in_latitude") is not None else "",
+                row.get("clock_in_longitude") if row.get("clock_in_longitude") is not None else "",
+                row.get("clock_in_place_label") or "",
+                row.get("distance_from_office_meters")
+                if row.get("distance_from_office_meters") is not None
+                else "",
                 row.get("work_summary") or "",
             ]
         )

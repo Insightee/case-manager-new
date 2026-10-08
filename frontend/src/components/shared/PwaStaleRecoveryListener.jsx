@@ -1,12 +1,21 @@
 import { useEffect } from 'react'
+import { markServiceWorkerUpdateWaiting } from '../../lib/appVersionUpdate.js'
 import { isLikelyStaleAppError, markPwaStaleHint } from '../../lib/pwaStaleRecovery.js'
+
+let preloadReloadScheduled = false
 
 /** Sets a session hint when a deploy leaves an old service-worker bundle loaded. */
 export function PwaStaleRecoveryListener() {
   useEffect(() => {
-    function onPreloadError(event) {
+    function onPreloadError() {
       markPwaStaleHint()
-      event?.preventDefault?.()
+      markServiceWorkerUpdateWaiting()
+      window.dispatchEvent(new CustomEvent('insightcase:sw-waiting'))
+      if (preloadReloadScheduled) return
+      preloadReloadScheduled = true
+      window.setTimeout(() => {
+        window.location.reload()
+      }, 120)
     }
 
     function onUnhandledRejection(event) {

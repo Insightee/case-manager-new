@@ -8,6 +8,7 @@ from app.api.v1 import (
     finance_writable,
     hr_ops,
     admin,
+    admin_ops,
     admin_integration_clients,
     admin_integration_webhooks,
     admin_support,
@@ -37,6 +38,7 @@ from app.api.v1 import (
     tickets,
     support,
     therapist_profile,
+    therapist_vault,
     therapist_portal,
     geocode,
     files,
@@ -72,6 +74,7 @@ api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)
 api_router.include_router(invoices.router)
 api_router.include_router(admin.router)
+api_router.include_router(admin_ops.router)
 api_router.include_router(
     finance_ops.router,
     dependencies=[Depends(require_billing)],
@@ -111,6 +114,8 @@ api_router.include_router(scheduling.router)
 api_router.include_router(booking.router)
 api_router.include_router(hr.router)
 api_router.include_router(therapist_profile.router)
+api_router.include_router(therapist_vault.router)
+api_router.include_router(therapist_vault.admin_router)
 api_router.include_router(therapist_portal.router)
 api_router.include_router(geocode.router)
 api_router.include_router(files.router)

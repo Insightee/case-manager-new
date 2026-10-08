@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { resolveNotificationLinkAsync } from './notificationLinks.js'
+import { resolveNotificationLink, resolveNotificationLinkAsync } from './notificationLinks.js'
 
 
 test('billing approval notification opens the exact case billing request', async () => {
@@ -18,4 +18,10 @@ test('billing approval notification opens the exact case billing request', async
   )
 
   assert.equal(link, '/admin/cases/7?tab=billing&billing_approval=42')
+})
+
+test('parent meeting request routes each portal to its scheduling surface', () => {
+  assert.equal(resolveNotificationLink('parent_meeting_request', 1, 'therapist'), '/therapist/slots')
+  assert.equal(resolveNotificationLink('parent_meeting_request', 1, 'parent'), '/parent/book')
+  assert.equal(resolveNotificationLink('parent_meeting_request', 1, 'admin'), '/admin/meetings')
 })

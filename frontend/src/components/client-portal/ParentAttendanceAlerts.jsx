@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDateLabel, formatDisplayDateTimeRange } from '../../lib/datetime.js'
@@ -11,23 +11,26 @@ export function ParentAttendanceAlerts() {
   const [leaves, setLeaves] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [absenceRes, leaveRows] = await Promise.all([
-        apiFetch('/api/v1/parent/absence-requests').catch(() => ({ items: [] })),
-        apiFetch('/api/v1/parent/therapist-leaves').catch(() => []),
-      ])
-      setAbsences(absenceRes?.items ?? [])
-      setLeaves(Array.isArray(leaveRows) ? leaveRows : [])
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      setLoading(true)
+      try {
+        const [absenceRes, leaveRows] = await Promise.all([
+          apiFetch('/api/v1/parent/absence-requests').catch(() => ({ items: [] })),
+          apiFetch('/api/v1/parent/therapist-leaves').catch(() => []),
+        ])
+        if (!active) return
+        setAbsences(absenceRes?.items ?? [])
+        setLeaves(Array.isArray(leaveRows) ? leaveRows : [])
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
+    return () => {
+      active = false
     }
   }, [])
-
-  useEffect(() => {
-    load()
-  }, [load])
 
   const leaveAlerts = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)

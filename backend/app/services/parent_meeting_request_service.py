@@ -100,6 +100,41 @@ def serialize_request(
     }
 
 
+def fulfill_pending_for_case_date(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    booked_date: date,
+) -> int:
+    rows = db.scalars(
+        select(ParentMeetingRequest).where(
+            ParentMeetingRequest.case_id == case_id,
+            ParentMeetingRequest.therapist_user_id == therapist_user_id,
+            ParentMeetingRequest.requested_date == booked_date,
+            ParentMeetingRequest.status == ParentMeetingRequestStatus.PENDING,
+        )
+    ).all()
+    for row in rows:
+        row.status = ParentMeetingRequestStatus.FULFILLED
+    if rows:
+        db.flush()
+    return len(rows)
+
+
+def dismiss_request(db: Session, therapist_user_id: int, request_id: int) -> dict[str, Any]:
+    row = db.get(ParentMeetingRequest, request_id)
+    if not row or row.therapist_user_id != therapist_user_id:
+        raise ValueError("Meeting request not found")
+    if row.status != ParentMeetingRequestStatus.PENDING:
+        raise ValueError("This request is already closed")
+    row.status = ParentMeetingRequestStatus.DISMISSED
+    db.flush()
+    case = db.get(Case, row.case_id)
+    parent = db.get(User, row.parent_user_id)
+    return serialize_request(row, case=case, parent=parent)
+
+
 def next_open_slot_summary(
     db: Session,
     case_id: int,
