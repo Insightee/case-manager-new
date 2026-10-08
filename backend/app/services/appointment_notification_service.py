@@ -184,12 +184,15 @@ def notify_parents_therapist_booked(
     return count
 
 
-def notify_recurring_assigned(
-    db: Session,
-    case: Case,
-    therapist: User | None,
-    record,
-) -> int:
+_SKIP_REASON = {
+    "leave": "therapist leave",
+    "already_booked": "already booked for this case",
+    "other_case": "that time is booked for another case",
+    "unavailable": "that time is not open",
+}
+
+
+def _recurring_summary_body(case: Case, therapist: User | None, record, skipped: list | None) -> str:
     child = case.child.full_name if case.child else case.case_code
     therapist_name = therapist.full_name if therapist else "your therapist"
     weekdays = ", ".join(record.get_weekdays())
@@ -199,39 +202,88 @@ def notify_recurring_assigned(
         f"Recurring sessions for {child} with {therapist_name} were scheduled: "
         f"{weekdays} at {when}, {range_str} ({record.booked_slot_count} sessions)."
     )
+    # Dates already booked for this case are not "left off" (e.g. the anchor session booked just before).
+    skipped = [row for row in (skipped or []) if row.get("reason") != "already_booked"]
+    if skipped:
+        bits = []
+        for row in skipped[:8]:
+            reason = _SKIP_REASON.get(row.get("reason"), row.get("reason") or "not booked")
+            bits.append(f"{row.get('date')} ({reason})")
+        extra = f" Left off: {'; '.join(bits)}."
+        if len(skipped) > 8:
+            extra += f" {len(skipped) - 8} more dates were left off."
+        body += extra
+    return body
+
+
+def notify_recurring_assigned(
+    db: Session,
+    case: Case,
+    therapist: User | None,
+    record,
+    *,
+    skipped: list | None = None,
+) -> int:
+    """One summary per recipient for a recurring booking. Not one notice per session.
+
+    Parents, the therapist, and the case manager each get a single in-app notice.
+    A repeat of the same recurrence group does not add another copy.
+    One-off books, cancellations, and reschedules stay per session.
+    """
+    body = _recurring_summary_body(case, therapist, record, skipped)
+    dedupe_key = f"recurring_schedule:{record.recurrence_group_id}"
     count = 0
     portal = f"{settings.frontend_url}/parent/book"
+    parent_ids = {parent.id for parent in _parent_users_for_case(db, case.id)}
     for parent in _parent_users_for_case(db, case.id):
-        notification_service.create_notification(
+        created = notification_service.create_notification(
             db,
             user_id=parent.id,
             title="Recurring sessions scheduled",
             body=body,
             entity_type="recurring_schedule",
             entity_id=record.id,
+            dedupe_key=dedupe_key,
         )
+        if created is None:
+            continue
         if _parent_wants_appointment_email(parent):
             email_service.send_email(
                 to=parent.email,
-                subject=f"Recurring sessions — {child}",
+                subject=f"Recurring sessions — {case.child.full_name if case.child else case.case_code}",
                 body_text=body + f"\n{portal}\n",
             )
         count += 1
-    if therapist:
-        notification_service.create_notification(
+    if therapist and therapist.id not in parent_ids:
+        created = notification_service.create_notification(
             db,
             user_id=therapist.id,
             title="Recurring schedule assigned",
             body=body,
             entity_type="recurring_schedule",
             entity_id=record.id,
+            dedupe_key=dedupe_key,
         )
-        email_service.send_email(
-            to=therapist.email,
-            subject="Recurring schedule assigned",
-            body_text=body + f"\n{settings.frontend_url}/therapist/slots\n",
+        if created is not None:
+            email_service.send_email(
+                to=therapist.email,
+                subject="Recurring schedule assigned",
+                body_text=body + f"\n{settings.frontend_url}/therapist/slots\n",
+            )
+            count += 1
+    manager_id = getattr(case, "case_manager_user_id", None)
+    if manager_id and manager_id not in parent_ids and (not therapist or manager_id != therapist.id):
+        created = notification_service.create_notification(
+            db,
+            user_id=manager_id,
+            title="Recurring schedule booked",
+            body=body,
+            entity_type="recurring_schedule",
+            entity_id=record.id,
+            dedupe_key=dedupe_key,
         )
-        count += 1
+        if created is not None:
+            count += 1
     return count
 
 

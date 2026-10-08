@@ -10,6 +10,7 @@ import { SlotEditSheet } from '../scheduling/SlotEditSheet.jsx'
 import { clearScheduleCache } from '../../lib/scheduleCache.js'
 import { addDays, dateStr, startOfWeek } from '../scheduling/slotCalendarUtils.js'
 import '../scheduling/scheduling-day.css'
+import '../scheduling/schedule-sheet.css'
 
 export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
   const navigate = useNavigate()
@@ -53,7 +54,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
     <div className="therapist-slots-page">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Availability</p>
+          <p className="sched-sheet__eyebrow">Availability</p>
           <h1 className="text-2xl font-bold text-slate-900">Scheduling</h1>
           <p className="mt-1 text-sm text-slate-500">Tap an empty cell to add a slot, or tap a slot to manage it.</p>
         </div>
@@ -70,7 +71,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
               setScheduleTab('recurring')
               setScheduleOpen(true)
             }}
-            className="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100 sm:w-auto"
+            className="sched-entry sched-entry--quiet"
           >
             Book recurring
           </button>
@@ -80,7 +81,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
               setScheduleTab('availability')
               setScheduleOpen(true)
             }}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto"
+            className="sched-entry sched-entry--primary"
           >
             Weekly schedule
           </button>

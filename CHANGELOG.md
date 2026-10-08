@@ -28,6 +28,7 @@
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Recurring schedule booking uses one summary notification per parent, therapist, and case manager (deduped on the recurrence group). Selected weekdays that fall before the start date, or that cannot be booked, are reported instead of dropped quietly. The therapist schedule sheet, add-slot sheet, admin schedule modals, and parent booking actions share a Forest sheet that stays above the mobile bottom nav.
 - Finance, HR, and Operations **Downloads** share one report library: pick any permitted export, set month / case type / period start and end / report status, then generate or download. Clinical `/admin/reports` stays the review workspace, with a Downloads tab for the same library.
 - Clinical `/admin/reports` month is a real month picker; report status and case type stay visible on the queue and all-reports views.
 - Shared billing-month parser (`YYYY-MM`, `Oct 2026`, `October 2026`) for HR, finance, and control-tower month filters. IST defaults replace UTC `toISOString()` / `date.today()` on those surfaces.

@@ -107,13 +107,16 @@
 .parent-book-form__field select,
 .parent-book-form__field input {
   display: block;
+  box-sizing: border-box;
   margin-top: 8px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 44px;
   border: 1px solid var(--parent-border-decorative, #dde4de);
   border-radius: var(--parent-radius-control, 8px);
   padding: 10px 12px;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 500;
   text-transform: none;
   letter-spacing: normal;
@@ -130,6 +133,7 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 }
 
 .parent-book-form__primary {

@@ -1,4 +1,5 @@
 import { WeeklyScheduleDrawer } from '../therapist/WeeklyScheduleDrawer.jsx'
+import { todayIsoIST } from './recurringRange.js'
 
 /** @deprecated Use WeeklyScheduleDrawer — kept for admin/case imports. */
 export function QuickRecurringModal({
@@ -10,7 +11,7 @@ export function QuickRecurringModal({
   weekStart,
   weekEnd,
 }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIsoIST()
   return (
     <WeeklyScheduleDrawer
       open={open}

@@ -185,12 +185,12 @@
 .parent-appt-sheet {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 80;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
 }
 

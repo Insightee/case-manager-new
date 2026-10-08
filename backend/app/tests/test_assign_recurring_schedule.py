@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from datetime import date, timedelta
+
+from app.services.recurring_expansion import expand_weekday_dates
 from pathlib import Path
 
 import pytest
@@ -135,3 +137,146 @@ def test_scheduling_create_and_patch_slot():
     )
     assert patched.status_code == 200
     assert patched.json()["start_time"] == "15:00"
+
+
+def _note_titles(token: str, path: str) -> list[str]:
+    resp = client.get(path, headers=_headers(token))
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    rows = payload["notifications"] if isinstance(payload, dict) else payload
+    return [row["title"] for row in rows]
+
+
+def test_recurring_books_selected_weekdays_and_batches_notifications():
+    """Thursday start + Mon/Wed/Fri for 8 weeks books every in-range day once, and notifies once."""
+    therapist = _login("therapist@demo.com")
+    parent = _login("parent@demo.com")
+    shadow_cm = _login("shadowcm@demo.com")
+    case_mgr = _login("casemanager@demo.com")
+    th = _headers(therapist)
+
+    cases = client.get("/api/v1/slots/bookable-cases", headers=th).json()
+    assert cases
+    case_id = cases[0]["case_id"]
+    me = client.get("/api/v1/auth/me", headers=th).json()
+    therapist_user_id = me["id"]
+
+    start = date(2026, 10, 8)
+    end = start + timedelta(days=8 * 7 - 1)
+    expected = expand_weekday_dates(start, end, ["mon", "wed", "fri"])
+
+    before = {
+        "parent": _note_titles(parent, "/api/v1/parent/notifications"),
+        "therapist": _note_titles(therapist, "/api/v1/notifications"),
+        "shadow": _note_titles(shadow_cm, "/api/v1/notifications"),
+        "cm": _note_titles(case_mgr, "/api/v1/notifications"),
+    }
+
+    resp = client.post(
+        "/api/v1/scheduling/assign-recurring",
+        headers=th,
+        json={
+            "case_id": case_id,
+            "therapist_user_id": therapist_user_id,
+            "weekdays": ["mon", "wed", "fri"],
+            "start_time": "08:00:00",
+            "end_time": "14:30:00",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["booked_slot_count"] == len(expected)
+    assert body["outside_week"] == ["mon", "wed"]
+    assert body["skipped"] == []
+
+    cal = client.get(
+        f"/api/v1/scheduling/calendar?from_date={start.isoformat()}&to_date={end.isoformat()}",
+        headers=th,
+    )
+    assert cal.status_code == 200
+    booked_dates = sorted(
+        s["slot_date"]
+        for s in cal.json()["slots"]
+        if s["status"] == "BOOKED" and s["case_id"] == case_id and s["start_time"].startswith("08:00")
+    )
+    assert booked_dates == [d.isoformat() for d in expected]
+    assert "2026-10-05" not in booked_dates
+    assert "2026-10-09" in booked_dates
+
+    after_parent = _note_titles(parent, "/api/v1/parent/notifications")
+    after_therapist = _note_titles(therapist, "/api/v1/notifications")
+    after_shadow = _note_titles(shadow_cm, "/api/v1/notifications")
+    after_cm = _note_titles(case_mgr, "/api/v1/notifications")
+
+    def added(before_rows, after_rows, title):
+        return after_rows.count(title) - before_rows.count(title)
+
+    assert added(before["parent"], after_parent, "Recurring sessions scheduled") == 1
+    assert added(before["therapist"], after_therapist, "Recurring schedule assigned") == 1
+    manager_added = added(before["shadow"], after_shadow, "Recurring schedule booked") + added(
+        before["cm"], after_cm, "Recurring schedule booked"
+    )
+    assert manager_added == 1
+    assert added(before["parent"], after_parent, "Session booked") == 0
+
+    again = client.post(
+        "/api/v1/scheduling/assign-recurring",
+        headers=th,
+        json={
+            "case_id": case_id,
+            "therapist_user_id": therapist_user_id,
+            "weekdays": ["mon", "wed", "fri"],
+            "start_time": "08:00:00",
+            "end_time": "14:30:00",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        },
+    )
+    assert again.status_code == 201, again.text
+    assert again.json()["booked_slot_count"] == 0
+    assert len(again.json()["skipped"]) == len(expected)
+    parent_after_repeat = _note_titles(parent, "/api/v1/parent/notifications")
+    assert added(after_parent, parent_after_repeat, "Recurring sessions scheduled") == 1
+    assert added(after_parent, parent_after_repeat, "Session booked") == 0
+
+
+def test_one_off_book_still_notifies_parent_once():
+    therapist = _login("therapist@demo.com")
+    parent = _login("parent@demo.com")
+    th = _headers(therapist)
+    cases = client.get("/api/v1/slots/bookable-cases", headers=th).json()
+    case_id = cases[0]["case_id"]
+    day = date(2027, 1, 4)
+    created = client.post(
+        "/api/v1/scheduling/slots",
+        headers=th,
+        json={"slot_date": day.isoformat(), "start_time": "15:00:00", "end_time": "16:00:00"},
+    )
+    assert created.status_code == 201, created.text
+    slot_id = created.json()["id"]
+    before = _note_titles(parent, "/api/v1/parent/notifications")
+    booked = client.post(
+        f"/api/v1/scheduling/slots/{slot_id}/book",
+        headers=th,
+        json={"case_id": case_id, "notify_client": True},
+    )
+    assert booked.status_code == 200, booked.text
+    after = _note_titles(parent, "/api/v1/parent/notifications")
+    assert after.count("Session booked") - before.count("Session booked") == 1
+
+    created_quiet = client.post(
+        "/api/v1/scheduling/slots",
+        headers=th,
+        json={"slot_date": day.isoformat(), "start_time": "16:00:00", "end_time": "17:00:00"},
+    )
+    assert created_quiet.status_code == 201, created_quiet.text
+    quiet = client.post(
+        f"/api/v1/scheduling/slots/{created_quiet.json()['id']}/book",
+        headers=th,
+        json={"case_id": case_id, "notify_client": False},
+    )
+    assert quiet.status_code == 200, quiet.text
+    quiet_notes = _note_titles(parent, "/api/v1/parent/notifications")
+    assert quiet_notes.count("Session booked") == after.count("Session booked")
