@@ -1,6 +1,8 @@
 """External integration API (machine principals). Writes are structured signals only."""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,7 @@ from app.services.integration import (
     auth_service,
     case_query,
     framework_query,
+    ops_aggregate,
     ops_summary,
     profile_directory,
     report_query,
@@ -230,6 +233,37 @@ def ops_summary_endpoint(
         result = ops_summary.get_anonymised_ops_summary(
             db,
             principal,
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
+        )
+        db.commit()
+        return result
+    except IntegrationError as exc:
+        db.rollback()
+        raise_integration_http(exc)
+
+
+@router.get("/v1/ops/aggregate")
+def ops_aggregate_endpoint(
+    request: Request,
+    date_from: date = Query(..., alias="from", description="Inclusive start date, Asia/Kolkata, YYYY-MM-DD"),
+    date_to: date = Query(..., alias="to", description="Inclusive end date, Asia/Kolkata, YYYY-MM-DD"),
+    principal: IntegrationPrincipal = Depends(get_integration_principal),
+    db: Session = Depends(get_db),
+):
+    """Organisation-wide counts. Requires ops:aggregate:read. Case grants are not applied.
+
+    Counts only. Case codes appear on short exception lists. No child names,
+    contact fields, or clinical text. GET has no clinical side effects; the
+    handler records the same integration audit row as other integration reads.
+    """
+    meta = get_request_meta(request)
+    try:
+        result = ops_aggregate.get_ops_aggregate(
+            db,
+            principal,
+            date_from=date_from,
+            date_to=date_to,
             ip_address=meta.get("ip_address"),
             user_agent=meta.get("user_agent"),
         )

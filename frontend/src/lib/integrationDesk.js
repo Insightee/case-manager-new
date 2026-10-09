@@ -46,8 +46,15 @@ export const INFO_ACCESS = [
   {
     id: 'ops',
     label: 'Operations',
-    hint: 'Anonymised counts only. No names or case identifiers.',
+    hint: 'Anonymised counts for granted cases only. No names or case identifiers.',
     readScope: 'ops:summary',
+    writeScope: null,
+  },
+  {
+    id: 'ops_aggregate',
+    label: 'Org-wide counts',
+    hint: 'Organisation-wide operational counts. No child names, notes, or contacts. Case codes appear only on short exception lists. Case grants are not required.',
+    readScope: 'ops:aggregate:read',
     writeScope: null,
   },
   {

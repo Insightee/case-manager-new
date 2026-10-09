@@ -8,6 +8,7 @@ from app.services.integration import client_admin as client_admin
 from app.services.integration import dto_masking as dto_masking
 from app.services.integration import errors as errors
 from app.services.integration import facade as facade
+from app.services.integration import ops_aggregate as ops_aggregate
 from app.services.integration import ops_summary as ops_summary
 from app.services.integration import rate_limit as rate_limit
 from app.services.integration import report_query as report_query
@@ -21,6 +22,7 @@ __all__ = [
     "dto_masking",
     "errors",
     "facade",
+    "ops_aggregate",
     "ops_summary",
     "rate_limit",
     "report_query",
